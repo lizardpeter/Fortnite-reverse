@@ -6,6 +6,7 @@ pub mod pak;
 pub mod uobject;
 pub mod properties;
 pub mod landscape;
+pub mod weightmap;
 pub mod texture;
 pub mod terrain;
 pub mod material;
