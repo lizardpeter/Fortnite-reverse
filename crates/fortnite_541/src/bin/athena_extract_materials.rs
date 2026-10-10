@@ -14,11 +14,18 @@ fn run()->Result<(),String>{
     let source=if let Some(arg)=args.next(){PathBuf::from(arg)}else{
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/fortnite_541/athena/source")
     };
-    let result=material_extract::prepare_original_athena_materials(&archive,&source)?;
-    println!("ATHENA_EXTRACTED_ORIGINAL_MATERIAL_SOURCES packages={} authenticated_files={} newly_written={} bytes={} expression_nodes={} missing_or_unhandled_packages={:?} other_engine_dependencies={:?}",
+    let direct_only=args.next().is_some_and(|flag|flag=="--direct-only");
+    // Only the direct dependencies are tested by a sparse original-byte PAK
+    // fixture; the actual user-owned 5.41 PAK can supply recursive closure.
+    let result=if direct_only{
+        material_extract::prepare_original_athena_materials_up_to(&archive,&source,1)?
+    }else{
+        material_extract::prepare_original_athena_materials(&archive,&source)?
+    };
+    println!("ATHENA_EXTRACTED_ORIGINAL_MATERIAL_SOURCES packages={} authenticated_files={} newly_written={} bytes={} expression_nodes={} missing_or_unhandled_packages={:?} other_engine_dependencies={:?} deferred_packages={:?}",
         result.source_packages,result.authenticated_files,result.new_files,
         result.total_source_bytes,result.inspected_material_expression_nodes,
-        result.unresolved_packages,result.unresolved_non_game_objects);
+        result.unresolved_packages,result.unresolved_non_game_objects,result.deferred_packages);
     Ok(())
 }
 fn main()->ExitCode{
