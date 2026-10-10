@@ -23,6 +23,8 @@ PAKS=[
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--destination",type=pathlib.Path,required=True)
+    p.add_argument("--sparse-retail-paks",type=pathlib.Path,
+                   help="construct sparse exact source-byte PAKs for native Rust test only")
     args=p.parse_args()
     wanted={t.lstrip("/"):t for t in TARGETS}
     # Source-authored packages: optional original external texture bulk,
@@ -44,6 +46,7 @@ def main():
             continue
         authentic.append((archive,entries))
     report=[]
+    spans={}
     for requested in sorted(wanted):
         sources=[]
         for archive,entries in authentic:
@@ -70,6 +73,7 @@ def main():
         dest=args.destination/"FortniteGame"/"Content"/requested
         dest.parent.mkdir(parents=True,exist_ok=True)
         dest.write_bytes(payload)
+        spans.setdefault(archive,[]).append((offset,stored+53))
         record_out={"path":str(dest),"original_pak":archive,"archived_name":internal,
                     "size":len(payload),"sha1":digest.hex()}
         report.append(record_out)
@@ -77,6 +81,31 @@ def main():
     args.destination.mkdir(parents=True,exist_ok=True)
     (args.destination/"verified-541-source-manifest.json").write_text(json.dumps(report,indent=2))
     print(f"ORIGINAL_541_REMOTE_SOURCE_CLOSURE authenticated_archives={len(authentic)} verified_files={len(report)} original_bytes={sum(i['size'] for i in report)}",flush=True)
+    if args.sparse_retail_paks:
+        # Reproduce the retail PAK logical size, original encrypted index,
+        # footer and authenticated source entry spans. Every other offset
+        # remains a hole in a sparse file; no full PAK is downloaded.
+        args.sparse_retail_paks.mkdir(parents=True,exist_ok=True)
+        for archive,offsets in spans.items():
+            name,size,status=head(archive)
+            if size is None:
+                raise RuntimeError(f"original source archive {archive} missing: {status}")
+            url=f"{BASE}/{archive}"
+            footer=ranged(url,size-61,61)
+            index_at,index_size=struct.unpack_from("<QQ",footer,25)
+            encrypted_index=ranged(url,index_at,index_size)
+            output=args.sparse_retail_paks/archive
+            with output.open("w+b") as out:
+                out.truncate(size)
+                out.seek(index_at)
+                out.write(encrypted_index)
+                out.seek(size-61)
+                out.write(footer)
+                for source_offset,span_size in sorted(set(offsets)):
+                    out.seek(source_offset)
+                    out.write(ranged(url,source_offset,span_size))
+            print(f"ORIGINAL_541_SPARSE_SOURCE_ARCHIVE_VERIFIED archive={archive} logical_bytes={size} exact_entry_spans={len(set(offsets))}",flush=True)
+        print(f"ORIGINAL_541_SPARSE_RETAIL_PAK_CENSUS archived_files={len(spans)} validated_original_source_entries={sum(len(set(v)) for v in spans.values())}",flush=True)
     if not report:
         raise RuntimeError("no missing source assets retrieved")
 if __name__=="__main__":
