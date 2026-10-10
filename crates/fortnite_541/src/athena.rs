@@ -8,6 +8,8 @@ use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path};
 #[derive(Debug)]
 pub struct AthenaTerrain {
     pub patches: Vec<terrain::LocalTerrainPatch>,
+    /// Original root scene component transform agreed across all six sources.
+    pub world_transform: landscape::LandscapeWorldTransform,
     pub shared_height_samples: usize,
     pub source_material_paths: BTreeSet<String>,
     pub source_grid_min: [i32; 2],
@@ -45,6 +47,8 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
     let mut seam=terrain::LandscapeSeamAudit::default();
     let mut occupied=BTreeSet::new();
     let mut source_material_paths=BTreeSet::new();
+    let mut shared_world_transform: Option<landscape::LandscapeWorldTransform>=None;
+    let mut confirmed_root_transforms=0usize;
     let mut min=[i32::MAX;2];
     let mut max=[i32::MIN;2];
     for section in 0..6 {
@@ -63,6 +67,13 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
             if catalog.export_class_name(export)!=Some("LandscapeStreamingProxy"){continue;}
             let raw=catalog.export_data(&package,&uexp,export)?;
             let proxy=landscape::inspect_proxy(&catalog,raw)?;
+            let transform=landscape::proxy_world_transform(&catalog,&package,&uexp,&proxy)?;
+            if let Some(prior)=shared_world_transform {
+                prior.verify_same_world(transform)?;
+            } else {
+                shared_world_transform=Some(transform);
+            }
+            confirmed_root_transforms+=1;
             if let Ok(path)=catalog.source_object_path(proxy.material_ref){
                 source_material_paths.insert(path);
             }
@@ -114,6 +125,10 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
             return Err(format!("Athena LS_{section:02} contains no source LandscapeComponent exports"));
         }
     }
+    if confirmed_root_transforms!=6 {
+        return Err(format!("Fortnite 5.41 Athena needs six verified source landscape root transforms, got {confirmed_root_transforms}"));
+    }
+    let world_transform=shared_world_transform.ok_or("Athena has no source-authenticated world transform")?;
     if seam.mismatched_shared_samples!=0 {
         return Err(format!("Athena heightfield seams disagree: {} different samples, first {:?}",seam.mismatched_shared_samples,seam.mismatches.first()));
     }
@@ -123,7 +138,7 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
         return Err(format!("Athena terrain is incomplete: decoded {} of the 94 original source components",patches.len()));
     }
     Ok(AthenaTerrain {
-        patches,shared_height_samples:seam.matching_shared_samples,
+        patches,world_transform,shared_height_samples:seam.matching_shared_samples,
         source_material_paths,source_grid_min:min,source_grid_max:max,
     })
 }
@@ -143,7 +158,9 @@ mod tests{
                 section_base:[10,20],component_size_quads:1,
                 vertices_source_xyz:vec![[10.,20.,3.],[11.,20.,4.],[10.,21.,5.],[11.,21.,6.]],
                 height_samples:vec![0;4],indices:vec![0,2,1,1,2,3],
-            }],shared_height_samples:0,source_material_paths:BTreeSet::new(),
+            }],world_transform:landscape::LandscapeWorldTransform {
+                grid_origin_cm:[0.;3],local_scale_cm:[100.;3],
+            },shared_height_samples:0,source_material_paths:BTreeSet::new(),
             source_grid_min:[10,20],source_grid_max:[11,21],
         };
         let p=t.preview_spawn_source_xyz().unwrap();
