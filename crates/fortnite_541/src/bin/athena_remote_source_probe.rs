@@ -25,6 +25,13 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
             .map(String::as_str).unwrap_or("<invalid>");
         let raw=cat.export_data(&uasset,&uexp,export)?;
         println!("AUTHENTICATED_FORTNITE_ASSET_EXPORT package={path} ordinal={} class={class} name={name} bytes={}",ordinal+1,raw.len());
+        if matches!(class,"TextureCube") {
+            let tagged=properties::scan(&cat,raw)?;
+            let cooked=raw.get(tagged.bytes_consumed..).ok_or("source cubemap has no cooked bytes")?;
+            let candidates=["PF_DXT1","PF_DXT5","PF_BC6H","PF_BC7","PF_FloatRGBA","PF_A32B32G32R32F"];
+            let hits=candidates.iter().filter(|candidate|cooked.windows(candidate.len()).any(|bytes|bytes==candidate.as_bytes())).collect::<Vec<_>>();
+            println!("AUTHENTICATED_FORTNITE_CUBEMAP package={path} name={name} cooked_len={} format_hits={hits:?} first_bytes={:02x?}",cooked.len(),&cooked[..cooked.len().min(128)]);
+        }
         if matches!(class,"Texture2D") {
             let props=properties::scan(&cat,raw)?;
             let cooked=raw.get(props.bytes_consumed..).ok_or("missing cooked platform data")?;
@@ -44,7 +51,7 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
         // A source BlueprintGeneratedClass export is a compiled metadata
         // structure; the source lighting values may be in the CDO object,
         // which is inspected by its original tagged properties, never guessed.
-        if !matches!(class,"BlueprintGeneratedClass"|"FortWorldSettings"|"StaticMesh"|"FortTimeOfDayManager"|"SceneComponent"|"DirectionalLightComponent"|"SkyLightComponent"|"ExponentialHeightFogComponent")
+        if !matches!(class,"BlueprintGeneratedClass"|"FortWorldSettings"|"StaticMesh"|"TextureCube"|"MaterialInstanceConstant"|"MaterialInstance"|"FortTimeOfDayManager"|"SceneComponent"|"DirectionalLightComponent"|"SkyLightComponent"|"ExponentialHeightFogComponent")
             &&!name.starts_with("Default__")
             &&!class.to_ascii_lowercase().contains("tod")
             &&!name.to_ascii_lowercase().contains("sky") {continue;}
@@ -132,6 +139,22 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
 fn run()->Result<(),String>{
     let root=PathBuf::from(env::args_os().nth(1).ok_or("usage: athena_remote_source_probe VERIFIED_REMOTE_SOURCE_ROOT")?);
     for path in TARGETS{inspect(&root,path)?;}
+    let additional=[
+        "Athena/Prototype/Terrain/LF_AthenaClouds_Inst",
+        "Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight",
+        "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Morn_M_SkyDome_Inst_Basic01",
+        "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Day_M_SkyDome_Inst_Basic01",
+        "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Eve_M_SkyDome_Inst_Basic01",
+        "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01",
+    ];
+    for path in additional{
+        let base=root.join("FortniteGame/Content").join(path);
+        if base.with_extension("uasset").exists() &&base.with_extension("uexp").exists(){
+            inspect(&root,path)?;
+        }else{
+            println!("AUTHENTICATED_FORTNITE_OPTIONAL_SOURCE_UNAVAILABLE {path}");
+        }
+    }
     Ok(())
 }
 fn main()->ExitCode{
