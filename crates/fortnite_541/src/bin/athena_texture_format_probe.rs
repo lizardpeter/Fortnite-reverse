@@ -51,6 +51,26 @@ fn inspect(base:&Path,graph_sum:&mut usize,types:&mut BTreeMap<String,usize>,dep
         for token in ["PF_B8G8R8A8","PF_DXT1","PF_DXT5","PF_BC4","PF_BC5","PF_BC6H","PF_BC7","PF_G8","PF_FloatRGBA","PF_A8","PF_R8G8B8A8"] {
             if fmt.contains(token){format_hits.push(token);}
         }
+        let bulk=base.with_extension("ubulk");
+        if let Ok(source_bulk)=fs::read(&bulk){
+            println!("ATHENA_TEXTURE_BULK package={} source_bytes={} initial={:02x?}",
+                base.display(),source_bulk.len(),&source_bulk[..source_bulk.len().min(32)]);
+        }
+        // Inspect the source FByteBulkData header fingerprints, not guessed
+        // mip positions. A full original format decoder must prove sizes.
+        for off in 0..cooked.len().saturating_sub(32) {
+            if u32::from_le_bytes(cooked[off..off+4].try_into().unwrap())!=0x501{continue;}
+            let stored=u32::from_le_bytes(cooked[off+4..off+8].try_into().unwrap());
+            let count=u32::from_le_bytes(cooked[off+8..off+12].try_into().unwrap());
+            let offset=i64::from_le_bytes(cooked[off+12..off+20].try_into().unwrap());
+            let w=u32::from_le_bytes(cooked[off+20..off+24].try_into().unwrap());
+            let h=u32::from_le_bytes(cooked[off+24..off+28].try_into().unwrap());
+            let d=u32::from_le_bytes(cooked[off+28..off+32].try_into().unwrap());
+            if w<=8192&&h<=8192&&w>0&&h>0&&d<=8 {
+                println!("ATHENA_ORIGINAL_MIP package={} cooked_offset={off} stored={stored} count={count} signed_bulk_offset={offset} mip_width={w} mip_height={h} mip_depth={d}",
+                    base.display());
+            }
+        }
         println!("ATHENA_SOURCE_TEXTURE_HEADER package={} export={} tagged_properties={:?} first_cooked_bytes={:02x?} format_hits={format_hits:?} cooked_bytes={} has_ubulk={}",
             base.display(),idx+1,tagged.fields.iter().map(|p|(p.name.clone(),p.kind.clone())).collect::<Vec<_>>(),
             &cooked[..cooked.len().min(112)],cooked.len(),base.with_extension("ubulk").is_file());
