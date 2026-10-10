@@ -113,7 +113,7 @@ def main():
                 print(f"REMOTE_FORTNITE_FUZZY archive={name} fragment={fragment} count={len(hits)} samples={hits[:12]}",flush=True)
             for target in TARGETS:
                 matches=[(path,record) for path,record in entries.items()
-                         if path.replace("\\","/").endswith(target)]
+                         if path.replace("\\","/").lstrip("/").endswith(target.lstrip("/"))]
                 for path,record in matches:
                     print(f"REMOTE_FORTNITE_ORIGINAL_DEPENDENCY archive={name} source_path={path} offset={record[0]} unpacked={record[2]} compression={record[3]} encrypted={record[5]}",flush=True)
             print(f"REMOTE_FORTNITE_TARGET_CENSUS archive={name} matched_entries={sum(1 for path in entries if any(path.replace(chr(92),'/').endswith(t) for t in TARGETS))}",flush=True)
