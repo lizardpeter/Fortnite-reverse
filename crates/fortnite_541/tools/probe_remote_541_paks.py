@@ -24,6 +24,18 @@ TARGETS = [
     "/ContentCreationTools/TextureCreation/Textures/T_BPCreated_MacroNormal_01.uexp",
     "/Environments/AutumnDecay/Terrain/Textures/T_Grass_AD_D.uasset",
     "/Environments/AutumnDecay/Terrain/Textures/T_Grass_AD_D.uexp",
+    "/Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight.uasset",
+    "/Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight.uexp",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Morn_M_SkyDome_Inst_Basic01.uasset",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Morn_M_SkyDome_Inst_Basic01.uexp",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Day_M_SkyDome_Inst_Basic01.uasset",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Day_M_SkyDome_Inst_Basic01.uexp",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Eve_M_SkyDome_Inst_Basic01.uasset",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Eve_M_SkyDome_Inst_Basic01.uexp",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01.uasset",
+    "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01.uexp",
+    "/Athena/Prototype/Terrain/LF_AthenaClouds_Inst.uasset",
+    "/Athena/Prototype/Terrain/LF_AthenaClouds_Inst.uexp",
 ]
 def curl(args: list[str], *, timeout: int=30) -> bytes:
     p=subprocess.run(["curl","--silent","--show-error","--location",
