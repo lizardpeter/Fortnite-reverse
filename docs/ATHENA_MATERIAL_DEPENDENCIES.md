@@ -95,3 +95,24 @@ Remote extraction **passed** in the public GitHub runner: **10 SHA-1-verified or
 The source `TODM_BR` package contains 23 original exports, including the `TODM_BR_C` default object, a `DirectionalLightComponent`, a `SkyLightComponent` referencing `/Game/Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight`, an `ExponentialHeightFogComponent`, four `LightAndFogPhaseSettings` source `DayPhaseInfo` fields, and morning/day/evening/night post-process components. Original `T_BPCreated_MacroNormal_01` is **PF_BC5** and original `T_Grass_AD_D` is **PF_DXT5 / BC3**, 2048×2048 top mip, 4,194,304 compressed bytes. These source facts were verified by `athena_remote_source_probe` in [passing remote-runner test](https://github.com/lizardpeter/destiny-1/actions/runs/38093882777).
 
 **Important boundary:** source asset extraction and property parsing do not themselves mean original lighting or material shaders are executing in the game. The next steps are decoding TODM `DayPhaseInfo` nested structures, the skylight cubemap, skybox static mesh payload, and the original material-function dependency graph into the shared `NeutralScene`/`SurfaceProgram` renderer. There is no reason to ask the user to do the discovery, index scan, or decoding locally.
+
+## Expanded source closure — authored sky materials and daylight environment
+
+Continuing entirely in public GitHub runners, the authenticated seven-PAK R2 scanner recovered **22** original files (**6,688,933** source bytes). Added to the previously verified TODM, mountain skybox mesh and missing grass/macro-normal textures:
+
+- `T_AthenaSkylight` (`TextureCube`, `PF_DXT5`) from `pakchunk0_s4-WindowsClient.pak`. Unlike the terrain Texture2D top mip this is a **cube** with its own cooked layout; its faces and mip chain must be decoded before assigning as an environment probe.
+- The original **morning, daytime, evening and nighttime** `SkyDomeBasic01` material instances from `pakchunk0_s4-WindowsClient.pak`. The daytime instance inherits from the morning instance and carries **11 scalar** and **7 vector** parameter records that must be decoded and applied to the shared shader path.
+- The source cloud-light-function material instance `LF_AthenaClouds_Inst` from the original main PAK.
+
+The `TODM_BR_C` original blueprint default object contains four tagged `DayPhaseInfo` records. Authenticated nested-property decoding recovered these authored values:
+
+| Phase | Source phase begins (hours) | Source directional brightness | Source skylight color (linear RGBA) | Source fog density |
+| --- | ---: | ---: | --- | ---: |
+| Morning | 3 | 3.5 | (1.000000, 0.634080, 0.663958, 0.70) | 0.004 |
+| Day | 7 | 3.0 | (0.611440, 0.780079, 1.100000, 0.80) | 0.004 |
+| Evening | inherited/unspecified in this record | 3.5 | (1.000000, 0.560073, 0.530209, 0.80) | 0.003 |
+| Night | inherited/unspecified in this record | 8.0 | (0.580000, 0.699150, 1.000000, 0.75) | 0.009 |
+
+Night has its own directional-light parameters; do not interpret its brightness as daytime sunlight. The original phase structs additionally include ExponentialHeightFogValues, directional inscattering colors, sky materials, post-process components and transition durations. Fields absent from source instances must be resolved against Unreal class defaults / base asset, not assumed zero. The dynamic sun position is not yet reconstructed, and the engine has not yet admitted these settings as actual scene lighting.
+
+Verification: [public remote source scan and original-authored phase property tests](https://github.com/lizardpeter/destiny-1/actions/runs/38094052567) and [sky material / original cube scan](https://github.com/lizardpeter/destiny-1/actions/runs/38094235839). No Windows-local archive discovery commands are required.
