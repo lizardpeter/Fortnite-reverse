@@ -80,6 +80,28 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
                 },
                 _=>format!("payload_bytes={} prefix={:02x?}",data.len(),&data[..data.len().min(16)]),
             };
+            if field.name=="LightAndFogPhaseSettings" && field.kind=="StructProperty" {
+                let phase=properties::scan(&cat,data)?;
+                println!("AUTHORED_FORTNITE_TODM_PHASE source_slot={} source_fields={} source_bytes={}",
+                    field.array_index,phase.fields.len(),data.len());
+                for p in &phase.fields {
+                    let b=&data[p.payload.clone()];
+                    let value=match (p.kind.as_str(),b.len()) {
+                        ("FloatProperty",4)=>format!("f32={}",f32::from_le_bytes(b.try_into().unwrap())),
+                        ("BoolProperty",0)=>format!("bool_tag={:?}",p.metadata),
+                        ("StructProperty",16)=>format!("float4={:?}",(0..4).map(|k|
+                            f32::from_le_bytes(b[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>()),
+                        ("StructProperty",12)=>format!("float3={:?}",(0..3).map(|k|
+                            f32::from_le_bytes(b[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>()),
+                        ("ObjectProperty",4)=>{
+                            let id=i32::from_le_bytes(b.try_into().unwrap());
+                            format!("reference={:?}",cat.source_object_path(id))
+                        },
+                        _=>format!("source_bytes={}",b.len()),
+                    };
+                    println!("AUTHORED_FORTNITE_TODM_PHASE_PROPERTY slot={} name={} kind={} meta={:?} {value}",field.array_index,p.name,p.kind,p.metadata);
+                }
+            }
             println!("AUTHENTICATED_FORTNITE_ASSET_FIELD package={path} object={name} class={class} property={} kind={} metadata={:?} {repr}",
                 field.name,field.kind,field.metadata);
         }
