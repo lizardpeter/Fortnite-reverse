@@ -7,6 +7,7 @@ pub mod uobject;
 pub mod properties;
 pub mod landscape;
 pub mod weightmap;
+pub mod material_extract;
 pub mod texture;
 pub mod terrain;
 pub mod material;
