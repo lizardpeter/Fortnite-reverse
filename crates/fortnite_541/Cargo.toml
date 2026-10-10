@@ -1,0 +1,13 @@
+[package]
+name = "fortnite-541-importer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+sha1 = "0.10"
+aes = "0.8"
+
+[[bin]]
+name = "fortnite_541_audit"
+path = "src/bin/audit.rs"
