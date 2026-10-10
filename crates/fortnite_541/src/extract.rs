@@ -209,7 +209,7 @@ const ORIGINAL_ENVIRONMENT_ARCHIVES:[(&str,&str,&[(&str,&[&str])]);4]=[
        ("Environments/AutumnDecay/Terrain/Textures/T_Grass_AD_D",&[".uasset",".uexp",".ubulk"]),
      ]),
     ("pakchunk0_s3-WindowsClient.pak",
-     "27376dab8f8a3488d0d2b5332a2da7d28fd73e",
+     "27376dab8f8a3488d0d2b5332a2a2da7d28fd73e",
      &[("Environments/World/Backgrounds/Transylvania/Meshes/TRV_Skybox_Mountain_04",&[".uasset",".uexp"])]),
     ("pakchunk0_s4-WindowsClient.pak",
      "96a67f9eae257051576e368fdb61a6fb78b2f56a",
