@@ -12,7 +12,7 @@ fn run()->Result<(),String>{
             .join("FortniteGame/Content/Paks/pakchunk0-WindowsClient.pak")
     };
     let source=if let Some(arg)=args.next(){PathBuf::from(arg)}else{
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("work/athena/source")
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../work/fortnite_541/athena/source")
     };
     let result=material_extract::prepare_original_athena_materials(&archive,&source)?;
     println!("ATHENA_EXTRACTED_ORIGINAL_MATERIAL_SOURCES packages={} authenticated_files={} newly_written={} bytes={} expression_nodes={} missing_or_unhandled_packages={:?} other_engine_dependencies={:?}",
