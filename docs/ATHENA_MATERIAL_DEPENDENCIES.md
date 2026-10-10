@@ -44,3 +44,25 @@ Verification: [public original-source dependency census](https://github.com/liza
 4. Verify source fidelity in the Windows native Vulkan game and capture before/after. This work does **not** claim original sky, buildings, foliage, water or lighting are ready.
 
 No invented colors, lighting, material approximations, or undocumented input-latency changes are part of this work.
+
+
+## 2026-10-10 — Original texture and shader graph closure
+
+**[Rust-test PR #185](https://github.com/lizardpeter/Rust-test/pull/185)** restored authenticated highest-resolution BC material texture payloads through the generic NeutralTexture bridge, with no Fortnite-specific Vulkan path:
+
+- `T_Athena_Terrain_CombinedColors_01`: original 2048×2048 BC1/DXT1, 2,097,152 exact compressed bytes
+- `T_Athena_Terrain_Topo_Mask`: original 2048×2048 BC3/DXT5, 4,194,304 exact compressed bytes
+- Both original top mips have a source-authenticated external `.ubulk` offset of 0; both converted successfully into the shared `NeutralTexture` representation in [real-source CI](https://github.com/lizardpeter/destiny-1/actions/runs/38092177045)
+- The original sources are NOT yet bound to terrain because their source-authored sampler UV/function mapping remains incomplete; no shader rendering parity is claimed
+
+The staged original material extractor also recovered **28 source packages, 58 authenticated files, 8,972,533 bytes, and 459 original expression nodes**, retaining explicitly deferred transitive dependencies instead of fabricating them.
+
+**[Rust-test PR #186](https://github.com/lizardpeter/Rust-test/pull/186)** decoded all **4 original MaterialExpressionLandscapeLayerBlend nodes and 20 nested layer records**. Each is an authenticated 379-byte tagged UE4.21 `LandscapeLayerBlendInput`, following the source 49-byte array tag. The source AST preserves LayerName, ELandscapeLayerBlendType, 40-byte FExpressionInput links, constant color, constant height, and preview weights. **19** source operators are `LB_WeightBlend` and **1** is `LB_HeightBlend`, with five author-layer names repeated across four operators: Grass_Only, Grass_Topology, Arid, Farm_Grass, Mountain_Grass. [Public CI #38092482055](https://github.com/lizardpeter/destiny-1/actions/runs/38092482055) passed 30 unit tests and the real retail source graph check. Typed AST data is NOT yet an executable original SurfaceProgram.
+
+## 2026-10-10 — Original sky and time-of-day identity
+
+The original Athena_Terrain.umap FortWorldSettings.WorldTimeOfDayManager source `SoftObjectPath` resolves to `/Game/TimeOfDay/TODM/BR/TODM_BR.TODM_BR_C`. The original Athena_Background.umap places `TRV_Skybox_Mountain_04` static mesh actors with source position, rotation and scale; the original main Athena map also has 429 FortHLODSMActor and 459 StaticMeshComponent exports.
+
+The TODM_BR and TRV_Skybox_Mountain_04 source package pairs are **not in the single main pakchunk0-WindowsClient.pak**, so their original sun/sky data cannot be reconstructed from that archive alone. The new local `athena_locate_retail_sources` tool searches the other original operator-owned PAK indexes, and also targets the two missing master material textures. No source-unproven sunlight/skybox workaround was added.
+
+Remaining: full transitive material function closure, native shader program lowering, original sky/time-of-day asset decoding, authentic structures and vegetation/water/lighting. Full Windows GPU visual parity remains unverified.
