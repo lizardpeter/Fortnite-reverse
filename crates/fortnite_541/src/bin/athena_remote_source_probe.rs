@@ -35,7 +35,7 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
             println!("AUTHENTICATED_FORTNITE_TEXTURE package={path} format={found:?} source_header_bytes={:02x?} has_bulk={}",
                 &cooked[..cooked.len().min(110)],base.with_extension("ubulk").is_file());
             if found.iter().any(|s|s=="PF_DXT1"||s=="PF_DXT5"){
-                let bulk=fs::read(base.with_extension("ubulk"))?;
+                let bulk=fs::read(base.with_extension("ubulk")).map_err(|e|format!("original source texture external bulk: {e}"))?;
                 let mip=texture::first_mip_bc(&cat,&uasset,&uexp,&bulk,export)?;
                 println!("AUTHENTICATED_FORTNITE_TEXTURE_TOP_MIP package={path} fmt={:?} {}x{} bytes={} offset={}",
                     mip.format,mip.width,mip.height,mip.blocks.len(),mip.source_bulk_offset);
