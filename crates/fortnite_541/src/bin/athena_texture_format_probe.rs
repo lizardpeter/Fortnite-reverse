@@ -1,7 +1,7 @@
 //! Source-only material/function and texture format discovery, sourced from
 //! the verified master-material direct dependencies. Not a shader emulator.
 use std::{collections::{BTreeMap,BTreeSet},env,fs,path::{Path,PathBuf},process::ExitCode};
-use fortnite_541_importer::{material,properties,uobject};
+use fortnite_541_importer::{material,properties,uobject,texture};
 const DIRECT:&[&str]=&[
     "Athena/Environments/Landscape/MPC/MPC_Landscape",
     "Athena/Environments/Landscape/MaterialFunctions/Arid/MF_Athena_Arid_Rock",
@@ -55,6 +55,13 @@ fn inspect(base:&Path,graph_sum:&mut usize,types:&mut BTreeMap<String,usize>,dep
         if let Ok(source_bulk)=fs::read(&bulk){
             println!("ATHENA_TEXTURE_BULK package={} source_bytes={} initial={:02x?}",
                 base.display(),source_bulk.len(),&source_bulk[..source_bulk.len().min(32)]);
+            let mip=texture::first_mip_bc(&cat,&uasset,&uexp,&source_bulk,export)?;
+            if mip.width!=2048||mip.height!=2048||mip.source_bulk_offset!=0{
+                return Err(format!("source original BC mip dimensions/bulk offset changed: {mip:?}"));
+            }
+            println!("ATHENA_SOURCE_BC_MIP_VERIFIED package={} format={:?} {}x{} source_blocks={} source_offset={} first_bytes={:02x?}",
+                base.display(),mip.format,mip.width,mip.height,
+                mip.blocks.len(),mip.source_bulk_offset,&mip.blocks[..16]);
         }
         // Inspect the source FByteBulkData header fingerprints, not guessed
         // mip positions. A full original format decoder must prove sizes.
