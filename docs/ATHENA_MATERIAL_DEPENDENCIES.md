@@ -66,3 +66,32 @@ The original Athena_Terrain.umap FortWorldSettings.WorldTimeOfDayManager source 
 The TODM_BR and TRV_Skybox_Mountain_04 source package pairs are **not in the single main pakchunk0-WindowsClient.pak**, so their original sun/sky data cannot be reconstructed from that archive alone. The new local `athena_locate_retail_sources` tool searches the other original operator-owned PAK indexes, and also targets the two missing master material textures. No source-unproven sunlight/skybox workaround was added.
 
 Remaining: full transitive material function closure, native shader program lowering, original sky/time-of-day asset decoding, authentic structures and vegetation/water/lighting. Full Windows GPU visual parity remains unverified.
+
+## 2026-10-10 — All missing direct source files recovered remotely
+
+The previous statement that TODM_BR, the mountain skybox mesh, and two missing terrain textures could not be accessed without a local Windows command is obsolete. A public GitHub runner independently examined **89 candidate names**, found **7 actual public R2 retail Fortnite 5.41 WindowsClient PAKs**, and validated each encrypted UE4 v7 archive index against its original source SHA-1 checksum:
+
+| Authenticated original archive | Original content index SHA-1 |
+| --- | --- |
+| `pakchunk0-WindowsClient.pak` | `fd1f4623c812f5fff47298f99cc3d0d8f2d0f11b` |
+| `pakchunk0_s1-WindowsClient.pak` | `a37147494190b90c420b852d69740402f93f6103` |
+| `pakchunk0_s2-WindowsClient.pak` | `42a45eee280ab70abbb5192b33a5945c119bd82c` |
+| `pakchunk0_s3-WindowsClient.pak` | `27376dab8f8a3488d0d2b5332a2a2da7d28fd73e` |
+| `pakchunk0_s4-WindowsClient.pak` | `96a67f9eae257051576e368fdb61a6fb78b2f56a` |
+| `pakchunk1-WindowsClient.pak` | `b6b32c94f36c35a528d186bcb4a6b5f9bd89255f` |
+| `pakchunk1_s1-WindowsClient.pak` | `f0aab02bece3410400e32f29bd92e13577a4109d` |
+
+The original PAK **mount points are different**: split PAK index records can begin with `TimeOfDay/...`, `Environments/...` or `ContentCreationTools/...` rather than `FortniteGame/Content/...`. A previous scanner incorrectly required the fully qualified path and returned false missing results. The new public-R2 tools normalize mount-relative target paths before matching, then verify PAK-entry header, indexed source SHA-1 and payload SHA-1 before extracting anything. It does not download whole multi-gigabyte archives.
+
+| Original source package | Exact original archive |
+| --- | --- |
+| `TimeOfDay/TODM/BR/TODM_BR` | `pakchunk0_s4-WindowsClient.pak` |
+| `Environments/World/Backgrounds/Transylvania/Meshes/TRV_Skybox_Mountain_04` | `pakchunk0_s3-WindowsClient.pak` |
+| `ContentCreationTools/TextureCreation/Textures/T_BPCreated_MacroNormal_01` | `pakchunk0_s2-WindowsClient.pak` |
+| `Environments/AutumnDecay/Terrain/Textures/T_Grass_AD_D` | `pakchunk0_s2-WindowsClient.pak` |
+
+Remote extraction **passed** in the public GitHub runner: **10 SHA-1-verified original files totaling 6,128,155 bytes** (`.uasset`, `.uexp`, and `.ubulk` where source files exist). [Public test run](https://github.com/lizardpeter/destiny-1/actions/runs/38093882777). The original data stays in temporary runner files, not Git; the public `fetch_remote_541_dependencies.py` utility reproduces the authenticated extraction without user-local steps.
+
+The source `TODM_BR` package contains 23 original exports, including the `TODM_BR_C` default object, a `DirectionalLightComponent`, a `SkyLightComponent` referencing `/Game/Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight`, an `ExponentialHeightFogComponent`, four `LightAndFogPhaseSettings` source `DayPhaseInfo` fields, and morning/day/evening/night post-process components. Original `T_BPCreated_MacroNormal_01` is **PF_BC5** and original `T_Grass_AD_D` is **PF_DXT5 / BC3**, 2048×2048 top mip, 4,194,304 compressed bytes. These source facts were verified by `athena_remote_source_probe` in [passing remote-runner test](https://github.com/lizardpeter/destiny-1/actions/runs/38093882777).
+
+**Important boundary:** source asset extraction and property parsing do not themselves mean original lighting or material shaders are executing in the game. The next steps are decoding TODM `DayPhaseInfo` nested structures, the skylight cubemap, skybox static mesh payload, and the original material-function dependency graph into the shared `NeutralScene`/`SurfaceProgram` renderer. There is no reason to ask the user to do the discovery, index scan, or decoding locally.
