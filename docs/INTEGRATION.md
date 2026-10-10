@@ -54,3 +54,22 @@ python3 crates/fortnite_541/tools/fetch_athena_541.py --all-landscape --with-ter
 ```
 
 Use the `landscape_catalog`, `material_catalog` and `athena_probe` diagnostics to ground each parser addition. Preserve per-source variant encodings and source-provenance evidence. Fail loudly on unsupported records instead of manufacturing plausible world data.
+
+
+## 2026-10-10 runtime failure and verified fix
+
+An actual Windows Rust-test host session successfully opened the local original PAK, authenticated/extracted all 24 source files, imported 94 Athena landscape components, and installed all 3,032,252 collision triangles, but failed during native Vulkan scene creation:
+
+```text
+native Vulkan scene creation failed:
+native render settings for 'fortnite_541_athena_terrain_preview' contain out-of-range values
+```
+
+**Exact source-level cause:** the Fortnite diagnostic scene's `BridgeOptions.shadow_distance` was `0.0`, but `NativeRenderSettings::validate` requires the shadow distance to be strictly **positive**. The corrected value is `120.0` (shared engine default), without inventing any source sunlight or rendering Fortnite-specific shadows. Validation now explicitly identifies an invalid `shadow_distance` field.
+
+**Host menu fix:** Fortnite's isolated importer already existed, but `frontend_ui::generated_map_group()` previously routed the `fortnite_` prefix to `OTHER IMPORTS`. It now routes Fortnite to its own `FORTNITE` top-level source tab, with `VERSION` / `MAP` navigation. Folder-backed `fortnite_` maps and the `fortnite_541` required provider are routed there too.
+
+- [Merged Rust-test PR #179](https://github.com/lizardpeter/Rust-test/pull/179) — Vulkan setting fix, menu group, and regression tests.
+- [Public validation](https://github.com/lizardpeter/destiny-1/actions/runs/38086940173) — standalone parser, actual copied application importer, native render settings validator and 24 original authenticated PAK entries / 94 heightfield mesh neutral scene. Full Windows Vulkan frame **still requires confirmation** following the fix.
+
+**No local path/environment change is necessary:** the logs confirmed original retail content under `C:\Users\dgera\Downloads\5.41\5.41` was auto-discovered and extracted successfully.
