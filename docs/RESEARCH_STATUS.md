@@ -54,3 +54,22 @@ Source-level parsing currently identifies **117 direct `FExpressionInput` links*
 5. Optimize memory usage and scene streaming/LOD on the generic engine path only after fidelity is proven; never degrade the existing low-latency input and frame scheduling features.
 
 All new factual claims should include their exact asset path + hash, source parser code, commit and test run, or remain explicitly *unverified*.
+
+
+## 2026-10-10 — actual Windows screenshot: terrain scale distortion diagnosed and fixed
+
+An actual Windows Vulkan session displayed the Fortnite terrain with excessively narrow, steep ridges, gray ground, no sky and almost black viewmodel. The log confirmed the Athena scene had launched with all **94** original terrain components and **3,032,252** triangles, but still used diagnostic, unlit grayscale and zero original world lights or sky.
+
+The source authenticated, separately decoded proxy root components establish that our earlier assumption of one metre per landscape grid point and one metre per source-local height unit was **incorrect**. All six original `LandscapeStreamingProxy.RootComponent` objects have:
+- `RelativeScale3D = [200.7874, 200.7874, 50.0]` (Unreal source world centimetre units per authored local unit).
+- Distinct `RelativeLocation` XYZ values per streaming section.
+- When each `LandscapeSectionOffset` is resolved, the six roots agree on one global origin in source UE centimetres: `[-153000.0, -153000.0, -1692.0]`.
+
+The correct transform maps original heightfield grid XYZ to original UE world metres using
+`world_cm = [-153000, -153000, -1692] + local_xyz * [200.7874,200.7874,50.0]`, followed by `*0.01`. The source-neutral renderer converts UE XYZ (Z-up) to engine XZY with Y-up and the appropriate axis sign. This is a source-authored **3,060 × 3,060 metre** horizontal landscape instead of the incorrect **1,524 × 1,524 metre** preview. Vertical scale relative to horizontal is approximately one quarter of the previous preview. The proper source-center ground spawn is `[0,28.583124,-0]` in engine Y-up metres (including 1.8m viewing height).
+
+This is now implemented in [Rust-test PR #181](https://github.com/lizardpeter/Rust-test/pull/181), together with normal and collision transformations and source fail-closed transform validation. Independent [passing public real-retail check](https://github.com/lizardpeter/destiny-1/actions/runs/38088596013) reported exact horizontal bounds `[-1530,1530]` in both X/Z, elevation `[-140.7989,111.07609]` metres, **27/27** decoder tests, the real game adapter, and unchanged exact collision triangle census. A Windows Vulkan screenshot following the new commit is still required for visual confirmation.
+
+The same original packages contain **208** landscape weightmap texture references and **669** source-authored `WeightmapLayerAllocations` records across 94 components; first source weightmap mips use authenticated `PF_B8G8R8A8`. `athena_surface_probe` in this repository inspects them, along with original root properties and raw height-slope distribution. Packed layer allocations are **UE4 tagged StructProperty arrays** with variable payload sizes; decoding their actual per-layer names/channel mappings and resolving terrain material functions remains outstanding.
+
+**Critical status:** this correction repairs world geometry/collision/spawn scale. It does **not** make the preview Fortnite-textured, supply authored sun or sky, load building actors or restore original graphical fidelity. Those need their original source data and SurfaceProgram semantics, not synthetic placeholder colors.
