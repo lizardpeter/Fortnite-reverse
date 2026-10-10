@@ -15,9 +15,10 @@ fn inspect(path:&PathBuf)->Result<(),String>{
         *census.entry(class.to_owned()).or_default()+=1;
         let name=cat.names.get(ex.object_name.name_index as usize).map(String::as_str).unwrap_or("<bad-name>");
         let category=class.to_ascii_lowercase();
-        let name_lower=name.to_ascii_lowercase();
+        let source_path=cat.source_object_path((ordinal+1) as i32).unwrap_or_default();
+        let name_lower=format!("{name} {source_path}").to_ascii_lowercase();
         let relevant=["light","sun","sky","fog","atmosphere","reflection","postprocess","cloud","weather","worldsettings",
-            "exponential","colorgrading","skylight","directional","ambient","timeofday"]
+            "exponential","colorgrading","skylight","directional","ambient","timeofday","levelstreaming","worldmanager"]
             .iter().any(|k|category.contains(k)||name_lower.contains(k));
         if relevant{
             total+=1;
@@ -36,6 +37,15 @@ fn inspect(path:&PathBuf)->Result<(),String>{
                             format!("f32xyz={:?}",(0..3).map(|k|f32::from_le_bytes(bytes[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>())
                         } else if field.kind=="StructProperty" &&bytes.len()==16{
                             format!("f32xyzw={:?}",(0..4).map(|k|f32::from_le_bytes(bytes[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>())
+                        } else if field.kind=="SoftObjectProperty" && bytes.len()==12{
+                            let name_id=u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+                            let n=u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+                            let tail=i32::from_le_bytes(bytes[8..12].try_into().unwrap());
+                            format!("SoftObjectPath={:?} FName-number={n} subpath-len={tail}",cat.names.get(name_id))
+                        } else if field.kind=="NameProperty" && bytes.len()==8 {
+                            let name_id=u32::from_le_bytes(bytes[0..4].try_into().unwrap()) as usize;
+                            let n=u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+                            format!("FName={:?} instance={n}",cat.names.get(name_id))
                         } else if field.kind=="BoolProperty"{
                             format!("{:?}",field.metadata)
                         } else {
