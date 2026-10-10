@@ -29,6 +29,38 @@ fn run()->Result<(),String>{
                 let hex=bytes[..width].iter().map(|b|format!("{b:02x}")).collect::<String>();
                 let count=if bytes.len()>=4{Some(u32::from_le_bytes(bytes[..4].try_into().unwrap()))}else{None};
                 println!("AUTHORED_SHADER_NESTED class={name} export={} property={} kind={} meta={:?} bytes={} array_count={count:?} prefix_hex={hex}",i+1,p.name,p.kind,p.metadata,bytes.len());
+                if name=="MaterialExpressionLandscapeLayerBlend" && p.name=="Layers"
+                    && bytes.len()>=53 {
+                    let count=count.unwrap_or(0) as usize;
+                    let inner=bytes.len()-53;
+                    if count!=5 ||inner%count!=0 {
+                        return Err(format!("authored LayerBlend array has unexpected count/length: count={count} inner={inner}"));
+                    }
+                    let chunk=inner/count;
+                    println!("AUTHORED_SHADER_LAYER_RECORD_HEADER export={} count={} inner_tag={:02x?} layer_record_bytes={chunk}",
+                        i+1,count,&bytes[4..53]);
+                    for (slot,part) in bytes[53..].chunks_exact(chunk).enumerate() {
+                        let props=properties::scan(&cat,part)?;
+                        let decoded=props.fields.iter().map(|prop|{
+                            let val=&part[prop.payload.clone()];
+                            let detail=if prop.kind=="NameProperty" &&val.len()==8{
+                                let index=u32::from_le_bytes(val[..4].try_into().unwrap()) as usize;
+                                format!("FName={:?}",cat.names.get(index))
+                            } else if prop.kind=="StructProperty" &&prop.metadata.first().map(String::as_str)==Some("ExpressionInput") && val.len()>=4 {
+                                let id=i32::from_le_bytes(val[..4].try_into().unwrap());
+                                format!("FExpressionInput ref={id} obj={:?}",cat.source_object_path(id))
+                            } else if prop.kind=="FloatProperty" && val.len()==4{
+                                format!("f32={}",f32::from_le_bytes(val.try_into().unwrap()))
+                            } else {
+                                format!("{} bytes",val.len())
+                            };
+                            format!("{}:{}:{:?}:{detail}",prop.name,prop.kind,prop.metadata)
+                        }).collect::<Vec<_>>();
+                        println!("AUTHORED_SHADER_LAYER_RECORD export={} slot={slot} consumed={} total={chunk} props={decoded:?}",
+                            i+1,props.bytes_consumed);
+                        if props.bytes_consumed!=chunk{return Err("source LayerBlend input has trailing bytes".into());}
+                    }
+                }
             }else if p.kind=="ObjectProperty" &&bytes.len()==4{
                 let idx=i32::from_le_bytes(bytes.try_into().unwrap());
                 println!("AUTHORED_SHADER_REF class={name} export={} property={} object_ref={idx} path={:?}",i+1,p.name,cat.source_object_path(idx));
