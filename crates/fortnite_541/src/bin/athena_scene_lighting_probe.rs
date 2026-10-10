@@ -3,8 +3,8 @@
 //! component exports; do not create fallback lights or synthetic skyboxes.
 use std::{collections::BTreeMap,env,fs,path::PathBuf,process::ExitCode};
 use fortnite_541_importer::{properties,uobject};
-fn inspect(path:&PathBuf)->Result<(),String>{
-    let package=fs::read(path.with_extension("umap")).map_err(|e|format!("{}: {e}",path.display()))?;
+fn inspect(path:&PathBuf,extension:&str)->Result<(),String>{
+    let package=fs::read(path.with_extension(extension)).map_err(|e|format!("{}: {e}",path.display()))?;
     let companion=fs::read(path.with_extension("uexp")).map_err(|e|format!("{}: {e}",path.display()))?;
     let cat=uobject::inspect(&package)?;
     let mut census=BTreeMap::<String,usize>::new();
@@ -18,7 +18,7 @@ fn inspect(path:&PathBuf)->Result<(),String>{
         let source_path=cat.source_object_path((ordinal+1) as i32).unwrap_or_default();
         let name_lower=format!("{name} {source_path}").to_ascii_lowercase();
         let relevant=["light","sun","sky","fog","atmosphere","reflection","postprocess","cloud","weather","worldsettings",
-            "exponential","colorgrading","skylight","directional","ambient","timeofday","levelstreaming","worldmanager"]
+            "exponential","colorgrading","skylight","directional","ambient","timeofday","levelstreaming","worldmanager","todm"]
             .iter().any(|k|category.contains(k)||name_lower.contains(k));
         if relevant{
             total+=1;
@@ -72,8 +72,16 @@ fn run()->Result<(),String>{
         "FortniteGame/Content/Athena/Maps/Background/Athena_Background",
         "FortniteGame/Content/Athena/Maps/Streaming/Sublevel_X0Y0",
     ]{
-        inspect(&root.join(path))?;
+        inspect(&root.join(path),"umap")?;
     }
+    let timeofday=root.join("FortniteGame/Content/TimeOfDay/TODM/BR/TODM_BR");
+    if timeofday.with_extension("uasset").is_file(){
+        inspect(&timeofday,"uasset")?;
+    }else{
+        println!("ATHENA_ORIGINAL_TIMEOFDAY_PACKAGE_NOT_PRESENT: {}",timeofday.display());
+    }
+    let grid=root.join("FortniteGame/Content/Athena/Maps/Athena_Streaming_Grid");
+    if grid.with_extension("umap").is_file(){inspect(&grid,"umap")?;}
     Ok(())
 }
 fn main()->ExitCode{match run(){Ok(())=>ExitCode::SUCCESS,Err(e)=>{eprintln!("ATHENA_SCENE_LIGHTING_PROBE_FAILED: {e}");ExitCode::FAILURE}}}
