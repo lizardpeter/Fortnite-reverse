@@ -1,0 +1,31 @@
+name: Fortnite 5.41 source parser checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/fortnite_541/**"
+      - ".github/workflows/parser-check.yml"
+  pull_request:
+    paths:
+      - "crates/fortnite_541/**"
+      - ".github/workflows/parser-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ue4_parser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Rust toolchain
+        run: rustc --version && cargo --version
+      - name: Test standalone retail format parsers (fixtures only)
+        run: cargo test --manifest-path crates/fortnite_541/Cargo.toml --all-targets
+      - name: Check all standalone tools and library targets
+        run: cargo check --manifest-path crates/fortnite_541/Cargo.toml --all-targets
+      - name: Validate Python source-fetch helper syntax
+        run: python3 -m py_compile crates/fortnite_541/tools/fetch_athena_541.py
