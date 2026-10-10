@@ -29,3 +29,13 @@ jobs:
         run: cargo check --manifest-path crates/fortnite_541/Cargo.toml --all-targets
       - name: Validate Python source-fetch helper syntax
         run: python3 -m py_compile crates/fortnite_541/tools/fetch_athena_541.py
+
+  source_surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: SHA-1 authenticated original Athena landscape packages (temporary)
+        run: python3 crates/fortnite_541/tools/fetch_athena_541.py --all-landscape --destination /tmp/fortnite541-original-landscape
+      - name: Audit original UE4 landscape actor transforms, slope, and weightmap references
+        run: cargo run --manifest-path crates/fortnite_541/Cargo.toml --release --bin athena_surface_probe -- /tmp/fortnite541-original-landscape
