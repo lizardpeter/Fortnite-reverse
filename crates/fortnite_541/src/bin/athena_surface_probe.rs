@@ -1,7 +1,7 @@
 //! Original UE4.21 Athena surface and transform evidence probe.
 //! This is a READ-ONLY source assay, not an approximation of materials.
 use std::{collections::BTreeMap,env,fs,path::PathBuf,process::ExitCode};
-use fortnite_541_importer::{landscape,properties,uobject,texture};
+use fortnite_541_importer::{landscape,properties,uobject,texture,weightmap};
 
 fn f32_triplet(data:&[u8])->Option<[f32;3]> {
     if data.len()!=12{return None;}
@@ -63,6 +63,14 @@ fn run()->Result<(),String>{
                 let props=properties::scan(&cat,bytes)?;
                 let component=landscape::inspect(&cat,bytes)?;
                 weightmap_ref_count+=component.weightmap_texture_refs.len();
+                // Fail the real retail test on any missing/misaddressed source
+                // layer, and print the exact authored LayerInfo reference.
+                let decoded=weightmap::decode_layer_allocations(
+                    &cat,bytes,&component.weightmap_texture_refs)?;
+                if components<=2{
+                    println!("ATHENA_DECODED_PAINT LS_{section:02} component={} layers={decoded:?}",i+1);
+                }
+
                 let allocations=props.fields.iter().find(|p|p.name=="WeightmapLayerAllocations");
                 if let Some(p)=allocations{
                     let raw=&bytes[p.payload.clone()];
