@@ -125,3 +125,91 @@ mod tests {
         assert!(mip.height_u16(1,0).is_err());
     }
 }
+
+
+/// Source-authenticated BC1/DXT1 or BC3/DXT5 first (highest-resolution) mip.
+/// Original block data is left unchanged, and may be consumed by the generic
+/// NeutralScene BC texture path once source material sampler semantics close.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OriginalBcFormat {
+    Bc1,
+    Bc3,
+}
+#[derive(Debug, Clone)]
+pub struct OriginalBcTopMip<'a> {
+    pub width: u32,
+    pub height: u32,
+    pub format: OriginalBcFormat,
+    pub flags: u32,
+    pub source_bulk_offset: usize,
+    pub blocks: &'a [u8],
+}
+pub fn first_mip_bc<'a>(
+    catalog:&PackageCatalog,
+    package_file:&[u8],
+    companion_uexp:&[u8],
+    companion_ubulk:&'a [u8],
+    export:&PackageExport,
+)->Result<OriginalBcTopMip<'a>,String>{
+    if catalog.export_class_name(export)!=Some("Texture2D"){
+        return Err("original BC texture export is not a Texture2D".into());
+    }
+    let source=catalog.export_data(package_file,companion_uexp,export)?;
+    let props=properties::scan(catalog,source)?;
+    let cooked=source.get(props.bytes_consumed..)
+        .ok_or("original BC texture cooked platform data missing")?;
+    let width=u32_at(cooked,28)?;
+    let height=u32_at(cooked,32)?;
+    let depth=u32_at(cooked,36)?;
+    let format_name_size=u32_at(cooked,40)? as usize;
+    if format_name_size!=8{return Err(format!(
+        "original BC texture unexpected platform pixel format name size {format_name_size}"
+    ));}
+    let fmt=match cooked.get(44..52){
+        Some(b"PF_DXT1\0")=>OriginalBcFormat::Bc1,
+        Some(b"PF_DXT5\0")=>OriginalBcFormat::Bc3,
+        _=>return Err("original texture is not UE4 PF_DXT1 or PF_DXT5".into()),
+    };
+    let flags_offset=44+format_name_size+12;
+    let flags=u32_at(cooked,flags_offset)?;
+    let size=u32_at(cooked,flags_offset+4)? as usize;
+    let count=u32_at(cooked,flags_offset+8)? as usize;
+    let signed_offset=i64_at(cooked,flags_offset+12)?;
+    let mip_width=u32_at(cooked,flags_offset+20)?;
+    let mip_height=u32_at(cooked,flags_offset+24)?;
+    let mip_depth=u32_at(cooked,flags_offset+28)?;
+    if width==0||height==0||width>8192||height>8192
+        ||width!=mip_width||height!=mip_height||depth!=1||mip_depth!=1{
+        return Err("original BC texture top mip extent is invalid".into());
+    }
+    let bsize=match fmt {OriginalBcFormat::Bc1=>8,OriginalBcFormat::Bc3=>16};
+    let expected=(width.div_ceil(4) as usize)
+        .checked_mul(height.div_ceil(4) as usize)
+        .and_then(|n|n.checked_mul(bsize))
+        .ok_or("original BC texture mip bytes overflow")?;
+    if expected>MAX_MIP_BYTES||size!=expected||count!=expected{
+        return Err(format!("original BC texture byte count mismatch: dimensions {width}x{height}, stored={size}, count={count}, expected={expected}"));
+    }
+    if flags!=0x0501 {return Err(format!("original BC external mip flags not source-verified: 0x{flags:x}"));}
+    let relative_base=package_file.len().checked_add(companion_uexp.len())
+        .and_then(|len|len.checked_sub(4))
+        .ok_or("original source package length invalid")? as i64;
+    let start=usize::try_from(relative_base.checked_add(signed_offset)
+        .ok_or("original BC texture bulk offset overflow")?)
+        .map_err(|_|"original BC texture bulk offset negative")?;
+    let end=start.checked_add(expected).ok_or("original BC bulk range overflow")?;
+    let blocks=companion_ubulk.get(start..end)
+        .ok_or("original BC top mip does not fit authenticated external .ubulk")?;
+    Ok(OriginalBcTopMip{
+        width,height,format:fmt,flags,source_bulk_offset:start,blocks,
+    })
+}
+
+#[cfg(test)]
+mod bc_mip_tests{
+    use super::*;
+    #[test]fn original_bc_block_sizes_are_distinct(){
+        assert_eq!((2048u32.div_ceil(4)*2048u32.div_ceil(4)*8) as usize,2097152);
+        assert_eq!((2048u32.div_ceil(4)*2048u32.div_ceil(4)*16) as usize,4194304);
+    }
+}
