@@ -100,6 +100,26 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
                         _=>format!("source_bytes={}",b.len()),
                     };
                     println!("AUTHORED_FORTNITE_TODM_PHASE_PROPERTY slot={} name={} kind={} meta={:?} {value}",field.array_index,p.name,p.kind,p.metadata);
+                    if matches!(p.name.as_str(),"SkyLightValues"|"DirectionalLightValues"|"ExpHeightFogValues")
+                        &&p.kind=="StructProperty" {
+                        let inner=properties::scan(&cat,b)?;
+                        println!("AUTHORED_FORTNITE_TODM_COMPONENT slot={} kind={} fields={} source_bytes={}",
+                            field.array_index,p.name,inner.fields.len(),b.len());
+                        for q in &inner.fields{
+                            let payload=&b[q.payload.clone()];
+                            let detail=match (q.kind.as_str(),payload.len()) {
+                                ("FloatProperty",4)=>format!("f32={}",f32::from_le_bytes(payload.try_into().unwrap())),
+                                ("IntProperty",4)=>format!("int={}",i32::from_le_bytes(payload.try_into().unwrap())),
+                                ("BoolProperty",0)=>format!("bool={:?}",q.metadata),
+                                ("StructProperty",16)=>format!("f32x4={:?}",(0..4).map(|k|f32::from_le_bytes(payload[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>()),
+                                ("StructProperty",12)=>format!("f32x3={:?}",(0..3).map(|k|f32::from_le_bytes(payload[k*4..k*4+4].try_into().unwrap())).collect::<Vec<_>>()),
+                                _=>format!("bytes={}",payload.len()),
+                            };
+                            println!("AUTHORED_FORTNITE_TODM_COMPONENT_PROPERTY slot={} group={} name={} kind={} meta={:?} {detail}",
+                                field.array_index,p.name,q.name,q.kind,q.metadata);
+                        }
+                    }
+
                 }
             }
             println!("AUTHENTICATED_FORTNITE_ASSET_FIELD package={path} object={name} class={class} property={} kind={} metadata={:?} {repr}",
