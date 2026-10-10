@@ -145,3 +145,52 @@ mod tests {
         assert!(parse_aes_key(&"z".repeat(64)).is_err());
     }
 }
+
+/// Prepare the original Fortnite BR time-of-day package from its AUTHENTICATED
+/// s4 retail archive. The source 5.41 main PAK does not contain this package.
+/// These files remain in the ignored source cache; map admission discovers
+/// the split archive automatically next to the already-discovered main PAK.
+pub fn prepare_original_todm_br(main_pak:&Path,destination:&Path)->Result<PreparedLandscape,String>{
+    const S4_INDEX_SHA1:&str="96a67f9eae257051576e368fdb61a6fb78b2f56a";
+    const PREFIX:&str="FortniteGame/Content/TimeOfDay/TODM/BR/TODM_BR";
+    let archive=main_pak.with_file_name("pakchunk0_s4-WindowsClient.pak");
+    let report=pak::inspect_with_key(&archive,&original_key()?)?;
+    if report.footer.version!=7 ||
+        report.footer.index_hash.iter().map(|v|format!("{v:02x}")).collect::<String>()!=S4_INDEX_SHA1 {
+        return Err("original Fortnite 5.41 s4 time-of-day PAK index SHA1 mismatch".into());
+    }
+    let IndexStatus::Indexed{entries,..}=&report.status else {
+        return Err("original Fortnite split s4 source index not decoded".into());
+    };
+    let mut count=0;
+    let mut bytes_new=0;
+    for extension in [".uasset",".uexp"] {
+        let suffix=format!("TimeOfDay/TODM/BR/TODM_BR{extension}");
+        let mut found=entries.iter().filter(|p|p.path.replace('\\',"/").ends_with(&suffix));
+        let entry=found.next().ok_or_else(||format!("missing original TODM asset {suffix}"))?;
+        if found.next().is_some(){return Err(format!("ambiguous original TODM asset {suffix}"));}
+        let output=destination.join(format!("{PREFIX}{extension}"));
+        let original=pak::extract_plain_entry(&archive,&report,entry)?;
+        if let Some(parent)=output.parent(){
+            fs::create_dir_all(parent).map_err(|e|format!("original source cache directory: {e}"))?;
+        }
+        if output.exists(){
+            let cached=fs::read(&output).map_err(|e|format!("read existing original TODM: {e}"))?;
+            if cached!=original{
+                return Err(format!("cached original TODM asset failed original source SHA1: {}",output.display()));
+            }
+        }else{
+            let tmp=output.with_extension(format!("{}-auth.part",
+                output.extension().and_then(|s|s.to_str()).unwrap_or("bin")));
+            if tmp.exists(){return Err(format!("stale original TODM temporary file: {}",tmp.display()));}
+            let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&tmp)
+                .map_err(|e|format!("create source TODM temp: {e}"))?;
+            file.write_all(&original).map_err(|e|format!("write original TODM: {e}"))?;
+            file.sync_all().map_err(|e|format!("sync original TODM: {e}"))?;
+            fs::rename(&tmp,&output).map_err(|e|format!("commit original TODM cache: {e}"))?;
+            count+=1;
+            bytes_new+=original.len() as u64;
+        }
+    }
+    Ok(PreparedLandscape{verified_files:2,extracted_files:count,bytes_extracted:bytes_new})
+}
