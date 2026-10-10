@@ -1,6 +1,6 @@
 //! Assemble exactly the six original Athena landscape sublevels into an
 //! isolated source-backed terrain model. Never insert empty or invented tiles.
-use crate::{landscape, terrain, texture, uobject};
+use crate::{landscape, terrain, texture, uobject, weightmap};
 use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path};
 
 /// All positions are source UE4 landscape-local XYZ until the application
@@ -8,12 +8,34 @@ use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path};
 #[derive(Debug)]
 pub struct AthenaTerrain {
     pub patches: Vec<terrain::LocalTerrainPatch>,
+    /// Exact original, decoded paint layer weights for each matching patch.
+    pub paint_patches: Vec<AthenaPaintPatch>,
+    pub source_weightmap_texture_refs: usize,
+    pub source_layer_allocation_count: usize,
+    pub source_layer_info_paths: BTreeSet<String>,
     /// Original root scene component transform agreed across all six sources.
     pub world_transform: landscape::LandscapeWorldTransform,
     pub shared_height_samples: usize,
     pub source_material_paths: BTreeSet<String>,
     pub source_grid_min: [i32; 2],
     pub source_grid_max: [i32; 2],
+}
+/// One original LandscapeLayerInfoObject's scalar paint weights, recovered
+/// from the exact authored Texture2D channel, one byte per vertex sample.
+/// This is not source albedo or a translated material shader.
+#[derive(Debug)]
+pub struct AthenaPaintLayer {
+    pub layer_info_path: String,
+    pub source_texture_ref: i32,
+    pub texture_index: u8,
+    pub channel_rgba: u8,
+    pub weights: Vec<u8>,
+}
+#[derive(Debug)]
+pub struct AthenaPaintPatch {
+    pub section_base: [i32; 2],
+    pub side: usize,
+    pub layers: Vec<AthenaPaintLayer>,
 }
 impl AthenaTerrain {
     /// A deterministic, explicitly *preview-only* ground spawn sampled from
@@ -44,6 +66,10 @@ impl AthenaTerrain {
 
 pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
     let mut patches=Vec::new();
+    let mut paint_patches=Vec::new();
+    let mut source_weightmap_texture_refs=0usize;
+    let mut source_layer_allocation_count=0usize;
+    let mut source_layer_info_paths=BTreeSet::new();
     let mut seam=terrain::LandscapeSeamAudit::default();
     let mut occupied=BTreeSet::new();
     let mut source_material_paths=BTreeSet::new();
@@ -111,6 +137,55 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
                 .ok_or("Athena source heightmap export not found")?;
             let mip=texture::first_mip_bgra8(&catalog,&package,&uexp,&ubulk,texture_export)?;
             let patch=terrain::build_patch(&component,&mip)?;
+            // Recover EVERY original landscape paint layer and resolve its
+            // exact original weightmap Texture2D + R/G/B/A channel. Retain
+            // the authored scalar weights, not synthetic substitute colors.
+            let decoded=weightmap::decode_layer_allocations(
+                &catalog,raw,&component.weightmap_texture_refs
+            ).map_err(|e|format!("Athena LS_{section:02} paint allocation component {}: {e}",index+1))?;
+            let side=patch.side();
+            let mut source_mips=Vec::with_capacity(component.weightmap_texture_refs.len());
+            for &source_ref in &component.weightmap_texture_refs {
+                let texture_export_index=usize::try_from(source_ref.checked_sub(1)
+                    .ok_or("Athena source weightmap reference zero")?)
+                    .map_err(|_|"Athena source weightmap reference is not a local export")?;
+                let export=catalog.exports.get(texture_export_index)
+                    .ok_or("Athena original weightmap texture export missing")?;
+                let source_mip=texture::first_mip_bgra8(
+                    &catalog,&package,&uexp,&ubulk,export
+                ).map_err(|e|format!("Athena LS_{section:02} original weightmap texture {source_ref}: {e}"))?;
+                if source_mip.width as usize!=side ||source_mip.height as usize!=side {
+                    return Err(format!("Athena LS_{section:02} weightmap size {}x{} differs from original landscape component {}x{}",
+                        source_mip.width,source_mip.height,side,side));
+                }
+                source_mips.push(source_mip);
+            }
+            let mut paint_layers=Vec::with_capacity(decoded.len());
+            for layer in decoded {
+                let tex=source_mips.get(layer.texture_index as usize)
+                    .ok_or("source paint texture index out of range")?;
+                let byte_channel=weightmap::bgra_byte_index(layer.channel_rgba)?;
+                // No interpolation, averaging, or invented RGBA colors:
+                // source byte samples map one-to-one to the 128x128 grid.
+                let weights=tex.bgra8.chunks_exact(4)
+                    .map(|pixel|pixel[byte_channel]).collect::<Vec<_>>();
+                if weights.len()!=patch.vertex_count() {
+                    return Err("source paint weight sample count differs from heightfield vertices".into());
+                }
+                source_layer_info_paths.insert(layer.layer_info_path.clone());
+                source_layer_allocation_count+=1;
+                paint_layers.push(AthenaPaintLayer {
+                    layer_info_path:layer.layer_info_path,
+                    source_texture_ref:component.weightmap_texture_refs[layer.texture_index as usize],
+                    texture_index:layer.texture_index,
+                    channel_rgba:layer.channel_rgba,
+                    weights,
+                });
+            }
+            source_weightmap_texture_refs+=source_mips.len();
+            paint_patches.push(AthenaPaintPatch{
+                section_base:patch.section_base,side,layers:paint_layers,
+            });
             seam.admit(&patch)?;
             if !occupied.insert(patch.section_base){
                 return Err(format!("Athena source duplicate landscape component position {:?}",patch.section_base));
@@ -137,8 +212,13 @@ pub fn load_verified_athena(root: &Path)->Result<AthenaTerrain,String> {
     if patches.len()!=94 {
         return Err(format!("Athena terrain is incomplete: decoded {} of the 94 original source components",patches.len()));
     }
+    if paint_patches.len()!=patches.len() {
+        return Err("original Athena source paint patches do not match verified terrain components".into());
+    }
     Ok(AthenaTerrain {
-        patches,world_transform,shared_height_samples:seam.matching_shared_samples,
+        patches,paint_patches,source_weightmap_texture_refs,
+        source_layer_allocation_count,source_layer_info_paths,
+        world_transform,shared_height_samples:seam.matching_shared_samples,
         source_material_paths,source_grid_min:min,source_grid_max:max,
     })
 }
@@ -158,7 +238,9 @@ mod tests{
                 section_base:[10,20],component_size_quads:1,
                 vertices_source_xyz:vec![[10.,20.,3.],[11.,20.,4.],[10.,21.,5.],[11.,21.,6.]],
                 height_samples:vec![0;4],indices:vec![0,2,1,1,2,3],
-            }],world_transform:landscape::LandscapeWorldTransform {
+            }],paint_patches:vec![],source_weightmap_texture_refs:0,
+            source_layer_allocation_count:0,source_layer_info_paths:BTreeSet::new(),
+            world_transform:landscape::LandscapeWorldTransform {
                 grid_origin_cm:[0.;3],local_scale_cm:[100.;3],
             },shared_height_samples:0,source_material_paths:BTreeSet::new(),
             source_grid_min:[10,20],source_grid_max:[11,21],
