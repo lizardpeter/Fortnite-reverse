@@ -59,4 +59,4 @@ cargo run --manifest-path crates/fortnite_541/Cargo.toml --bin landscape_catalog
 
 The helper requires Python 3, `curl`, and OpenSSL. The **Rust-test game** alternatively detects `%USERPROFILE%\Downloads\5.41\5.41` and can natively extract its Athena terrain files from `FortniteGame\Content\Paks\pakchunk0-WindowsClient.pak`; no environment setting is necessary at that standard location.
 
-See [research status](docs/RESEARCH_STATUS.md) and [integration contract](docs/INTEGRATION.md).
+See [research status](docs/RESEARCH_STATUS.md), [Athena material dependency closure](docs/ATHENA_MATERIAL_DEPENDENCIES.md), and [integration contract](docs/INTEGRATION.md).
