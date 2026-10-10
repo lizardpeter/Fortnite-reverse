@@ -73,6 +73,16 @@ fn run()->Result<(),String>{
                     if count>256{return Err(format!("LS_{section:02} component {} has {count} weightmap entries",i+1));}
                     allocations_section+=count;
                     source_allocations+=count;
+                    if components<=2 {
+                        for (off,len) in [(4usize,8usize),(12,8),(28,8),(52,8),(60,8),(80,8),(88,8),(104,8),(114,8),(122,8),(138,8),(148,8)] {
+                            if off+len<=raw.len() {
+                                let i=u32::from_le_bytes(raw[off..off+4].try_into().unwrap()) as usize;
+                                println!("ATHENA_WEIGHT_FIELD LS_{section:02} component={} offset={} name_idx={} name={:?} bytes={:02x?}",
+                                    i+1,off,i,cat.names.get(i),&raw[off..off+len]);
+                            }
+                        }
+                        println!("ATHENA_WEIGHT_FULL_HEX LS_{section:02} component={} data={}",i+1,raw.iter().map(|b|format!("{b:02x}")).collect::<String>());
+                    }
                     if components<=2{
                         let hex=raw.iter().take(176).map(|x|format!("{x:02x}")).collect::<String>();
                         println!("ATHENA_WEIGHT_ALLOCATIONS LS_{section:02} component={} count={count} data_bytes={} kind={} inner={:?} raw_hex={hex}",
