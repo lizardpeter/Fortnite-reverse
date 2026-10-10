@@ -23,6 +23,8 @@ pub struct MaterialExtraction {
     pub new_files:usize,
     pub total_source_bytes:u64,
     pub unresolved_packages:BTreeSet<String>,
+    /// Original source references deliberately deferred past audit depth.
+    pub deferred_packages:BTreeSet<String>,
     pub unresolved_non_game_objects:BTreeSet<String>,
     pub inspected_material_expression_nodes:usize,
 }
@@ -65,7 +67,7 @@ fn verified_cache_write(destination:&Path,entry:&pak::PakEntry,bytes:&[u8])->Res
     fs::rename(&tmp,&target).map_err(|e|format!("source material commit: {e}"))?;
     Ok(true)
 }
-pub fn prepare_original_athena_materials(pak_path:&Path,dest:&Path)->Result<MaterialExtraction,String>{
+pub fn prepare_original_athena_materials_up_to(pak_path:&Path,dest:&Path,max_depth:usize)->Result<MaterialExtraction,String>{
     let key=extract::parse_aes_key(&env::var("RUST_TEST_FORTNITE_541_AES_KEY")
         .unwrap_or_else(|_|HISTORICAL_KEY.into()))?;
     let report=pak::inspect_with_key(pak_path,&key)?;
@@ -77,10 +79,15 @@ pub fn prepare_original_athena_materials(pak_path:&Path,dest:&Path)->Result<Mate
         return Err("original Fortnite 5.41 source index unavailable".into());
     };
     let mut report_out=MaterialExtraction::default();
-    let mut pending=ORIGINAL_TERRAIN_MATERIALS.iter().map(|s|s.to_string()).collect::<BTreeSet<_>>();
+    let mut pending=ORIGINAL_TERRAIN_MATERIALS.iter()
+        .map(|s|(s.to_string(),0usize)).collect::<BTreeMap<_,_>>();
     let mut visited=BTreeSet::<String>::new();
-    while let Some(package)=pending.pop_first(){
+    while let Some((package,depth))=pending.pop_first(){
         if !visited.insert(package.clone()){continue;}
+        if depth>max_depth {
+            report_out.deferred_packages.insert(package);
+            continue;
+        }
         if visited.len()>MAX_PACKAGES {return Err("Athena original material dependency graph exceeds 256 unique source packages".into());}
         let Some(header)=original_index(entries,&format!("{package}.uasset")) else {
             report_out.unresolved_packages.insert(package);
@@ -129,7 +136,12 @@ pub fn prepare_original_athena_materials(pak_path:&Path,dest:&Path)->Result<Mate
             report_out.inspected_material_expression_nodes+=graph.expressions.len();
             for dep in graph.external_dependencies{
                 match source_game_package(&dep) {
-                    Some(path)=>{if !visited.contains(&path){pending.insert(path);}},
+                    Some(path)=>{
+                        if !visited.contains(&path) {
+                            let next=depth.saturating_add(1);
+                            pending.entry(path).and_modify(|d|*d=(*d).min(next)).or_insert(next);
+                        }
+                    },
                     None=>{report_out.unresolved_non_game_objects.insert(dep);}
                 }
             }
@@ -141,6 +153,12 @@ pub fn prepare_original_athena_materials(pak_path:&Path,dest:&Path)->Result<Mate
         report_out.source_packages+=1;
     }
     Ok(report_out)
+}
+
+/// Full dependency closure from all four original cooked master variants.
+/// Skips NOTHING in the original archive if present and supported.
+pub fn prepare_original_athena_materials(pak_path:&Path,dest:&Path)->Result<MaterialExtraction,String>{
+    prepare_original_athena_materials_up_to(pak_path,dest,usize::MAX)
 }
 #[cfg(test)]
 mod tests{
