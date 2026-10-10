@@ -194,3 +194,103 @@ pub fn prepare_original_todm_br(main_pak:&Path,destination:&Path)->Result<Prepar
     }
     Ok(PreparedLandscape{verified_files:2,extracted_files:count,bytes_extracted:bytes_new})
 }
+
+/// A source-verified split PAK, plus the exact original cooked package paths.
+/// Source 5.41 optional archives are *not* interchangeable with the main PAK:
+/// mount points differ, and each encrypted index has its own original SHA-1.
+const ORIGINAL_ENVIRONMENT_ARCHIVES:[(&str,&str,&[(&str,&[&str])]);4]=[
+    ("pakchunk0-WindowsClient.pak",
+     "fd1f4623c812f5fff47298f99cc3d0d8f2d0f11b",
+     &[("Athena/Prototype/Terrain/LF_AthenaClouds_Inst",&[".uasset",".uexp"])]),
+    ("pakchunk0_s2-WindowsClient.pak",
+     "42a45eee280ab70abbb5192b33a5945c119bd82c",
+     &[
+       ("ContentCreationTools/TextureCreation/Textures/T_BPCreated_MacroNormal_01",&[".uasset",".uexp",".ubulk"]),
+       ("Environments/AutumnDecay/Terrain/Textures/T_Grass_AD_D",&[".uasset",".uexp",".ubulk"]),
+     ]),
+    ("pakchunk0_s3-WindowsClient.pak",
+     "27376dab8f8a3488d0d2b5332a2da7d28fd73e",
+     &[("Environments/World/Backgrounds/Transylvania/Meshes/TRV_Skybox_Mountain_04",&[".uasset",".uexp"])]),
+    ("pakchunk0_s4-WindowsClient.pak",
+     "96a67f9eae257051576e368fdb61a6fb78b2f56a",
+     &[
+       ("TimeOfDay/TODM/BR/TODM_BR",&[".uasset",".uexp"]),
+       ("Packages/Fortress_Sky/TexturesHDR/T_AthenaSkylight",&[".uasset",".uexp"]),
+       ("Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Morn_M_SkyDome_Inst_Basic01",&[".uasset",".uexp"]),
+       ("Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Day_M_SkyDome_Inst_Basic01",&[".uasset",".uexp"]),
+       ("Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Eve_M_SkyDome_Inst_Basic01",&[".uasset",".uexp"]),
+       ("Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01",&[".uasset",".uexp"]),
+     ]),
+];
+
+/// Recover the exact original environment and missing terrain material source
+/// packages from every available user-owned 5.41 split PAK into the local
+/// ignored source directory. The importer invokes this during map selection,
+/// not in the game frame loop. Absent optional split archives remain explicit;
+/// present archives must match their original SHA1 or fail closed.
+pub fn prepare_original_environment_sources(
+    main_pak:&Path,destination:&Path,
+)->Result<PreparedLandscape,String>{
+    let key=original_key()?;
+    let mut ready=0usize;
+    let mut extracted=0usize;
+    let mut bytes_new=0u64;
+    for &(archive_name,index_sha1,packages) in &ORIGINAL_ENVIRONMENT_ARCHIVES{
+        let archive=main_pak.with_file_name(archive_name);
+        if !archive.is_file(){continue;}
+        let report=pak::inspect_with_key(&archive,&key)?;
+        if report.footer.version!=7 ||
+            report.footer.index_hash.iter().map(|b|format!("{b:02x}")).collect::<String>()!=index_sha1 {
+            return Err(format!("original Fortnite source environment archive {archive_name} has mismatched authenticated SHA1 index"));
+        }
+        let IndexStatus::Indexed{entries,..}=&report.status else{
+            return Err(format!("could not decode original 5.41 environment index for {archive_name}"));
+        };
+        for &(package,extensions) in packages {
+            for &ext in extensions {
+                let suffix=format!("{package}{ext}");
+                let mut matches=entries.iter().filter(|e|e.path.replace('\\',"/").ends_with(&suffix));
+                let original=matches.next().ok_or_else(||format!("original environment archive {archive_name} lacks {suffix}"))?;
+                if matches.next().is_some(){
+                    return Err(format!("ambiguous source environment asset {suffix} in {archive_name}"));
+                }
+                let output=destination.join("FortniteGame/Content").join(&suffix);
+                if let Some(parent)=output.parent(){
+                    fs::create_dir_all(parent).map_err(|e|format!("create original source cache: {e}"))?;
+                }
+                if output.exists(){
+                    let meta=fs::symlink_metadata(&output).map_err(|e|format!("source asset stat: {e}"))?;
+                    if !meta.file_type().is_file(){return Err(format!("original source cache not regular file: {}",output.display()));}
+                    let cached=fs::read(&output).map_err(|e|format!("source asset cache read: {e}"))?;
+                    if cached.len() as u64!=original.uncompressed_size||
+                        Sha1::digest(&cached).as_slice()!=original.content_hash {
+                        return Err(format!("cached original source asset is not verified: {}",output.display()));
+                    }
+                } else {
+                    let bytes=pak::extract_plain_entry(&archive,&report,original)?;
+                    let tmp=output.with_extension(format!("{}-auth.part",ext.trim_start_matches('.')));
+                    if tmp.exists(){return Err(format!("stale original source temp file: {}",tmp.display()));}
+                    let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&tmp)
+                        .map_err(|e|format!("original source temp create: {e}"))?;
+                    file.write_all(&bytes).map_err(|e|format!("write original source: {e}"))?;
+                    file.sync_all().map_err(|e|format!("sync original source: {e}"))?;
+                    fs::rename(&tmp,&output).map_err(|e|format!("commit original source file: {e}"))?;
+                    extracted+=1;
+                    bytes_new+=bytes.len() as u64;
+                }
+                ready+=1;
+            }
+        }
+    }
+    Ok(PreparedLandscape{verified_files:ready,extracted_files:extracted,bytes_extracted:bytes_new})
+}
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    #[test]fn recovered_environment_has_22_exact_source_files(){
+        let all=ORIGINAL_ENVIRONMENT_ARCHIVES.iter()
+            .flat_map(|(_,_,p)|p.iter().flat_map(|(_,exts)|exts.iter())).count();
+        assert_eq!(all,22);
+        assert_eq!(ORIGINAL_ENVIRONMENT_ARCHIVES.len(),4);
+    }
+}
