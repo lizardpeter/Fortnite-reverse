@@ -2,13 +2,28 @@
 //! MaterialFunctionInputs, LandscapeLayerBlend layers and nested links.
 /// No fabricated AST edges and no executable shader guesses.
 use std::{env,fs,path::PathBuf,process::ExitCode};
-use fortnite_541_importer::{properties,uobject};
+use fortnite_541_importer::{material,properties,uobject};
 fn run()->Result<(),String>{
     let root=PathBuf::from(env::args_os().nth(1).ok_or("usage: athena_material_graph_probe ORIGINAL_ATHENA_SOURCE_ROOT")?);
     let path=root.join("FortniteGame/Content/Athena/Environments/Landscape/Material/M_Athena_Terrain_Master");
     let source=fs::read(path.with_extension("uasset")).map_err(|e|format!("master uasset: {e}"))?;
     let exp=fs::read(path.with_extension("uexp")).map_err(|e|format!("master uexp: {e}"))?;
     let cat=uobject::inspect(&source)?;
+    let graph=material::inspect(&cat,&source,&exp);
+    if !graph.unresolved.is_empty(){
+        return Err(format!("original Athena master material typed parse incomplete: {:?}",graph.unresolved));
+    }
+    let blends=graph.expressions.iter().filter(|e|
+        e.class_name=="MaterialExpressionLandscapeLayerBlend").collect::<Vec<_>>();
+    let resolved=blends.iter().map(|b|b.landscape_layers.len()).sum::<usize>();
+    println!("AUTHORED_MATERIAL_BLEND_GRAPH_CLOSURE nodes={} source_layer_nodes={} resolved_nested_layers={} blend_operators={:?} layer_names={:?}",
+        graph.expressions.len(),blends.len(),resolved,
+        blends.iter().flat_map(|b|b.landscape_layers.iter().map(|l|l.blend_type.clone())).collect::<Vec<_>>(),
+        blends.iter().flat_map(|b|b.landscape_layers.iter().map(|l|l.name.clone())).collect::<Vec<_>>());
+    if blends.len()!=4||resolved!=20 {
+        return Err("source Athena master 4 blend nodes / 20 nested layers not typed-closed".into());
+    }
+
     let mut count=0usize;
     for (i,export) in cat.exports.iter().enumerate(){
         let name=cat.export_class_name(export).unwrap_or("<unknown>");
