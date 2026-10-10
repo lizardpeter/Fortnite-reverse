@@ -107,7 +107,7 @@ def main():
             # under an alias or different package naming convention. Search
             # by source-identifying fragments too, without claiming a match.
             print(f"REMOTE_FORTNITE_INDEX_SAMPLE archive={name} samples={list(entries)[:4]}",flush=True)
-            fragments=("todm","timeofday","skybox","transylvania","macronormal","grass_ad_d","grasslands","terrain")
+            fragments=("todm_br","trv_skybox_mountain","skybox_mountain","todm","timeofday","skybox","transylvania","macronormal","grass_ad_d","grasslands","terrain")
             for fragment in fragments:
                 hits=[k for k in entries if fragment in k.lower()]
                 print(f"REMOTE_FORTNITE_FUZZY archive={name} fragment={fragment} count={len(hits)} samples={hits[:12]}",flush=True)
