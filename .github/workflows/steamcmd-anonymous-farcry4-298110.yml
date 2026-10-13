@@ -1,0 +1,57 @@
+name: Anonymous SteamCMD Far Cry 4 entitlement probe
+on:
+  push:
+    branches:
+      - probe/steamcmd-anonymous-farcry4-298110
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  anonymous-fc4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Install SteamCMD
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lib32gcc-s1 ca-certificates curl
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl --fail --location --retry 3 --connect-timeout 20 https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz -o "$RUNNER_TEMP/steamcmd.tar.gz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
+      - name: Test anonymous Far Cry 4 Windows depot access
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/steamcmd"
+          echo 'SteamCMD testing app_update 298110 with anonymous Steam login (Windows platform forced).'
+          timeout 330 ./steamcmd.sh +@sSteamCmdForcePlatformType windows +force_install_dir "$RUNNER_TEMP/fc4" +login anonymous +app_update 298110 validate +quit 2>&1 | tee "$RUNNER_TEMP/fc4-steamcmd.log"
+          code=${PIPESTATUS[0]}
+          echo "STEAMCMD_EXIT=$code"
+          echo 'SUMMARY_LOG_LINES:'
+          grep -Ei 'error|denied|license|subscription|fail|success|download|update state|fully installed|appinfo' "$RUNNER_TEMP/fc4-steamcmd.log" | tail -n 65 || true
+          echo 'INSTALL_FILES:'
+          if [ -d "$RUNNER_TEMP/fc4" ]; then
+            find "$RUNNER_TEMP/fc4" -type f -printf '%P (%s bytes)\n' | head -n 50
+            du -sh "$RUNNER_TEMP/fc4"
+          else
+            echo 'No installation directory produced.'
+          fi
+          echo 'APP_MANIFESTS:'
+          find "$RUNNER_TEMP/fc4" "$HOME/Steam" -type f -name 'appmanifest_298110.acf' -print 2>/dev/null || true
+          if grep -Eiq 'No subscription|Missing license|Access Denied|Invalid platform|ERROR! Failed to install app' "$RUNNER_TEMP/fc4-steamcmd.log"; then
+            echo 'RESULT: anonymous access to the full Far Cry 4 app not granted.' | tee -a "$GITHUB_STEP_SUMMARY"
+          elif find "$RUNNER_TEMP/fc4" -type f -print -quit 2>/dev/null | grep -q .; then
+            echo 'RESULT: installation files present; check logs and inventory to distinguish game files from manifests.' | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'RESULT: no actual Far Cry 4 game files obtained.' | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload anonymous test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: farcry4-298110-anonymous-steamcmd-log
+          path: ${{ runner.temp }}/fc4-steamcmd.log
+          if-no-files-found: warn
+          retention-days: 14
