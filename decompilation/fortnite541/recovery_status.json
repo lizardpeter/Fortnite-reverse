@@ -3,10 +3,10 @@
   "original_pdata_functions": 291757,
   "first_pass_decompiled": 284392,
   "first_pass_unresolved": 7365,
-  "newly_recovered_unique_functions": 6968,
-  "effectively_decompiled": 291360,
-  "effective_percent": 99.863928,
-  "unresolved_remaining": 397,
+  "newly_recovered_unique_functions": 7299,
+  "effectively_decompiled": 291691,
+  "effective_percent": 99.977378,
+  "unresolved_remaining": 66,
   "recovery_modes": {
     "fast_v1": {
       "attempted": 7365,
@@ -15,10 +15,10 @@
       "missing_function": 406
     },
     "split_v1": {
-      "attempted": 64,
-      "decompiled": 50,
-      "decompiler_failed": 9,
-      "missing_function": 5
+      "attempted": 447,
+      "decompiled": 381,
+      "decompiler_failed": 41,
+      "missing_function": 25
     },
     "full_v1": {
       "attempted": 0,
