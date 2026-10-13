@@ -53,7 +53,7 @@ jobs:
         id: queue
         shell: bash
         env:
-          MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'split_rest' || 'split_probe' }}
+          MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'full_all' || 'full_probe' }}
           QUEUE_START: ${{ inputs.queue_start || '0' }}
           RETRY_COUNT: ${{ inputs.count || '128' }}
         run: |
@@ -71,7 +71,11 @@ jobs:
           import gzip,json,os
           with gzip.open(os.path.join(os.environ["RUNNER_TEMP"],"unresolved.jsonl.gz"),"rt") as f:
               total=sum(bool(line.strip()) for line in f)
-          if os.environ["MODE"]=="split_probe":
+          if os.environ["MODE"]=="full_probe":
+              chunks=[{"start":0,"count":min(8,total),"label":"000000"}]
+          elif os.environ["MODE"]=="full_all":
+              chunks=[{"start":i,"count":min(16,total-i),"label":f"{i:06d}"} for i in range(0,total,16)]
+          elif os.environ["MODE"]=="split_probe":
               chunks=[{"start":0,"count":min(64,total),"label":"000000"}]
           elif os.environ["MODE"]=="split_rest":
               chunks=[{"start":i,"count":min(100,total-i),"label":f"{i:06d}"} for i in range(64,total,100)]
@@ -113,7 +117,7 @@ jobs:
       QUEUE_START: ${{ matrix.start }}
       RETRY_COUNT: ${{ matrix.count }}
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
-      FULL_ANALYSIS: ${{ inputs.full_analysis && 'true' || 'false' }}
+      FULL_ANALYSIS: ${{ github.event_name == 'push' && 'true' || inputs.full_analysis && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -154,7 +158,7 @@ jobs:
           if [[ "$FULL_ANALYSIS" != "true" ]]; then
             options+=("-noanalysis")
           else
-            options+=("-analysisTimeoutPerFile" "9000")
+            options+=("-analysisTimeoutPerFile" "600")
           fi
           "$GHIDRA_BIN" "$RUNNER_TEMP/ghidra-project" Fortnite541Recovery \
             -import "$RUNNER_TEMP/original/FortniteClient-Win64-Shipping.exe" \
@@ -230,7 +234,7 @@ jobs:
         shell: bash
         env:
           DUMP_BRANCH: re/fortnite541-ghidra-full
-          FULL_ANALYSIS: ${{ inputs.full_analysis && 'true' || 'false' }}
+          FULL_ANALYSIS: ${{ github.event_name == 'push' && 'true' || inputs.full_analysis && 'true' || 'false' }}
         run: |
           set -euo pipefail
           cp crates/fortnite_541/tools/audit_ghidra_recovery.py "$RUNNER_TEMP/audit_ghidra_recovery.py"
@@ -242,7 +246,7 @@ jobs:
           kind=split_v1
           if [[ "$FULL_ANALYSIS" == "true" ]]; then kind=full_v1; fi
           mkdir -p "decompilation/fortnite541/recovery/$kind"
-          if [[ "$kind" == "split_v1" && ! -f "decompilation/fortnite541/recovery/$kind/source_unresolved.jsonl.gz" ]]; then
+          if [[ ! -f "decompilation/fortnite541/recovery/$kind/source_unresolved.jsonl.gz" ]]; then
             cp decompilation/fortnite541/recovery_remaining.jsonl.gz "decompilation/fortnite541/recovery/$kind/source_unresolved.jsonl.gz"
           fi
           cp -r "$RUNNER_TEMP/shards/." "decompilation/fortnite541/recovery/$kind/"
