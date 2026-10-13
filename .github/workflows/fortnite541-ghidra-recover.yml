@@ -35,7 +35,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: fortnite541-original-function-recovery-${{ github.ref }}
+  group: fortnite541-original-bounded-recovery-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
