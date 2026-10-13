@@ -107,3 +107,56 @@ jobs:
           print('EXTENSIONS',exts.most_common(40))
           for entry in samples[:120]: print('ENTRY',repr(entry))
           PY
+      - name: Inspect nested map VPKs and Source 2 resource headers
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import struct,collections,pathlib
+          root=pathlib.Path.home()/'Steam/steamapps/workshop/content/730/3620630831'
+          def parse(raw):
+              if len(raw)<28 or raw[:4]!=b'\x34\x12\xaa\x55': raise ValueError('Bad VPK signature')
+              ver,ts=struct.unpack_from('<II',raw,4)
+              pos=12 if ver==1 else 28
+              end=pos+ts
+              if end>len(raw): raise ValueError('truncated VPK tree')
+              entries={}
+              def readstr():
+                  nonlocal pos
+                  q=raw.find(b'\0',pos,end)
+                  if q<0: raise ValueError('bad VPK string')
+                  s=raw[pos:q].decode('utf-8','replace');pos=q+1;return s
+              while pos<end:
+                  ext=readstr()
+                  if not ext: break
+                  while True:
+                      folder=readstr()
+                      if not folder: break
+                      while True:
+                          stem=readstr()
+                          if not stem: break
+                          crc,preload,arc,off,length,marker=struct.unpack_from('<IHHIIH',raw,pos);pos+=18
+                          if marker!=65535: raise ValueError('bad VPK sentinel')
+                          pos+=preload
+                          name=(folder+'/' if folder!=' ' else '')+stem+'.'+ext
+                          entries[name]=(arc,off,length,preload)
+              return entries,ver,ts,end
+          outer,ver,ts,end=parse((root/'3620630831_dir.vpk').read_bytes())
+          for path in ['models/christmastree.vmdl_c','materials/christmaslightsemmissive_psd_c208f500.vtex_c','maps/de_dust2_christmas.vpk','maps/de_dust2_winter.vpk']:
+              arc,off,size,preload=outer[path]
+              with (root/f'3620630831_{arc:03d}.vpk').open('rb') as f:
+                  f.seek(off);head=f.read(min(128,size))
+                  f.seek(off);payload=f.read(size) if path.endswith('.vpk') else head
+              print('SOURCE',path,'archive',arc,'offset',off,'length',size,'first_96',head[:96].hex(' '))
+              if path.endswith('.vpk'):
+                  try:
+                      entries,v,tree,te=parse(payload)
+                      print('NESTED',path,'version',v,'tree',tree,'entry_count',len(entries),'types',collections.Counter(p.rsplit('.',1)[-1] for p in entries).most_common(30))
+                      for p,rec in list(entries.items())[:25]: print('NESTED_ENTRY',p,rec)
+                  except Exception as err: print('NESTED_PARSE_ERROR',path,repr(err))
+              else:
+                  if len(head)>=16:
+                      print('RESOURCE_WORDS',struct.unpack_from('<IHHII',head))
+                      off1=struct.unpack_from('<I',head,8)[0];n=struct.unpack_from('<I',head,12)[0]
+                      if n<64 and off1<96:
+                          print('RESOURCE_BLOCK_TABLE',head[off1:off1+min(n*12,128)].hex(' '))
+          PY
