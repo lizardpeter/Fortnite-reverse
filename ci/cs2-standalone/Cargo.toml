@@ -12,3 +12,7 @@ zstd = { version = "0.13", default-features = false }
 [[bin]]
 name = "cs2_source_audit"
 path = "src/bin/audit.rs"
+
+[[bin]]
+name = "cs2_source_extract"
+path = "src/bin/extract.rs"

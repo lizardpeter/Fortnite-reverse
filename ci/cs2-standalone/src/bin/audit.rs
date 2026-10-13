@@ -26,7 +26,7 @@ fn run() -> Result<(),String> {
         let nested=outer.open_nested(&map_report.label)?;
         let mut found_world=false;
         for entry in &map_report.world_files {
-            if !entry.ends_with(".vwrld_c") && !entry.ends_with(".vmap_c") { continue; }
+            if !entry.ends_with(".vwrld_c") && !entry.ends_with(".vmap_c") && !entry.ends_with(".vwnod_c") { continue; }
             let bytes=nested.read_entry(entry)?;
             let header=ResourceHeader::parse(&bytes).map_err(|e|format!("{entry}: {e}"))?;
             let kinds=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
@@ -46,6 +46,10 @@ fn run() -> Result<(),String> {
                             doc.header.version,doc.header.compression,doc.string_count,doc.nodes);
                         if let cs2_importer::kv3::Value::Object(fields)=&doc.root {
                             println!("    root fields: {:?}",fields.iter().take(36).map(|(k,_)|k).collect::<Vec<_>>());
+                            for (name,field) in fields.iter().take(12) {
+                                let repr=format!("{field:?}");
+                                println!("    field {name}: {}",repr.chars().take(1700).collect::<String>());
+                            }
                         }
                     },
                     Err(error)=>println!("    KV3 pending: {error}"),
@@ -59,6 +63,22 @@ fn run() -> Result<(),String> {
             if entry.ends_with(".vwrld_c") { found_world=true; }
         }
         if !found_world { return Err(format!("{} has no valid world.vwrld_c",map_report.label)); }
+        for model in nested.entries().keys().filter(|p|p.ends_with(".vmdl_c") && p.contains("/worldnodes/")).take(2) {
+            let bytes=nested.read_entry(model)?;
+            let header=ResourceHeader::parse(&bytes)?;
+            let kind=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
+            println!("  source model {model}: {} bytes blocks {kind:?}",bytes.len());
+            if let Some(data)=header.block(&bytes,b"DATA") {
+                match cs2_importer::kv3::decode(data) {
+                    Ok(doc)=> {
+                        if let cs2_importer::kv3::Value::Object(fields)=doc.root {
+                            println!("    model fields: {:?}",fields.iter().map(|(k,_)|k).collect::<Vec<_>>());
+                        }
+                    },
+                    Err(error)=>println!("    model DATA pending: {error}"),
+                }
+            }
+        }
     }
     println!("CS2 original-resource verification: {good_resources} compiled map/world files parsed");
     Ok(())
