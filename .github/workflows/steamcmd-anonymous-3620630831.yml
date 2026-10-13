@@ -34,7 +34,7 @@ jobs:
           echo "SteamCMD outcome lines:"
           grep -Ei 'Downloading item|Downloaded item|ERROR!|Access Denied|fail|success' "$RUNNER_TEMP/steamcmd-attempt.log" | tail -n 45 || true
           echo "Looking for actual downloaded item files..."
-          map_dir=$(find "$RUNNER_TEMP/steamcmd" "$HOME/.steam" "$HOME/.local/share/Steam" -type d -path '*/workshop/content/730/3620630831' -print -quit 2>/dev/null)
+          map_dir=$(find "$HOME/Steam" "$RUNNER_TEMP/steamcmd" "$HOME/.steam" "$HOME/.local/share/Steam" -type d -path '*/workshop/content/730/3620630831' -print -quit 2>/dev/null)
           if [[ -n "$map_dir" ]] && [[ -n "$(find "$map_dir" -type f -print -quit)" ]]; then
             echo "SUCCESS: anonymous download produced actual files."
             echo "Map directory: $map_dir"
