@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/fortnite541-ghidra-extra-functions.yml"
       - "crates/fortnite_541/ghidra/Fortnite541LeafDiscovery.java"
+      - "crates/fortnite_541/ghidra/Fortnite541DirectCalls.java"
   workflow_dispatch:
 
 permissions:
@@ -59,8 +60,10 @@ jobs:
             "${options[@]}" \
             -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
             -postScript Fortnite541LeafDiscovery.java "$RUNNER_TEMP/discovery" \
+            -postScript Fortnite541DirectCalls.java "$RUNNER_TEMP/discovery" \
             -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra-discovery.log"
           grep -q FORTNITE541_NONPDATA_COMPLETE "$RUNNER_TEMP/ghidra-discovery.log"
+          grep -q FORTNITE541_NONPDATA_DIRECT_CALLS_COMPLETE "$RUNNER_TEMP/ghidra-discovery.log"
       - name: Verify independent leaf-candidate classification
         shell: bash
         run: |
@@ -91,6 +94,8 @@ jobs:
           mkdir -p decompilation/fortnite541/discovery
           cp "$RUNNER_TEMP/discovery/nonpdata_candidates.jsonl.gz" decompilation/fortnite541/discovery/
           cp "$RUNNER_TEMP/discovery/nonpdata_report.json" decompilation/fortnite541/discovery/
+          cp "$RUNNER_TEMP/discovery/nonpdata_direct_calls.jsonl.gz" decompilation/fortnite541/discovery/
+          cp "$RUNNER_TEMP/discovery/nonpdata_direct_calls_report.json" decompilation/fortnite541/discovery/
           git add decompilation/fortnite541/discovery
           git commit -m "Ghidra: original executable leaf candidate inventory outside .pdata"
           for attempt in 1 2 3 4 5; do
