@@ -198,6 +198,41 @@ def find_lea_code_xrefs(pe,entries,pointers):
         rdata_reference_samples=rdata_examples,
     )
 
+def full_x64_ip_relative_xrefs(pe,entries,pointers):
+    """Real decoded x64 RIP-relative memory references in original .text."""
+    from iced_x86 import Decoder
+    keys=sorted(entries)
+    refs=[]
+    counters=collections.Counter()
+    for section in pe.sections:
+        if section["name"]!=".text":continue
+        decoder=Decoder(64,pe.section_bytes(section),ip=pe.image_base+section["rva"])
+        for inst in decoder:
+            counters["original_x64_instructions_decoded"]+=1
+            if not inst.is_ip_rel_memory_operand:continue
+            counters["original_x64_rip_operand_count"]+=1
+            original_rva=inst.ip_rel_memory_address-pe.image_base
+            item=entries.get(original_rva)
+            proof="original-x64-direct"
+            if item is None:
+                item=pointers.get(original_rva)
+                if item is not None:proof="original-PE-VA-pointer"
+            if item is None:
+                i=bisect.bisect_right(keys,original_rva)-1
+                if i>=0:
+                    key=keys[i]
+                    match=entries[key]
+                    if key<=original_rva<key+match["byte_len"]:
+                        item=match
+                        proof="original-x64-string-interior"
+            if item is None:continue
+            counters[proof]+=1
+            refs.append(dict(code_rva=inst.ip-pe.image_base,
+                target_rva=original_rva,target=item["text"],
+                section=section["name"],opcode=hex(inst.code),
+                reference_type=proof))
+    return refs,dict(counters)
+
 def best_targets(pe,functions,begins,refs,cap=35):
     from capstone import Cs, CS_ARCH_X86, CS_MODE_64
     decoder=Cs(CS_ARCH_X86,CS_MODE_64)
@@ -249,8 +284,11 @@ def main():
     names,kcount=strings(pe)
     funcs,begins=runtime_functions(pe)
     pointers,inspected_pointers=material_string_pointer_table(pe,names)
-    refs,scan_metrics=find_lea_code_xrefs(pe,names,pointers)
+    manual_refs,scan_metrics=find_lea_code_xrefs(pe,names,pointers)
+    refs,x64_metrics=full_x64_ip_relative_xrefs(pe,names,pointers)
     scan_metrics["source_pointer_slots_checked"]=inspected_pointers
+    scan_metrics["narrow_RIP_candidate_refs"]=len(manual_refs)
+    scan_metrics.update(x64_metrics)
     regions,referenced_functions=best_targets(pe,funcs,begins,refs)
     result=dict(
         origin=URL,
