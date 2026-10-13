@@ -1,0 +1,12 @@
+[package]
+name = "cs2-importer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+crc32fast = "1"
+
+[[bin]]
+name = "cs2_source_audit"
+path = "src/bin/audit.rs"
