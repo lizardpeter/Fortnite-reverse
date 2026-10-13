@@ -117,6 +117,9 @@ def runtime_functions(pe):
 
 def find_lea_code_xrefs(pe,entries):
     refs=[]
+    matched_instructions=0
+    pointer_targets=collections.Counter()
+    rdata_examples=[]
     # 64-bit RIP-relative LEA/MOV, one signed 32-bit displacement.
     # Validate actual instruction in disassembler after filtering.
     for section in pe.sections:
@@ -124,16 +127,32 @@ def find_lea_code_xrefs(pe,entries):
         data=pe.section_bytes(section)
         pattern=re.compile(rb"[\x48-\x4f][\x8b\x8d][\x05\x0d\x15\x1d\x25\x2d\x35\x3d]")
         for match in pattern.finditer(data):
+            matched_instructions+=1
             start=match.start()
             if start+7>len(data):continue
             displacement=struct.unpack_from("<i",data,start+3)[0]
             instruction_rva=section["rva"]+start
             target=instruction_rva+7+displacement
+            for target_section in pe.sections:
+                if target_section["rva"]<=target<target_section["rva"]+target_section["vsize"]:
+                    pointer_targets[target_section["name"]]+=1
+                    if target_section["name"]==".rdata" and len(rdata_examples)<15:
+                        offset=pe.rva_to_offset(target)
+                        sample=pe.b[offset:offset+45] if offset is not None else b""
+                        rdata_examples.append(dict(
+                            code_rva=hex(instruction_rva),target_rva=hex(target),
+                            raw=repr(sample[:35])
+                        ))
+                    break
             item=entries.get(target)
             if item is not None:
                 refs.append(dict(code_rva=instruction_rva,target_rva=target,
                     target=item["text"],section=section["name"],opcode=data[start:start+3].hex()))
-    return refs
+    return refs,dict(
+        candidate_rip_relative_instructions=matched_instructions,
+        target_section_counts=dict(pointer_targets),
+        rdata_reference_samples=rdata_examples,
+    )
 
 def best_targets(pe,functions,begins,refs,cap=35):
     from capstone import Cs, CS_ARCH_X86, CS_MODE_64
@@ -185,7 +204,7 @@ def main():
     pe=PE(exe)
     names,kcount=strings(pe)
     funcs,begins=runtime_functions(pe)
-    refs=find_lea_code_xrefs(pe,names)
+    refs,scan_metrics=find_lea_code_xrefs(pe,names)
     regions,referenced_functions=best_targets(pe,funcs,begins,refs)
     result=dict(
         origin=URL,
@@ -194,7 +213,7 @@ def main():
         runtime_function_boundaries=len(funcs),
         material_shader_string_count=len(names),
         keyword_counts=dict(kcount.most_common()),
-        direct_rip_code_references=len(refs),
+        direct_rip_code_references=len(refs),rip_scan_diagnostics=scan_metrics,
         original_functions_referring_to_strings=referenced_functions,
         original_string_examples=sorted(names.values(),
             key=lambda x:("shadermap" not in x["text"].lower(),
@@ -209,6 +228,7 @@ def main():
         " x64_rip_references="+str(len(refs))+
         " referenced_functions="+str(referenced_functions),flush=True)
     print("ORIGINAL_541_X64_KEYWORDS "+str(kcount.most_common(20)),flush=True)
+    print("ORIGINAL_541_X64_RIP_DIAGNOSTICS "+str(scan_metrics),flush=True)
     for region in regions[:12]:
         print(f"ORIGINAL_541_X64_FUNCTION {region['start_rva']}-{region['end_rva']} references={region['string_references']} original_string_examples={region['unique_strings'][:4]}",flush=True)
         for block in region["disassembly"][:2]:
