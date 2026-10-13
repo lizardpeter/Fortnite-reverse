@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/fortnite541-original-exe.yml"
       - "crates/fortnite_541/tools/locate_original_win64_executable.py"
+      - "crates/fortnite_541/tools/disassemble_original_win64_materials.py"
   pull_request:
     paths:
       - ".github/workflows/fortnite541-original-exe.yml"
@@ -25,10 +26,25 @@ jobs:
         run: |
           set -o pipefail
           python3 crates/fortnite_541/tools/locate_original_win64_executable.py | tee "$RUNNER_TEMP/fortnite541-original-pe-metadata.txt"
-      - name: Retain metadata only (no executable binary)
+      - name: Install minimal x64 disassembler dependency
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/fortnite-pe-tools"
+          "$RUNNER_TEMP/fortnite-pe-tools/bin/python" -m pip install --quiet 'capstone>=5,<6'
+      - name: Recover original material shader x64 function references and instruction sequences
+        shell: bash
+        env:
+          FORTNITE_PE_RESULTS: ${{ runner.temp }}/fortnite541-original-x64-analysis.json
+        run: |
+          set -o pipefail
+          "$RUNNER_TEMP/fortnite-pe-tools/bin/python" crates/fortnite_541/tools/disassemble_original_win64_materials.py | tee "$RUNNER_TEMP/fortnite541-original-disassembly-summary.txt"
+      - name: Retain parsed original metadata and disassembly only (no retail binary)
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: fortnite541-original-exe-pe-metadata
-          path: ${{ runner.temp }}/fortnite541-original-pe-metadata.txt
+          path: |
+            ${{ runner.temp }}/fortnite541-original-pe-metadata.txt
+            ${{ runner.temp }}/fortnite541-original-disassembly-summary.txt
+            ${{ runner.temp }}/fortnite541-original-x64-analysis.json
           if-no-files-found: warn
