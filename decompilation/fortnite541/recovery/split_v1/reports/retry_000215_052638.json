@@ -1,0 +1,1 @@
+{"original_pdata_functions":291757,"retry_count":64,"recovered":50,"decompiler_failed":9,"missing":5,"overlapping_parent_functions":1,"removed_inferred_parent_functions":1,"repaired_crossing_instructions":1,"strategy":"split","first_original_index":215,"last_original_index":52638,"elapsed_ms":32144,"file":"records/retry_000215_052638.jsonl.gz"}
