@@ -1,0 +1,62 @@
+name: BO1 full retail ZIP header and FastFile inventory
+on:
+  push:
+    branches: [probe/bo1-t5-source-zip-inventory-20261013]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 16
+    steps:
+      - name: Download supplied archive ephemerally and inspect only metadata
+        shell: bash
+        run: |
+          set -uo pipefail
+          echo "DISK_START: $(df -h / | tail -1)"
+          free=$(df -B1 / | awk 'NR==2 {print $4}')
+          expected=11161080622
+          if [ "$free" -lt 13000000000 ]; then
+            echo "INSUFFICIENT_SPACE for local 11.16GB compressed ZIP; won't fill runner disk."
+            exit 0
+          fi
+          echo "BEGIN_EPHEMERAL_BO1_SOURCE_DOWNLOAD"
+          curl -fL --retry 2 --connect-timeout 30 --max-time 750 \
+            -o "$RUNNER_TEMP/t5.zip" \
+            'https://r2.houseofkublai.com/downloads/games/pluto_t5_full_game.zip'
+          rc=$?
+          echo "CURL_EXIT=$rc"
+          if [ "$rc" -ne 0 ]; then
+            test -f "$RUNNER_TEMP/t5.zip" && stat -c 'PARTIAL_BYTES=%s' "$RUNNER_TEMP/t5.zip" || true
+            exit 0
+          fi
+          python3 - <<'PY'
+          import zipfile,collections,os,sys,pathlib,hashlib
+          p=pathlib.Path(os.environ['RUNNER_TEMP'])/'t5.zip'
+          print('ZIP_BYTES',p.stat().st_size,flush=True)
+          with zipfile.ZipFile(p) as z:
+              infos=z.infolist()
+              print('ZIP_ENTRY_COUNT',len(infos),'UNCOMPRESSED_TOTAL_BYTES',sum(i.file_size for i in infos),flush=True)
+              print('EXTENSIONS',collections.Counter((os.path.splitext(i.filename)[1].lower() or '(none)') for i in infos if not i.is_dir()).most_common(35),flush=True)
+              print('TOP_LEVEL',collections.Counter(i.filename.split('/')[0] for i in infos).most_common(15),flush=True)
+              paths=[i for i in infos if i.filename.lower().endswith(('.ff','.iwd','.ipak','.iwi','.exe','.dll','.cfg','.bsp','.csv','.gdt','.map','.wad'))]
+              print('SOURCE_FORMAT_ENTRY_COUNT',len(paths),flush=True)
+              for i in paths[:140]:
+                  print('FILE',i.filename,'uncompressed',i.file_size,'compressed',i.compress_size,flush=True)
+              for i in sorted(infos,key=lambda x:-x.file_size)[:18]:
+                  print('LARGEST',i.filename,'uncompressed',i.file_size,'compressed',i.compress_size,flush=True)
+              ff=[i for i in infos if i.filename.lower().endswith('.ff') and not i.is_dir()]
+              print('FASTFILE_COUNT',len(ff),flush=True)
+              order=sorted(ff,key=lambda i:(0 if 'mp_' in i.filename.lower() or 'common' in i.filename.lower() else 1,i.file_size))
+              for i in order[:18]:
+                  with z.open(i) as f:data=f.read(128)
+                  print('FASTFILE_HEADER',i.filename,'bytes',i.file_size,'first64',data[:64].hex(),'printable',repr(data[:16]),flush=True)
+              iwd=[i for i in infos if i.filename.lower().endswith('.iwd')]
+              if iwd:
+                  for i in iwd[:4]:
+                      with z.open(i) as f:prefix=f.read(8)
+                      print('IWD_HEADER',i.filename,'bytes',i.file_size,'first8',prefix.hex(),flush=True)
+          PY
+          rm -f "$RUNNER_TEMP/t5.zip"
+          echo "SOURCE_SCAN_COMPLETED; zip removed from ephemeral runner"
