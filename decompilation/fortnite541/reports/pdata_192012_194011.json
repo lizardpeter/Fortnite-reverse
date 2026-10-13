@@ -1,0 +1,11 @@
+{
+  "original_pdata_functions": 291757,
+  "batch_start": 192012,
+  "batch_end_exclusive": 194012,
+  "decompiled": 1957,
+  "decompiler_failed": 0,
+  "missing": 43,
+  "seeded": 1025,
+  "elapsed_ms": 12744,
+  "file": "functions/pdata_192012_194011.jsonl.gz"
+}
