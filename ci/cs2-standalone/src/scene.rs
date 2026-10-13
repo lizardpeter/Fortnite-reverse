@@ -111,15 +111,32 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let mut triangles=0usize;
     let mut aggregate_draws=0usize;
     let mut skipped=0usize;
+    let mut rejected=Vec::<String>::new();
+    let mut budget_skipped=0usize;
     for node in &graph.nodes {
         aggregate_draws+=node.aggregate_draws;
         skipped+=node.unknown_scene_objects;
         for placement in &node.scene_objects {
+            if triangles>=MAX_TRIANGLES || scene.meshes.len()>=MAX_SCENE_MESHES {
+                budget_skipped+=1;
+                continue;
+            }
             let mesh_list=if let Some(existing)=cache.get(&placement.model) {existing.clone()}
             else {
-                let list=append_source_model(&mut scene,&inner,&outer,&placement.model,
-                    &mut material_ids,&mut untextured,&mut triangles)
-                    .map_err(|e|format!("CS2 direct object {}: {e}",placement.model))?;
+                // An unsupported source resource blocks that specific model,
+                // never substitutes a cube or aborts the entire map preview.
+                let before_meshes=scene.meshes.len();
+                let before_triangles=triangles;
+                let list=match append_source_model(&mut scene,&inner,&outer,&placement.model,
+                    &mut material_ids,&mut untextured,&mut triangles) {
+                    Ok(list)=>list,
+                    Err(error)=>{
+                        scene.meshes.truncate(before_meshes);
+                        triangles=before_triangles;
+                        if rejected.len()<512 {rejected.push(format!("{}: {error}",placement.model));}
+                        Vec::new()
+                    },
+                };
                 cache.insert(placement.model.clone(),list.clone());
                 list
             };
@@ -135,6 +152,11 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         "Unresolved original Source 2 shading: {} distinct VMAT programs are referenced by decoded triangles; VTEX and shader programs not admitted. \
          Original source tints and UVs retained, but shared neutral materials remain DIAGNOSTIC and cannot be claimed retail-correct.",
         untextured.len()
+    ));
+    scene.report.lines.push(format!(
+        "CS2 unsupported original model decodes ({} captured), source geometry preview budget skipped {} placements: {}",
+        rejected.len(),budget_skipped,
+        rejected.iter().take(12).cloned().collect::<Vec<_>>().join("; ")
     ));
     scene.report.lines.push(format!(
         "Remaining source world graph: {} aggregate draw references not yet merged, {} unrecognized scene objects, {} referenced baked lightmaps, {} entity lumps. \

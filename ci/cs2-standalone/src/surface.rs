@@ -68,6 +68,8 @@ pub fn decode_packed_normal(frame:u32)->([f32;3],[f32;4]){
 fn vector2(v:&[u8],at:usize,format:u32)->Result<[f32;2],String>{
     match format {
         16=>Ok([f32_component(v,at)?,f32_component(v,at+4)?]), // R32G32_FLOAT
+        28=>Ok([v.get(at).copied().ok_or("truncated RGBA8 UV")? as f32/255.,
+                v.get(at+1).copied().ok_or("truncated RGBA8 UV")? as f32/255.]), // Source2 RGBA8 UNORM vec4; xy retained
         34=>Ok([half::f16::from_bits(u16_component(v,at)?).to_f32(),
                  half::f16::from_bits(u16_component(v,at+2)?).to_f32()]),
         35=>Ok([u16_component(v,at)? as f32/65535.,u16_component(v,at+2)? as f32/65535.]),
@@ -109,6 +111,13 @@ fn vertex_attributes(model:&SourceModel,draw:&SourceDraw,index:usize)->Result<Su
                     let uv=vector2(bytes,at,attr.dxgi_format)?;
                     if texcoords==0 {result.uv=uv;}
                     else if texcoords==1 {result.secondary_uv=Some(uv);}
+                    // RGBA8 input carries four author-supplied channels;
+                    // retain ZW as an additional UV pair when no dedicated
+                    // second TEXCOORD has been encountered yet.
+                    if texcoords==0 && attr.dxgi_format==28 {
+                        let b=bytes.get(at+2..at+4).ok_or("truncated RGBA8 source UV")?;
+                        result.secondary_uv=Some([b[0] as f32/255.,b[1] as f32/255.]);
+                    }
                     texcoords+=1;
                 },
                 _=>{},
