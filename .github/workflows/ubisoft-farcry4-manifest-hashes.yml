@@ -1,0 +1,149 @@
+name: Extract Far Cry 4 Ubisoft manifest file and slice hashes
+on:
+  push:
+    branches:
+      - probe/fc4-manifest-hashes
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  extract-hashes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Decode public Far Cry 4 (Ubisoft product 420) manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          cat > /tmp/decode_fc4.py <<'PY'
+          import urllib.request,zlib,hashlib,json,collections,pathlib
+
+          def varint(blob, p):
+              n,shift=0,0
+              for _ in range(10):
+                  if p>=len(blob):raise ValueError("truncated varint")
+                  b=blob[p];p+=1;n|=(b&127)<<shift
+                  if b<128:return n,p
+                  shift+=7
+              raise ValueError("varint too long")
+
+          def fields(blob):
+              p=0
+              while p<len(blob):
+                  tag,p=varint(blob,p)
+                  if not tag:raise ValueError("zero field tag")
+                  num,wt=tag>>3,tag&7
+                  if wt==0:
+                      val,p=varint(blob,p)
+                  elif wt==1:
+                      val=blob[p:p+8];p+=8
+                  elif wt==2:
+                      length,p=varint(blob,p)
+                      if length>len(blob)-p:raise ValueError(f"length overflow: field {num} length={length}")
+                      val=blob[p:p+length];p+=length
+                  elif wt==5:
+                      val=blob[p:p+4];p+=4
+                  else:raise ValueError(f"unknown protobuf wire type {wt} at field {num}")
+                  yield num,wt,val
+
+          def attrs(blob):
+              d=collections.defaultdict(list)
+              for num,wt,val in fields(blob):d[num].append((wt,val))
+              return d
+
+          def string(x):
+              return x.decode('utf-8','replace')
+
+          ids=[
+              "5E0E479E72659DD0AA481B9F0B504E0B82239FA8",
+              "23DB238D7796D96A9F6F3D7964EFEE9A00E64127",
+              "0F720FD885FC634CDF3A95B1F157C7FC682C6DD4",
+          ]
+          for mid in ids:
+              url=f"https://raw.githubusercontent.com/UplayDB/UplayManifests/main/files/420_{mid}.manifest"
+              print(f"\nFETCH_MANIFEST product_id=420 id={mid}",flush=True)
+              try:
+                  with urllib.request.urlopen(url,timeout=30) as resp:raw=resp.read()
+                  manifest_sha256=hashlib.sha256(raw).hexdigest()
+                  print(f"MANIFEST_BINARY bytes={len(raw)} sha256={manifest_sha256}",flush=True)
+                  try:
+                      payload=zlib.decompress(raw[356:])
+                      offset=356
+                  except zlib.error:
+                      matches=[]
+                      for off in range(min(len(raw),512)):
+                          try:
+                              test=zlib.decompress(raw[off:])
+                              if len(test)>1024: matches.append((off,test))
+                          except zlib.error:pass
+                      if not matches:raise ValueError("No recognized zlib payload inside Ubisoft manifest")
+                      offset,payload=matches[0]
+                  print(f"MANIFEST_DECOMPRESS zlib_offset={offset} decoded_bytes={len(payload)}",flush=True)
+                  m=attrs(payload)
+                  recs=[]
+                  for wt,cb in m.get(4,[]):
+                      if wt!=2:continue
+                      chunk=attrs(cb)
+                      for filewt,fb in chunk.get(3,[]):
+                          if filewt!=2:continue
+                          f=attrs(fb)
+                          filename=string(f[1][0][1]) if f.get(1) else "??"
+                          size=int(f[2][0][1]) if f.get(2) else None
+                          is_dir=bool(f[3][0][1]) if f.get(3) else False
+                          content_hashes=[v.hex().upper() for wire,v in f.get(4,[]) if wire==2]
+                          slice_details=[]
+                          for swt,sb in f.get(7,[]):
+                              if swt!=2:continue
+                              s=attrs(sb)
+                              slice_details.append({
+                                  'uncompressed_size':int(s[1][0][1]) if s.get(1) else None,
+                                  'compressed_size':int(s[2][0][1]) if s.get(2) else None,
+                                  'download_sha1':s[3][0][1].hex().upper() if s.get(3) else None,
+                                  'file_offset':int(s[4][0][1]) if s.get(4) else None
+                              })
+                          recs.append({
+                              'name':filename,'bytes':size,'directory':is_dir,
+                              'content_slice_sha1':content_hashes,
+                              'download_slices':slice_details
+                          })
+                  total_content_hashes=sum(len(r['content_slice_sha1']) for r in recs)
+                  total_download_hashes=sum(sum(1 for x in r['download_slices'] if x['download_sha1']) for r in recs)
+                  print(f"PARSED_FILES count={len(recs)} content_slice_hashes={total_content_hashes} download_sha1_hashes={total_download_hashes}",flush=True)
+                  interesting=[r for r in recs if r['content_slice_sha1'] or r['download_slices']]
+                  priority=sorted(interesting,key=lambda r: (
+                      0 if r['name'].lower().endswith(('.exe','.fat','.forge','.dat','.dll')) else 1,
+                      0 if 'farcry4' in r['name'].lower() or 'fc64' in r['name'].lower() else 1,
+                      r['name'].lower()
+                  ))
+                  for r in priority[:18]:
+                      print("FILE "+json.dumps({
+                        'name':r['name'],'bytes':r['bytes'],
+                        'content_slice_sha1_first3':r['content_slice_sha1'][:3],
+                        'content_slice_count':len(r['content_slice_sha1']),
+                        'download_sha1_first3':[s['download_sha1'] for s in r['download_slices'][:3]],
+                        'download_slice_count':len(r['download_slices'])
+                      }),flush=True)
+                  out={
+                      'product_id':420,'manifest_id':mid,'manifest_bytes':len(raw),
+                      'manifest_sha256':manifest_sha256,'zlib_offset':offset,
+                      'decoded_manifest_bytes':len(payload),'file_count':len(recs),
+                      'content_slice_sha1_count':total_content_hashes,
+                      'download_sha1_count':total_download_hashes,
+                      'note':'File slices carry SHA1 values; these are not necessarily full-file SHA1 or SHA256 values.',
+                      'files':recs
+                  }
+                  filename=f'reports/420_{mid}_file_and_slice_hashes.json'
+                  pathlib.Path(filename).write_text(json.dumps(out,indent=2))
+                  print(f"REPORT_WRITTEN={filename}",flush=True)
+              except Exception as ex:
+                  print(f"ERROR manifest={mid}: {type(ex).__name__}: {ex}",flush=True)
+          PY
+          python3 /tmp/decode_fc4.py
+      - name: Upload JSON hash inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: farcry4-ubisoft-product420-file-slice-hashes
+          path: reports/
+          if-no-files-found: warn
+          retention-days: 30
