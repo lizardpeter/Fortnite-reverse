@@ -5,6 +5,8 @@
 //! Native renderer integration will be enabled only as compiled Source 2
 //! resource and material semantics acquire source-backed decoding.
 pub mod kv3;
+pub mod vbib;
+pub mod world;
 pub mod resource;
 pub mod vpk;
 

@@ -20,6 +20,22 @@ fn run() -> Result<(),String> {
     if report.maps.is_empty() {
         return Err("No nested Source 2 map packages could be indexed".into());
     }
+    for map in &report.maps {
+        let graph=cs2_importer::world::from_workshop(&path,&map.label)?;
+        println!("  SOURCE WORLD graph {}: nodes={}, placements={}, aggregate groups={}, aggregate draws={}, lightmaps={}, entity lumps={}, unresolved source model references={}",
+            map.label,graph.nodes.len(),
+            graph.nodes.iter().map(|n|n.scene_objects.len()).sum::<usize>(),
+            graph.nodes.iter().map(|n|n.aggregate_groups).sum::<usize>(),
+            graph.nodes.iter().map(|n|n.aggregate_draws).sum::<usize>(),
+            graph.lighting_textures.len(),graph.entity_lumps.len(),
+            graph.unresolved_placements.len());
+        for node in &graph.nodes {
+            println!("    world node {} placements={} aggregates={}",node.path,node.scene_objects.len(),node.aggregate_draws);
+            for obj in node.scene_objects.iter().take(4) {
+                println!("    placement {} translation=[{}, {}, {}]",obj.model,obj.rows[0][3],obj.rows[1][3],obj.rows[2][3]);
+            }
+        }
+    }
     let outer=VpkArchive::open_directory(&path)?;
     let mut good_resources=0usize;
     for map_report in &report.maps {
@@ -68,6 +84,23 @@ fn run() -> Result<(),String> {
             let header=ResourceHeader::parse(&bytes)?;
             let kind=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
             println!("  source model {model}: {} bytes blocks {kind:?}",bytes.len());
+            if let Some(mbuf)=header.block(&bytes,b"MBUF") {
+                match cs2_importer::vbib::decode(mbuf) {
+                    Ok(geometry)=>{
+                        println!("    DECODED SOURCE MODEL: vertex buffers={}, index buffers={}",
+                            geometry.vertices.len(),geometry.indices.len());
+                        for buffer in geometry.vertices.iter().take(4) {
+                            println!("    vertex count={} stride={} attrs={:?}",
+                                buffer.count,buffer.stride,
+                                buffer.attributes.iter().map(|a|format!("{}:{}@{}",a.semantic,a.dxgi_format,a.offset)).collect::<Vec<_>>());
+                        }
+                        for buffer in geometry.indices.iter().take(4) {
+                            println!("    triangles index count={} stride={}",buffer.count,buffer.stride);
+                        }
+                    },
+                    Err(e)=>println!("    model MBUF decoder pending: {e}"),
+                }
+            }
             if let Some(data)=header.block(&bytes,b"DATA") {
                 match cs2_importer::kv3::decode(data) {
                     Ok(doc)=> {

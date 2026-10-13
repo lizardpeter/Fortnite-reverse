@@ -8,6 +8,7 @@ publish = false
 crc32fast = "1"
 lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 zstd = { version = "0.13", default-features = false }
+meshopt = "0.6.2"
 
 [[bin]]
 name = "cs2_source_audit"
