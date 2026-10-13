@@ -1,7 +1,7 @@
 // Full, resumable Ghidra export of the authenticated original Fortnite 5.41 PE.
 // The script processes a deterministic range of ORIGINAL AMD64 .pdata entries.
 // Every addressed native function yields one record, including failed/timeout
-// attempts. The complete source dump belongs to a PRIVATE repository/branch.
+// attempts. The complete pseudocode dump is intentionally published in this repository.
 //
 // Usage (headless -postScript):
 // Fortnite541FullDump.java OUTPUT_DIR START_INDEX COUNT TIMEOUT_SECONDS
