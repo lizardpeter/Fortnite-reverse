@@ -1,0 +1,10 @@
+{
+  "functions_with_undecoded_tail": 52,
+  "linear_decoded_bytes": 1234,
+  "linear_instruction_count": 469,
+  "machine": "AMD64",
+  "original_bytes": 7641,
+  "original_functions": 56,
+  "original_pdata_function_count": 291757,
+  "source_original_pe_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108"
+}
