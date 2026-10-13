@@ -89,7 +89,7 @@ def strings(pe):
             relevant=tuple(w for w in KEYWORDS if w in lowered)
             if not relevant:continue
             rva=section["rva"]+m.start()
-            entries[rva]=dict(rva=rva,text=text[:220],section=section["name"],keywords=relevant)
+            entries[rva]=dict(rva=rva,byte_len=len(raw),text=text[:220],section=section["name"],keywords=relevant)
             keyword_hits.update(relevant)
         # UTF16LE retail logging strings, only plausible printable UTF16.
         for m in re.finditer(rb"(?:[\x20-\x7e]\x00){8,}",data):
@@ -99,7 +99,7 @@ def strings(pe):
             relevant=tuple(w for w in KEYWORDS if w in lowered)
             if not relevant:continue
             rva=section["rva"]+m.start()
-            entries[rva]=dict(rva=rva,text=text[:220],section=section["name"],keywords=relevant)
+            entries[rva]=dict(rva=rva,byte_len=len(raw),text=text[:220],section=section["name"],keywords=relevant)
             keyword_hits.update(relevant)
     return entries,keyword_hits
 
@@ -115,9 +115,34 @@ def runtime_functions(pe):
     entries.sort()
     return entries,[v[0] for v in entries]
 
-def find_lea_code_xrefs(pe,entries):
+def material_string_pointer_table(pe,entries):
+    """Real PE relocatable pointers into original shader/material strings.
+
+    Unreal uses global FName/RTTI structures, many of which reference
+    UTF16/ANSI strings indirectly through RVA-addressed pointer tables.
+    Only exact original address matches are promoted to evidence.
+    """
+    by_va={pe.image_base+rva:entry for rva,entry in entries.items()}
+    pointers={}
+    total=0
+    for section in pe.sections:
+        if section["name"] not in (".rdata",".data","_RDATA"):continue
+        data=pe.section_bytes(section)
+        for offset in range(0,len(data)-7,8):
+            total+=1
+            ptr=struct.unpack_from("<Q",data,offset)[0]
+            source=by_va.get(ptr)
+            if source is None:continue
+            pointers[section["rva"]+offset]=source
+    return pointers,total
+
+def find_lea_code_xrefs(pe,entries,pointers):
     refs=[]
     matched_instructions=0
+    indirect_hits=0
+    near_hits=0
+    strings=sorted(entries)
+    source_total=len(entries)
     pointer_targets=collections.Counter()
     rdata_examples=[]
     # 64-bit RIP-relative LEA/MOV, one signed 32-bit displacement.
@@ -145,10 +170,29 @@ def find_lea_code_xrefs(pe,entries):
                         ))
                     break
             item=entries.get(target)
+            proof="direct-LEA"
+            if item is None and target in pointers:
+                item=pointers[target]
+                indirect_hits+=1
+                proof="original-VA-string-pointer"
+            if item is None:
+                index=bisect.bisect_right(strings,target)-1
+                if index>=0:
+                    start= strings[index]
+                    candidate=entries[start]
+                    if start<=target<start+candidate["byte_len"]:
+                        item=candidate
+                        near_hits+=1
+                        proof="original-string-interior"
             if item is not None:
                 refs.append(dict(code_rva=instruction_rva,target_rva=target,
-                    target=item["text"],section=section["name"],opcode=data[start:start+3].hex()))
+                    target=item["text"],section=section["name"],
+                    reference_type=proof,opcode=data[start:start+3].hex()))
     return refs,dict(
+        inspected_original_material_strings=source_total,
+        relocatable_string_pointers=len(pointers),
+        indirect_pointer_code_references=indirect_hits,
+        exact_string_interior_refs=near_hits,
         candidate_rip_relative_instructions=matched_instructions,
         target_section_counts=dict(pointer_targets),
         rdata_reference_samples=rdata_examples,
@@ -204,7 +248,9 @@ def main():
     pe=PE(exe)
     names,kcount=strings(pe)
     funcs,begins=runtime_functions(pe)
-    refs,scan_metrics=find_lea_code_xrefs(pe,names)
+    pointers,inspected_pointers=material_string_pointer_table(pe,names)
+    refs,scan_metrics=find_lea_code_xrefs(pe,names,pointers)
+    scan_metrics["source_pointer_slots_checked"]=inspected_pointers
     regions,referenced_functions=best_targets(pe,funcs,begins,refs)
     result=dict(
         origin=URL,
