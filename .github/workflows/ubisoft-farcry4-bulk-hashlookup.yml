@@ -24,7 +24,9 @@ jobs:
           pathlib.Path('/tmp/decode_fc4.py').write_text(textwrap.dedent(code))
           print("Reusing prior verified Ubisoft binary manifest decoder",flush=True)
           PY
+          mkdir -p reports
           python3 /tmp/decode_fc4.py > /tmp/fc4-decode.log
+          grep -E 'PARSED_FILES|REPORT_WRITTEN|ERROR manifest' /tmp/fc4-decode.log || true
           python3 - <<'PY'
           import glob,json,urllib.request,urllib.error,collections,pathlib,time
           inventory={}
