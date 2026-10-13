@@ -26,6 +26,7 @@ pub struct SourceWorld {
     pub lighting_textures:Vec<String>,
     pub entity_lumps:Vec<String>,
     pub unresolved_placements:Vec<String>,
+    pub source_bounds:Option<([f32;3],[f32;3])>,
 }
 fn compiled_path(path:&str)->Result<String,String> {
     let normalized=path.replace('\\',"/");
@@ -70,6 +71,15 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
     let source_nodes=world_root.field("m_worldNodes").and_then(Value::as_array)
         .ok_or("compiled Source 2 world has no world nodes")?;
     if source_nodes.is_empty(){return Err("compiled Source 2 world declares no nodes".into());}
+    let source_bounds=source_nodes.first().and_then(|n|{
+        let min=n.field("m_vMinBounds")?.as_array()?;
+        let max=n.field("m_vMaxBounds")?.as_array()?;
+        if min.len()!=3||max.len()!=3{return None}
+        Some((
+            [number(&min[0]).ok()?,number(&min[1]).ok()?,number(&min[2]).ok()?],
+            [number(&max[0]).ok()?,number(&max[1]).ok()?,number(&max[2]).ok()?]
+        ))
+    });
     let lighting_textures=world_root.field("m_worldLightingInfo")
         .and_then(|x|x.field("m_lightMaps")).and_then(Value::as_array)
         .unwrap_or(&[]).iter().filter_map(Value::as_text).map(str::to_owned).collect();
@@ -118,7 +128,7 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
         });
     }
     Ok(SourceWorld{map_package:map_package.to_owned(),world_path,nodes,lighting_textures,
-        entity_lumps,unresolved_placements})
+        entity_lumps,unresolved_placements,source_bounds})
 }
 
 #[cfg(test)]

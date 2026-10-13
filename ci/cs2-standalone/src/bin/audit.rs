@@ -75,6 +75,12 @@ fn run() -> Result<(),String> {
                             doc.header.version,doc.header.compression,doc.string_count,doc.nodes);
                         if let cs2_importer::kv3::Value::Object(fields)=&doc.root {
                             println!("    root fields: {:?}",fields.iter().take(36).map(|(k,_)|k).collect::<Vec<_>>());
+                            if let Some(first)=doc.root.field("m_aggregateSceneObjects").and_then(cs2_importer::kv3::Value::as_array).and_then(|a|a.first()){
+                                if let cs2_importer::kv3::Value::Object(kvs)=first {
+                                    println!("    AGGREGATE fields: {:?}",kvs.iter().map(|(k,_)|k).collect::<Vec<_>>());
+                                    for (k,v) in kvs {if k!="m_aggregateMeshes" {println!("    AGGREGATE {k}={}",format!("{v:?}").chars().take(1200).collect::<String>());}}
+                                }
+                            }
                             for (name,field) in fields.iter().take(12) {
                                 let repr=format!("{field:?}");
                                 println!("    field {name}: {}",repr.chars().take(1700).collect::<String>());
