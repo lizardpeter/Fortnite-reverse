@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "original_pdata_functions": 291757,
+  "first_pass_decompiled": 284392,
+  "first_pass_unresolved": 7365,
+  "newly_recovered_unique_functions": 6918,
+  "effectively_decompiled": 291310,
+  "effective_percent": 99.84679,
+  "unresolved_remaining": 447,
+  "recovery_modes": {
+    "fast_v1": {
+      "attempted": 7365,
+      "decompiled": 6918,
+      "decompiler_failed": 41,
+      "missing_function": 406
+    },
+    "full_v1": {
+      "attempted": 0,
+      "decompiled": 0,
+      "decompiler_failed": 0,
+      "missing_function": 0
+    }
+  }
+}
