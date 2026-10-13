@@ -84,6 +84,20 @@ fn run() -> Result<(),String> {
             let header=ResourceHeader::parse(&bytes)?;
             let kind=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
             println!("  source model {model}: {} bytes blocks {kind:?}",bytes.len());
+            if let Some(mdat)=header.block(&bytes,b"MDAT") {
+                match cs2_importer::kv3::decode(mdat) {
+                    Ok(doc)=>{
+                        if let cs2_importer::kv3::Value::Object(fields)=doc.root{
+                            println!("    MDAT fields {:?}",fields.iter().map(|(k,_)|k).collect::<Vec<_>>());
+                            for (k,v) in fields.iter().take(7) {
+                                let s=format!("{v:?}");
+                                println!("    MDAT {k}: {}",s.chars().take(1600).collect::<String>());
+                            }
+                        }
+                    },
+                    Err(e)=>println!("    MDAT decode pending: {e}"),
+                }
+            }
             if let Some(mbuf)=header.block(&bytes,b"MBUF") {
                 match cs2_importer::vbib::decode(mbuf) {
                     Ok(geometry)=>{
