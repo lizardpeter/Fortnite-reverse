@@ -1,0 +1,15 @@
+{
+  "attempts_with_full_analysis": 56,
+  "error_classes": {
+    "decompiler_invalid_ir_or_instruction": 41,
+    "undecodable_original_entry": 15
+  },
+  "largest_function_bytes": 1320,
+  "latest_statuses": {
+    "decompiler_failed": 41,
+    "missing_function": 15
+  },
+  "original_pdata_functions": 291757,
+  "still_unresolved": 56,
+  "successfully_decompiled": 291701
+}
