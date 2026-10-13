@@ -258,18 +258,25 @@ def best_targets(pe,functions,begins,refs,cap=35):
         probes=[]
         for reference in references[:5]:
             centre=reference["code_rva"]
-            begin=max(start,centre-56)
-            stop=min(end,centre+120)
+            # Disassemble from the verified .pdata *function entry*, never
+            # an arbitrary centre-56 offset (which can begin halfway through
+            # an x64 instruction and produce fabricated-looking mnemonics).
+            begin=start
+            stop=min(end,centre+160)
             off=pe.rva_to_offset(begin)
             if off is None:continue
             block=pe.b[off:off+(stop-begin)]
-            instructions=[]
-            for ins in decoder.disasm(block,pe.image_base+begin):
-                if ins.address<pe.image_base+centre-25:continue
-                instructions.append(f"{ins.address:016x}: {ins.mnemonic} {ins.op_str}".strip())
-                if len(instructions)>=17:break
+            decoded=list(decoder.disasm(block,pe.image_base+begin))
+            index=next((i for i,ins in enumerate(decoded)
+                if ins.address<=pe.image_base+centre<ins.address+ins.size),None)
+            if index is None:continue
+            nearby=decoded[max(0,index-9):index+12]
+            instructions=[f"{ins.address:016x}: {ins.mnemonic} {ins.op_str}".strip()
+                for ins in nearby]
             probes.append(dict(reference_rva=hex(centre),
-                original_string=reference["target"][:150],instructions=instructions))
+                original_string=reference["target"][:150],
+                reference_kind=reference.get("reference_type"),
+                instructions=instructions))
         result.append(dict(start_rva=hex(start),end_rva=hex(end),
             function_bytes=size,string_references=len(references),
             unique_strings=sorted(set(x["target"][:160] for x in references))[:18],
