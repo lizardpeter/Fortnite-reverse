@@ -32,6 +32,11 @@ fn run() -> Result<(),String> {
             let kinds=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
             println!("  decoded Source 2 resource {entry}: version {}, blocks {kinds:?}",
                 header.resource_version);
+            let dependencies=header.external_references(&bytes)?;
+            println!("    exact resource dependencies: {}",dependencies.len());
+            for dep in dependencies.iter().take(12) {
+                println!("    RERL {:016x} -> {}",dep.id,dep.path);
+            }
             good_resources+=1;
             if entry.ends_with(".vwrld_c") { found_world=true; }
         }
