@@ -18,7 +18,7 @@ def audit(root: Path, save: bool = True) -> dict:
         raise ValueError("First-pass unresolved ledger not consistent with original status")
     successfully_recovered = {}
     mode_stats = {}
-    for mode in ("fast_v1", "split_v1", "full_v1"):
+    for mode in ("fast_v1", "split_v1", "full_v1", "bounded_v1"):
         attempted = set()
         counts = dict(attempted=0, decompiled=0, decompiler_failed=0, missing_function=0)
         folder = root / "recovery" / mode
