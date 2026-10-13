@@ -6,6 +6,8 @@ publish = false
 
 [dependencies]
 crc32fast = "1"
+lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
+zstd = { version = "0.13", default-features = false }
 
 [[bin]]
 name = "cs2_source_audit"

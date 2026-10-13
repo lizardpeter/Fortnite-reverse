@@ -39,6 +39,18 @@ fn run() -> Result<(),String> {
                 let compression=data.get(20..24).map(|x|u32::from_le_bytes(x.try_into().unwrap())).unwrap_or(0);
                 println!("    KV3 DATA bytes={} magic=0x{magic:08x} compression={compression} prefix={head}",data.len());
             }
+            if let Some(data)=header.block(&bytes,b"DATA") {
+                match cs2_importer::kv3::decode(data) {
+                    Ok(doc)=>{
+                        println!("    decoded KV3 version={} compression={} strings={} values={}",
+                            doc.header.version,doc.header.compression,doc.string_count,doc.nodes);
+                        if let cs2_importer::kv3::Value::Object(fields)=&doc.root {
+                            println!("    root fields: {:?}",fields.iter().take(36).map(|(k,_)|k).collect::<Vec<_>>());
+                        }
+                    },
+                    Err(error)=>println!("    KV3 pending: {error}"),
+                }
+            }
             println!("    exact resource dependencies: {}",dependencies.len());
             for dep in dependencies.iter().take(12) {
                 println!("    RERL {:016x} -> {}",dep.id,dep.path);
