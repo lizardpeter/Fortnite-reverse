@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source_original_call_targets": 58,
+  "original_call_edges": 225,
+  "attempted": 58,
+  "genuine_c_pseudocode_functions": 57,
+  "not_yet_processed": 0,
+  "decompiler_failed": 0,
+  "missing_function": 1,
+  "invalid_original_call_witness": 0,
+  "separate_from_original_pdata_coverage": true
+}
