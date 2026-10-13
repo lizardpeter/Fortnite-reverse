@@ -1,0 +1,88 @@
+name: Broad Far Cry 4 SHA1 comparison against public NSRL hash database
+on:
+  push:
+    branches:
+      - probe/fc4-bulk-hashlookup
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode all three Far Cry 4 manifests and cross-reference first 300 single-slice file hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,textwrap
+          y=pathlib.Path(".github/workflows/ubisoft-farcry4-manifest-hashes.yml").read_text()
+          start="cat > /tmp/decode_fc4.py <<'PY'\n"
+          code=y.split(start,1)[1].split("\n          PY",1)[0]
+          pathlib.Path('/tmp/decode_fc4.py').write_text(textwrap.dedent(code))
+          print("Reusing prior verified Ubisoft binary manifest decoder",flush=True)
+          PY
+          python3 /tmp/decode_fc4.py > /tmp/fc4-decode.log
+          python3 - <<'PY'
+          import glob,json,urllib.request,urllib.error,collections,pathlib,time
+          inventory={}
+          rows=[]
+          for file in glob.glob("reports/420_*.json"):
+              data=json.loads(pathlib.Path(file).read_text())
+              mid=data["manifest_id"][:8]
+              for f in data["files"]:
+                  hashes=f.get("content_slice_sha1") or []
+                  if len(hashes)!=1 or f.get("directory"):continue
+                  sha=hashes[0].upper()
+                  rec={"file":f["name"],"size":f["bytes"],"manifest":mid}
+                  inventory.setdefault(sha,[]).append(rec)
+          def priority(kv):
+              f=kv[1][0]["file"].lower()
+              ext=pathlib.PureWindowsPath(f).suffix
+              return (0 if "farcry4" in f or "fc64" in f else 1 if ext in (".exe",".dll") else 2, f)
+          chosen=dict(sorted(inventory.items(),key=priority)[:300])
+          print(f"UNIQUE_SINGLE_SLICE_SHA1_HASHES={len(inventory)} SELECTED={len(chosen)}",flush=True)
+          results=[]
+          keys=list(chosen)
+          for i in range(0,len(keys),100):
+              batch=keys[i:i+100]
+              url="https://hashlookup.circl.lu/bulk/sha1"
+              req=urllib.request.Request(url,data=json.dumps({"hashes":batch}).encode(),headers={"Accept":"application/json","Content-Type":"application/json","User-Agent":"FarCry4-independent-filehash-audit/1.0"},method="POST")
+              try:
+                  with urllib.request.urlopen(req,timeout=45) as resp:
+                      body=resp.read(4_000_000)
+                      data=json.loads(body)
+                      print(f"BULK_RESPONSE part={i//100+1} code={resp.status} data_type={type(data).__name__} head={json.dumps(data)[:500]}",flush=True)
+                      records=[]
+                      if isinstance(data,list):records=data
+                      elif isinstance(data,dict):
+                          for v in data.values():
+                              if isinstance(v,list):records+=v
+                              elif isinstance(v,dict):records.append(v)
+                      for item in records:
+                          if not isinstance(item,dict):continue
+                          match_sha=(item.get("SHA-1") or item.get("sha1") or item.get("SHA1") or "").upper()
+                          if match_sha in chosen:
+                              founds=chosen[match_sha]
+                              item_size=item.get("FileSize")
+                              good_size=any(str(rec["size"])==str(item_size) for rec in founds)
+                              entry={"hash":match_sha,"source_files":founds,"nsrl_filename":item.get("FileName"),"nsrl_size":item_size,"size_confirmed":good_size,"source_database":item.get("source"),"nsrl_sha256":item.get("SHA-256")}
+                              results.append(entry)
+                              print("MATCH "+json.dumps(entry),flush=True)
+              except urllib.error.HTTPError as e:
+                  print(f"BULK_FAILED part={i//100+1} status={e.code} body={e.read(1000)!r}",flush=True)
+              except Exception as e:
+                  print(f"BULK_ERROR part={i//100+1} err={type(e).__name__}: {e}",flush=True)
+              time.sleep(0.5)
+          pathlib.Path("reports/known_file_matches.json").write_text(json.dumps({"candidate_count":len(chosen),"all_one_slice_unique":len(inventory),"matches":results},indent=2))
+          print(f"RESULT_CANDIDATES={len(chosen)} RESULT_MATCHES={len(results)} MATCHING_SIZES={sum(1 for a in results if a['size_confirmed'])}",flush=True)
+          PY
+      - name: Upload match report
+        uses: actions/upload-artifact@v4
+        with:
+          name: farcry4-bulk-hashlookup-matches
+          path: reports/known_file_matches.json
+          if-no-files-found: warn
+          retention-days: 30
