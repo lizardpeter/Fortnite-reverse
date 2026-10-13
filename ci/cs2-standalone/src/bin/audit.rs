@@ -33,6 +33,12 @@ fn run() -> Result<(),String> {
             println!("  decoded Source 2 resource {entry}: version {}, blocks {kinds:?}",
                 header.resource_version);
             let dependencies=header.external_references(&bytes)?;
+            if let Some(data)=header.block(&bytes,b"DATA") {
+                let head=data.iter().take(48).map(|b|format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+                let magic=data.get(0..4).map(|x| u32::from_le_bytes(x.try_into().unwrap())).unwrap_or(0);
+                let compression=data.get(20..24).map(|x|u32::from_le_bytes(x.try_into().unwrap())).unwrap_or(0);
+                println!("    KV3 DATA bytes={} magic=0x{magic:08x} compression={compression} prefix={head}",data.len());
+            }
             println!("    exact resource dependencies: {}",dependencies.len());
             for dep in dependencies.iter().take(12) {
                 println!("    RERL {:016x} -> {}",dep.id,dep.path);
