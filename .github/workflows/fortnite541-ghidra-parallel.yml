@@ -1,0 +1,188 @@
+name: Fortnite 5.41 full decompile - 16 parallel workers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-parallel.yml"
+      - "crates/fortnite_541/tools/plan_ghidra_batches.py"
+  workflow_dispatch:
+    inputs:
+      batch_size:
+        description: "Original PE .pdata functions per runner (1-10000)"
+        type: string
+        required: true
+        default: "2000"
+      workers:
+        description: "Parallel GitHub-hosted runners (1-16)"
+        type: string
+        required: true
+        default: "16"
+  schedule:
+    - cron: "0 */3 * * *"
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: fortnite541-full-pseudocode-completion
+  cancel-in-progress: false
+
+jobs:
+  plan-remaining-original-functions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      workers: ${{ steps.plan.outputs.workers }}
+      more: ${{ steps.plan.outputs.more }}
+      missing_after: ${{ steps.plan.outputs.missing_after }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute uncovered .pdata ranges from permanently committed public Git files
+        id: plan
+        shell: bash
+        env:
+          BATCH: ${{ inputs.batch_size || '2000' }}
+          WORKERS: ${{ inputs.workers || '16' }}
+        run: |
+          set -euo pipefail
+          git fetch origin re/fortnite541-ghidra-full
+          python3 crates/fortnite_541/tools/plan_ghidra_batches.py --self-test
+          python3 crates/fortnite_541/tools/plan_ghidra_batches.py \
+            --batch "$BATCH" --workers "$WORKERS"
+
+  independent-original-ghidra-workers:
+    needs: plan-remaining-original-functions
+    if: needs.plan-remaining-original-functions.outputs.workers != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.plan-remaining-original-functions.outputs.matrix) }}
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      START: ${{ matrix.start }}
+      COUNT: ${{ matrix.count }}
+      LABEL: ${{ matrix.label }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Prepare retail source and original Ghidra binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/ghidra-work" "$RUNNER_TEMP/source" "$RUNNER_TEMP/shard"
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 "$GHIDRA_URL" -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          program="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$program"
+          chmod +x "$program"
+          echo "GHIDRA_BIN=$program" >> "$GITHUB_ENV"
+      - name: Decompile original PE .pdata functions with Ghidra headless
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GHIDRA_BIN" "$RUNNER_TEMP/ghidra-work" FortniteRetail5_41 \
+            -import "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" \
+            -noanalysis \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541FullDump.java "$RUNNER_TEMP/shard" "$START" "$COUNT" "10" \
+            -max-cpu 2 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_GHIDRA_BATCH_COMPLETE "$RUNNER_TEMP/ghidra.log"
+          python3 - <<'PY'
+          import gzip,json,glob,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"shard"
+          meta=json.loads((root/"last_batch.json").read_text())
+          assert meta["original_pdata_functions"]==291757
+          assert meta["batch_start"]==int(os.environ["START"])
+          assert meta["batch_end_exclusive"]-meta["batch_start"]==int(os.environ["COUNT"])
+          files=list((root/"functions").glob("*.jsonl.gz"))
+          assert len(files)==1
+          with gzip.open(files[0],"rt") as f:
+              actual=[json.loads(line) for line in f if line.strip()]
+          assert len(actual)==int(os.environ["COUNT"])
+          assert all(row["index"]==int(os.environ["START"])+i for i,row in enumerate(actual))
+          assert len(actual)==sum(meta[k] for k in ("decompiled","decompiler_failed","missing"))
+          reports=root/"reports"
+          reports.mkdir()
+          (reports/f"pdata_{os.environ['LABEL']}.json").write_text(json.dumps(meta,indent=2)+"\n")
+          (root/"last_batch.json").unlink()
+          print("SOURCE-VERIFIED GHIDRA SHARD",meta)
+          PY
+      - name: Upload original-function pseudocode shard to aggregator
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite-ghidra-shard-${{ matrix.label }}
+          path: ${{ runner.temp }}/shard/
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+
+  commit-all-completed-shards:
+    needs: [plan-remaining-original-functions, independent-original-ghidra-workers]
+    if: needs.plan-remaining-original-functions.outputs.workers != '0' && needs.independent-original-ghidra-workers.result == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      more: ${{ needs.plan-remaining-original-functions.outputs.more }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fortnite-ghidra-shard-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/shards
+      - name: Commit all verified pseudocode in one public Git transaction
+        shell: bash
+        env:
+          DUMP_BRANCH: re/fortnite541-ghidra-full
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite 5.41 RE decompilation"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          cp -r "$RUNNER_TEMP/shards/." decompilation/fortnite541/
+          git add decompilation/fortnite541
+          test -n "$(git diff --cached --name-only)"
+          git commit -m "Ghidra: batch of ${{ needs.plan-remaining-original-functions.outputs.workers }} parallel original 5.41 function shards"
+          git push origin "HEAD:refs/heads/$DUMP_BRANCH"
+          python3 - <<'PY'
+          import glob,json
+          reports=glob.glob("decompilation/fortnite541/reports/pdata_*.json")
+          covered=sum(json.load(open(p))["batch_end_exclusive"]-json.load(open(p))["batch_start"] for p in reports)
+          print("PERMANENTLY COMMITTED GHIDRA PSEUDOCODE REPORTS",len(reports),"covered by these reports",covered,"of 291757 original unwind functions")
+          PY
+      - name: Dispatch next parallel wave automatically until original inventory is complete
+        if: needs.plan-remaining-original-functions.outputs.more == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/fortnite541-ghidra-parallel.yml/dispatches" \
+            -f ref=main \
+            -f 'inputs[batch_size]=2000' \
+            -f 'inputs[workers]=16'
+          echo "Triggered next 16-runner wave; remaining unprocessed PE entries after this wave: ${{ needs.plan-remaining-original-functions.outputs.missing_after }}"
+
+  confirmed-complete:
+    needs: plan-remaining-original-functions
+    if: needs.plan-remaining-original-functions.outputs.workers == '0'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All 291757 original Fortnite 5.41 PE .pdata entries already have committed Ghidra function records"
