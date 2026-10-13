@@ -222,7 +222,7 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     let count4=checked(signed(bytes,32)?,"bytes4")?;
     let count8=checked(signed(bytes,36)?,"bytes8")?;
     let types_count=checked(signed(bytes,40)?,"types")?;
-    let objects1=small(bytes,44)? as usize;
+    let _objects1=small(bytes,44)? as usize;
     let _arrays1=small(bytes,46)? as usize;
     let total=checked(signed(bytes,48)?,"total uncompressed")?;
     let compressed_total=checked(signed(bytes,52)?,"total compressed")?;
@@ -270,7 +270,7 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     let size4=count4.checked_mul(4).ok_or("KV3 first bytes4 overflow")?;
     first.b4=Lane{bytes:bytes1.get(cursor..cursor.checked_add(size4).ok_or("KV3 offset overflow")?).ok_or("KV3 first bytes4 range")?,at:0};
     cursor+=size4;
-    cursor=align(cursor,8)?;
+    if count8>0 { cursor=align(cursor,8)?; }
     let size8=count8.checked_mul(8).ok_or("KV3 first bytes8 overflow")?;
     first.b8=Lane{bytes:bytes1.get(cursor..cursor.checked_add(size8).ok_or("KV3 offset overflow")?).ok_or("KV3 first bytes8 range")?,at:0};
     cursor+=size8;
@@ -300,7 +300,7 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     let size4b=b4_2.checked_mul(4).ok_or("KV3 buffer 2 bytes4 overflow")?;
     second.b4=Lane{bytes:bytes2.get(cursor2..cursor2.checked_add(size4b).ok_or("KV3 offset overflow")?).ok_or("KV3 second bytes4 range")?,at:0};
     cursor2+=size4b;
-    cursor2=align(cursor2,8)?;
+    if b8_2>0 { cursor2=align(cursor2,8)?; }
     let size8b=b8_2.checked_mul(8).ok_or("KV3 buffer 2 bytes8 overflow")?;
     second.b8=Lane{bytes:bytes2.get(cursor2..cursor2.checked_add(size8b).ok_or("KV3 offset overflow")?).ok_or("KV3 second bytes8 range")?,at:0};
     cursor2+=size8b;
@@ -412,8 +412,6 @@ mod tests{
         let mut lane1=strings.to_vec();
         lane1.resize(align(lane1.len(),4).unwrap(),0);
         lane1.extend_from_slice(&2i32.to_le_bytes()); // number of interned strings
-        let buffer1_len=align(lane1.len(),8).unwrap();
-        lane1.resize(buffer1_len,0);
         let mut lane2=Vec::new();
         lane2.extend_from_slice(&1i32.to_le_bytes()); // root object field count
         lane2.extend_from_slice(&0i32.to_le_bytes()); // name id
