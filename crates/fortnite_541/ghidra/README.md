@@ -208,6 +208,29 @@ analysis before examining decoded call instructions. This distinction
 prevents empty fast-import Ghidra placeholders from being mistaken for
 real source code.
 
+## Source-authenticated x64 fallback when Ghidra C fails
+
+For the final original `.pdata` entries where all Ghidra decompilation
+strategies failed, `disassemble_original_remaining.py` independently
+validates the PE32+ AMD64 executable against its pinned SHA256, reconstructs
+the original sorted 291,757-entry unwind index directly from the retail PE,
+and verifies each selected original ordinal and RVA/end RVA.
+
+It retains each source interval's SHA256, original source unwind address,
+actual Capstone x86-64 linear disassembly prefix, source instruction bytes,
+and an explicit count/hash of still-undecoded trailing bytes. Linear
+decoding is **not** a verified control-flow graph and must not be labeled
+original C++ or 100% successful source reconstruction.
+
+The [real GitHub runner](../../.github/workflows/fortnite541-original-x64-fallback.yml)
+completed source authentication and cross-checks for all 56 previously
+unresolved functions: **7,641 source bytes**, of which **1,234** were
+linearly decoded into **469** instruction records; 52 spans have undecoded
+tails. This is a concrete original machine-code fallback for later
+instruction-level reconstruction, not additional successful Ghidra C bodies.
+The `remaining_original_x64` folder in the permanent public data branch
+contains this evidence after main-branch validation.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
