@@ -184,6 +184,30 @@ analysis before emitting the discovery report. Resolving and decompiling these
 candidates is a distinct verification frontier beyond the complete original
 `.pdata` inventory.
 
+## Independently decoded non-.pdata direct call targets
+
+The additional `Fortnite541DirectCalls.java` Ghidra pass walks decoded call
+instructions in original executable memory, follows each known **direct**
+flow destination, and finds entry points lying **outside every authenticated
+original .pdata interval**. For each unique candidate target it exports:
+
+- Original RVA and a real decoded callsite witness
+- Count of decoded direct CALL edges to that target
+- Whether a decoded instruction exists at the target
+- Whether Ghidra independently defined a function or thunk at the target
+
+The gzip evidence is stored separately as
+`discovery/nonpdata_direct_calls.jsonl.gz` with an auditable count report.
+These are source-backed **candidate** leaf functions or thunks, not
+automatically decompiled code or proof of standalone original routines.
+
+The fast `-noanalysis` test completed successfully, but it decoded **zero**
+instructions and therefore identified zero call targets. The authoritative
+target-identification run on `main` enables normal whole-PE Ghidra
+analysis before examining decoded call instructions. This distinction
+prevents empty fast-import Ghidra placeholders from being mistaken for
+real source code.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
