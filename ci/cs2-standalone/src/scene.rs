@@ -113,6 +113,10 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let mut skipped=0usize;
     let mut rejected=Vec::<String>::new();
     let mut budget_skipped=0usize;
+    let mut aggregate_fragments_admitted=0usize;
+    let mut aggregate_fragment_failures=0usize;
+    let mut aggregate_lod_filtered=0usize;
+    let mut tinted_mesh_cache=BTreeMap::<(usize,[u32;3]),usize>::new();
     for node in &graph.nodes {
         aggregate_draws+=node.aggregate_draws;
         skipped+=node.unknown_scene_objects;
@@ -142,6 +146,87 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
             };
             for mesh in mesh_list {scene.instances.push(instance(mesh,placement.rows));}
         }
+
+        // Aggregate fragments reference a compiled source model and one exact
+        // MDAT draw-call ordinal per fragment. Do not import each entire
+        // aggregate as one visible mesh: doing so loses per-fragment placement,
+        // tint, authored LOD and duplicates geometry for shared draw calls.
+        for agg in &node.aggregates {
+            if agg.fragments.is_empty(){continue;}
+            let meshes=if let Some(existing)=cache.get(&agg.model) {existing.clone()}
+            else {
+                let before_meshes=scene.meshes.len();
+                let before_triangles=triangles;
+                let result=append_source_model(&mut scene,&inner,&outer,&agg.model,
+                    &mut material_ids,&mut untextured,&mut triangles);
+                let indices=match result {
+                    Ok(v)=>v,
+                    Err(error)=>{
+                        scene.meshes.truncate(before_meshes);
+                        triangles=before_triangles;
+                        if rejected.len()<512 {rejected.push(format!("{}: {error}",agg.model));}
+                        Vec::new()
+                    },
+                };
+                cache.insert(agg.model.clone(),indices.clone());
+                indices
+            };
+            if meshes.is_empty(){
+                aggregate_fragment_failures+=agg.fragments.len();
+                continue;
+            }
+            // For each source-defined LOD setup, keep only the finest
+            // available level. The union of authored group masks determines
+            // its actual first level; never assume bit 0 exists.
+            let mut lod_setups=BTreeMap::<i64,u32>::new();
+            for fragment in &agg.fragments {
+                if fragment.lod_setup_index>=0 && fragment.lod_mask!=0 {
+                    *lod_setups.entry(fragment.lod_setup_index).or_default() |= fragment.lod_mask;
+                }
+            }
+            for frag in &agg.fragments {
+                if frag.lod_mask!=0 && frag.lod_setup_index>=0 {
+                    if let Some(&union)=lod_setups.get(&frag.lod_setup_index) {
+                        if union!=0 && frag.lod_mask & (1u32 << union.trailing_zeros())==0 {
+                            aggregate_lod_filtered+=1;
+                            continue;
+                        }
+                    }
+                }
+                let Some(&source_mesh)=meshes.get(frag.draw_index) else{
+                    aggregate_fragment_failures+=1;
+                    if rejected.len()<512{
+                        rejected.push(format!("{}: invalid aggregate draw {}",agg.model,frag.draw_index));
+                    }
+                    continue;
+                };
+                let white=frag.tint.iter().all(|&x|(x-1.).abs()<1e-6);
+                let mesh=if white {source_mesh}else{
+                    let color_bits=frag.tint.map(f32::to_bits);
+                    let key=(source_mesh,color_bits);
+                    if let Some(&existing)=tinted_mesh_cache.get(&key){existing}
+                    else {
+                        if scene.meshes.len()>=MAX_SCENE_MESHES {budget_skipped+=1;continue;}
+                        let mut copy=scene.meshes[source_mesh].clone();
+                        for vert in &mut copy.vertices {
+                            for channel in 0..3 {vert.color[channel]*=frag.tint[channel];}
+                        }
+                        copy.name=format!("{}#fragment_tint_{:08x}_{:08x}_{:08x}",
+                            copy.name,color_bits[0],color_bits[1],color_bits[2]);
+                        let idx=scene.meshes.len();
+                        let tris=copy.indices.len()/3;
+                        if triangles.saturating_add(tris)>MAX_TRIANGLES{budget_skipped+=1;continue;}
+                        triangles+=tris;
+                        scene.meshes.push(copy);
+                        tinted_mesh_cache.insert(key,idx);
+                        idx
+                    }
+                };
+                scene.instances.push(instance(mesh,frag.rows));
+                aggregate_fragments_admitted+=1;
+            }
+            aggregate_fragment_failures+=agg.unsupported_fragments;
+        }
     }
     if scene.meshes.is_empty(){return Err("Source 2 world contains no decodable original direct geometry".into());}
     scene.report.lines.push(format!(
@@ -159,9 +244,14 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         rejected.iter().take(12).cloned().collect::<Vec<_>>().join("; ")
     ));
     scene.report.lines.push(format!(
-        "Remaining source world graph: {} aggregate draw references not yet merged, {} unrecognized scene objects, {} referenced baked lightmaps, {} entity lumps. \
+        "Source 2 world aggregates: {} actual fragments admitted, {} filtered by authored lowest LOD, {} unresolved fragments, {} original aggregate fragment references. No aggregate geometry is invented.",
+        aggregate_fragments_admitted,aggregate_lod_filtered,
+        aggregate_fragment_failures,aggregate_draws
+    ));
+    scene.report.lines.push(format!(
+        "Remaining source world graph: {} unrecognized scene objects, {} referenced baked lightmaps, {} entity lumps. \
          Retail-authored physics/spawns and visibility not yet lowered; the preview is incomplete.",
-        aggregate_draws,skipped,graph.lighting_textures.len(),graph.entity_lumps.len()
+        skipped,graph.lighting_textures.len(),graph.entity_lumps.len()
     ));
     Ok(scene)
 }

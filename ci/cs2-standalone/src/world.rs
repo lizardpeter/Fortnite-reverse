@@ -16,8 +16,26 @@ pub struct SourceWorldNode {
     pub scene_objects:Vec<SourcePlacement>,
     pub aggregate_groups:usize,
     pub aggregate_draws:usize,
+    pub aggregates:Vec<SourceAggregate>,
     pub unknown_scene_objects:usize,
 }
+#[derive(Clone,Debug)]
+pub struct SourceFragment {
+    pub draw_index:usize,
+    pub rows:[[f32;4];3],
+    pub tint:[f32;3],
+    pub object_flags:i64,
+    pub lod_mask:u32,
+    pub lod_setup_index:i64,
+}
+#[derive(Clone,Debug)]
+pub struct SourceAggregate {
+    pub model:String,
+    pub fragments:Vec<SourceFragment>,
+    pub lod_setup_count:usize,
+    pub unsupported_fragments:usize,
+}
+const IDENTITY:[[f32;4];3]=[[1.,0.,0.,0.],[0.,1.,0.,0.],[0.,0.,1.,0.]];
 #[derive(Clone,Debug)]
 pub struct SourceWorld {
     pub map_package:String,
@@ -119,12 +137,54 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
             let skin=object.field("m_skin").and_then(Value::as_text).map(str::to_owned);
             scene_objects.push(SourcePlacement{model:model_path,rows:transform,object_id,tint,skin});
         }
-        let aggregates=document.field("m_aggregateSceneObjects").and_then(Value::as_array).unwrap_or(&[]);
-        let aggregate_draws=aggregates.iter().filter_map(|a|a.field("m_aggregateMeshes").and_then(Value::as_array))
-            .map(|meshes|meshes.len()).sum();
+        let compiled_aggregates=document.field("m_aggregateSceneObjects").and_then(Value::as_array).unwrap_or(&[]);
+        let mut aggregates=Vec::new();
+        let mut aggregate_draws=0usize;
+        for agg in compiled_aggregates {
+            let fragments=agg.field("m_aggregateMeshes").and_then(Value::as_array)
+                .ok_or_else(||format!("{path}: aggregate has no fragment array"))?;
+            aggregate_draws+=fragments.len();
+            let model=agg.field("m_renderableModel").and_then(Value::as_text)
+                .ok_or_else(||format!("{path}: aggregate missing model reference"))?;
+            let model=compiled_path(model)?;
+            let transforms=agg.field("m_fragmentTransforms").and_then(Value::as_array).unwrap_or(&[]);
+            let lod_setups=agg.field("m_lodSetups").and_then(Value::as_array).unwrap_or(&[]);
+            let mut fragment_transform_index=0;
+            let mut parsed=Vec::with_capacity(fragments.len());
+            let mut unsupported_fragments=0;
+            for frag in fragments {
+                let Some(index)=frag.field("m_nDrawCallIndex").and_then(Value::as_float) else {
+                    unsupported_fragments+=1;continue;
+                };
+                if !index.is_finite() || index<0. || index.fract()!=0. || index>250_000. {
+                    return Err(format!("{path}: invalid aggregate draw index {index}"));
+                }
+                let has_transform=matches!(frag.field("m_bHasTransform"),Some(Value::Bool(true)));
+                let rows=if has_transform {
+                    let value=transforms.get(fragment_transform_index)
+                        .ok_or_else(||format!("{path}: missing aggregate fragment transform"))?;
+                    fragment_transform_index+=1;
+                    rows(value)?
+                } else { IDENTITY };
+                let tint=frag.field("m_vTintColor").and_then(Value::as_array).map(|values|{
+                    if values.len()!=3{return Err(format!("{path}: invalid fragment tint vector"));}
+                    Ok([
+                        number(&values[0])?/255.,
+                        number(&values[1])?/255.,
+                        number(&values[2])?/255.,
+                    ])
+                }).transpose()?.unwrap_or([1.;3]);
+                let flags=frag.field("m_objectFlags").and_then(Value::as_float).unwrap_or(0.) as i64;
+                let lod_mask=frag.field("m_nLODGroupMask").and_then(Value::as_float).unwrap_or(0.) as u32;
+                let lod_setup_index=frag.field("m_nLODSetupIndex").and_then(Value::as_float).unwrap_or(-1.) as i64;
+                parsed.push(SourceFragment{draw_index:index as usize,rows,tint,object_flags:flags,lod_mask,lod_setup_index});
+            }
+            aggregates.push(SourceAggregate{model,fragments:parsed,
+                lod_setup_count:lod_setups.len(),unsupported_fragments});
+        }
         nodes.push(SourceWorldNode{
-            path,scene_objects,aggregate_groups:aggregates.len(),
-            aggregate_draws,unknown_scene_objects,
+            path,scene_objects,aggregate_groups:compiled_aggregates.len(),
+            aggregate_draws,aggregates,unknown_scene_objects,
         });
     }
     Ok(SourceWorld{map_package:map_package.to_owned(),world_path,nodes,lighting_textures,
