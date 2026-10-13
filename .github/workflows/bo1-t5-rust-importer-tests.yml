@@ -1,0 +1,30 @@
+name: BO1 T5 isolated Rust importer tests
+on:
+  push:
+    branches: [probe/bo1-t5-source-zip-inventory-20261013]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rust-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Fetch only Rust-test T5 importer and source-neutral contracts
+        shell: bash
+        run: |
+          git clone --quiet --filter=blob:none --no-checkout --depth 1 \
+            --branch feature/bo1-t5-universal-importer \
+            https://github.com/lizardpeter/Rust-test.git /tmp/t5-code
+          cd /tmp/t5-code
+          git sparse-checkout init --cone
+          git sparse-checkout set asset_import/importers/bo1 asset_import/neutral_scene
+          git checkout -q
+          git rev-parse HEAD
+      - name: Compile and run native T5 importer tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version
+          cargo --version
+          cargo test --manifest-path /tmp/t5-code/asset_import/importers/bo1/Cargo.toml --all-targets -- --nocapture
