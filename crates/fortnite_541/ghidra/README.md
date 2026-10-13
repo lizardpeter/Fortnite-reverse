@@ -250,8 +250,11 @@ successfully produced **8/8 genuine nonempty C pseudocode bodies**, with
 reverse-engineering milestone, not a fabricated extension of `.pdata`
 coverage or recompilable original C++.
 
-On main, the eight-worker workflow checks all 58 original targets and merges
-only source-verified results to the separate
+The production eight-worker GitHub recovery completed with **57/58** genuine
+nonempty Ghidra C pseudocode bodies recovered at original direct-call targets,
+**zero decompiler failures**, **one missing function**, and **zero invalid
+original-call witnesses**. The source-backed results and independent audit are
+permanently committed in the separate
 `discovery/nonpdata_recovery` directory. Its independent audit checks
 original RVA, callsite witness, CALL count, actual nonempty C, every shard
 report and unique original index. Coverage of the original 291,757 `.pdata`
