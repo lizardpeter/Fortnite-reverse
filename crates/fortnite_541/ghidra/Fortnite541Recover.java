@@ -8,6 +8,7 @@ import ghidra.app.script.GhidraScript;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSet;
 import ghidra.program.model.listing.Function;
 import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.Memory;
@@ -103,9 +104,9 @@ public class Fortnite541Recover extends GhidraScript {
     @Override public void run()throws Exception{
         String[] args=getScriptArgs();
         if(args.length!=3 && args.length!=4)throw new IllegalArgumentException(
-            "Expected OUTPUT_DIR ORIGINAL_ORDINAL_RVA_TSV TIMEOUT_SECONDS [fast|split]");
+            "Expected OUTPUT_DIR ORIGINAL_ORDINAL_RVA_TSV TIMEOUT_SECONDS [fast|split|bounded]");
         String strategy=args.length==4?args[3]:"fast";
-        if(!strategy.equals("fast")&&!strategy.equals("split"))
+        if(!strategy.equals("fast")&&!strategy.equals("split")&&!strategy.equals("bounded"))
             throw new IllegalArgumentException("Unsupported original function repair mode");
         Path output=Paths.get(args[0]);
         Path input=Paths.get(args[1]);
@@ -119,6 +120,7 @@ public class Fortnite541Recover extends GhidraScript {
         Path destination=output.resolve(filename);
         Path part=Paths.get(destination.toString()+".part");
         int successes=0,failed=0,missing=0,containing=0,parentsRemoved=0,instructionsRepaired=0;
+        int originalBodiesBounded=0, bodyBoundFailures=0;
         Address base=currentProgram.getImageBase();
         DecompInterface dec=new DecompInterface();
         dec.toggleCCode(true);
@@ -141,7 +143,7 @@ public class Fortnite541Recover extends GhidraScript {
                         containing++;
                         diagnostics="original .pdata entry lies inside "+owner.getName()+
                             " at "+owner.getEntryPoint().toString();
-                        if(strategy.equals("split") &&
+                        if((strategy.equals("split")||strategy.equals("bounded")) &&
                            owner.getEntryPoint().compareTo(entry)<0){
                             try{
                                 Address parentStart=owner.getEntryPoint();
@@ -168,6 +170,22 @@ public class Fortnite541Recover extends GhidraScript {
                         if(fn==null)fn=currentProgram.getFunctionManager().getFunctionAt(entry);
                     }catch(Exception ex){
                         err="Recovery function creation: "+ex.toString();
+                    }
+                }
+                boolean bodyBounded=false;
+                if(fn!=null && strategy.equals("bounded")){
+                    try {
+                        // Original Win64 .pdata gives the actual low/high native
+                        // function unwind interval. Never infer an extended
+                        // body from Ghidra speculative cross-section flows.
+                        AddressSet originalBody=new AddressSet(entry,base.add(t.end-1));
+                        fn.setBody(originalBody);
+                        bodyBounded=true;
+                        originalBodiesBounded++;
+                    }catch(Exception boundError){
+                        bodyBoundFailures++;
+                        String explanation="Original .pdata body clipping failed: "+boundError.toString();
+                        diagnostics=(diagnostics==null?explanation:diagnostics+"; "+explanation);
                     }
                 }
                 String name=null,signature=null;
@@ -204,6 +222,7 @@ public class Fortnite541Recover extends GhidraScript {
                     ",\"status\":"+json(status)+
                     ",\"error\":"+json(err)+
                     ",\"diagnostics\":"+json(diagnostics)+
+                    ",\"body_bounded\":"+bodyBounded+
                     ",\"c\":"+json(source)+"}\n");
             }
         }finally{dec.dispose();}
@@ -217,6 +236,8 @@ public class Fortnite541Recover extends GhidraScript {
             ",\"removed_inferred_parent_functions\":"+parentsRemoved+
             ",\"repaired_crossing_instructions\":"+instructionsRepaired+
             ",\"strategy\":"+json(strategy)+
+            ",\"original_pdata_bodies_applied\":"+originalBodiesBounded+
+            ",\"original_pdata_body_failures\":"+bodyBoundFailures+
             ",\"first_original_index\":"+jobs.get(0).index+
             ",\"last_original_index\":"+jobs.get(jobs.size()-1).index+
             ",\"elapsed_ms\":"+(System.currentTimeMillis()-started)+
