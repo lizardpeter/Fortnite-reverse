@@ -1,0 +1,34 @@
+name: Fortnite 5.41 original executable identity check
+
+on:
+  push:
+    paths:
+      - ".github/workflows/fortnite541-original-exe.yml"
+      - "crates/fortnite_541/tools/locate_original_win64_executable.py"
+  pull_request:
+    paths:
+      - ".github/workflows/fortnite541-original-exe.yml"
+      - "crates/fortnite_541/tools/locate_original_win64_executable.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  find-original-executable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Identify original R2 WindowsClient executable and PE metadata
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 crates/fortnite_541/tools/locate_original_win64_executable.py | tee "$RUNNER_TEMP/fortnite541-original-pe-metadata.txt"
+      - name: Retain metadata only (no executable binary)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fortnite541-original-exe-pe-metadata
+          path: ${{ runner.temp }}/fortnite541-original-pe-metadata.txt
+          if-no-files-found: warn
