@@ -1,0 +1,69 @@
+name: Cross-check Far Cry 4 manifest SHA1 against CIRCL public hashlookup
+on:
+  push:
+    branches:
+      - probe/fc4-public-hashlookup
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Query third-party public known-file hash database without uploading game files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          cat >/tmp/crosscheck.py <<'PY'
+          import json,urllib.request,urllib.error,time,pathlib
+          # All entries except controls are original full-file SHA1 hashes (single content slice in Ubisoft manifests).
+          samples=[
+            ("Ubisoft_23DB","bin/FarCry4.exe",92008,"CD7600B53F92659015209F6C2BEB7D32C3628CD4"),
+            ("Ubisoft_0F72","bin/FarCry4.exe",95240,"5B17B5C0718C243E8456CB0E6BBA1EA679AAF260"),
+            ("Ubisoft_23DB","bin/bink2w64.dll",441560,"26B002452A94D88A37D58EF64EFAC5F4844D764D"),
+            ("Ubisoft_23DB","bin/Divelements.SandDock.dll",421080,"395C79F8DC3BE9DBBFCA593C2BEF2D39C8E0B87B"),
+            ("Ubisoft_23DB","bin/GFSDK_GodraysLib.x64.dll",233688,"EE54EC43F03BB11E44967BA889EB430672D2C6BB"),
+            ("Ubisoft_23DB","bin/GFSDK_TXAA.win64.dll",100568,"A05BFF10FA2911198C557C09AF0E88070BCA0049"),
+            ("Ubisoft_23DB","bin/SandBar.dll",263896,"900D51A0F7A901D877048D15336A1EA226B7FAFB"),
+            ("Ubisoft_5E0E","bin/IGE_WPF64.exe",743128,"57CFFD4A62FCAE4300CACBEEB4EB5CEC19E0CCA4"),
+            ("Ubisoft_0F72","bin/GFSDK_SSAO.win64.dll",710656,"FAE28A9F033BA7C5644B52FCF1FC9BCDB4BD5396"),
+            ("Online_OpenDLL","FarCry4.exe",None,"1135DAB8646A08D4CC4C956B694C49B1D5706D42"),
+            ("Online_Gridinsoft","FarCry4.exe",90840,"4A54776BD4E6CE428EFAD4A62213E44C0856C58F"),
+            ("CIRCL_documented_sample","openssl",723944,"72F104BF11A12511154267328F069FE0541E841E")
+          ]
+          out=[]
+          for source,name,size,sha1 in samples:
+            url="https://hashlookup.circl.lu/lookup/sha1/"+sha1
+            rec={"source":source,"file":name,"manifest_bytes":size,"sha1":sha1,"database":"CIRCL"}
+            try:
+              req=urllib.request.Request(url,headers={"Accept":"application/json","User-Agent":"FC4-hash-crosscheck/1.0"})
+              with urllib.request.urlopen(req,timeout=15) as response:
+                rec["status"]=response.status
+                data=json.loads(response.read(8192))
+                rec["filename"]=data.get("FileName")
+                rec["filesize"]=data.get("FileSize")
+                rec["product"]=data.get("ProductName")
+                rec["vendor"]=data.get("vendor")
+                rec["file_sha1"]=data.get("SHA-1")
+                rec["source_datasets"]=data.get("source")
+            except urllib.error.HTTPError as e:
+              rec["status"]=e.code
+              rec["message"]=e.read(200).decode("utf-8","replace")
+            except Exception as e:
+              rec["status"]="ERROR"
+              rec["message"]=str(e)
+            print("HASHLOOKUP "+json.dumps(rec),flush=True)
+            out.append(rec)
+          pathlib.Path("reports/farcry4_public_hash_crosscheck.json").write_text(json.dumps(out,indent=2))
+          PY
+          python3 /tmp/crosscheck.py
+      - name: Upload lookup results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: farcry4-public-hashlookup-results
+          path: reports/
+          retention-days: 30
+          if-no-files-found: warn
