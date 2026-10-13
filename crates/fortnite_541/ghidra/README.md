@@ -231,6 +231,32 @@ instruction-level reconstruction, not additional successful Ghidra C bodies.
 The `remaining_original_x64` folder in the permanent public data branch
 contains this evidence after main-branch validation.
 
+## Actually decompiling original direct CALL targets without unwind metadata
+
+The original source-backed direct-call inventory discovered 58 unique native
+entrypoint candidates beyond every original `.pdata` interval, each with
+at least one real decoded executable CALL edge. These may be leaf routines,
+thunks, or helper functions omitted from x64 unwind metadata.
+
+`Fortnite541RecoverDirectCalls.java` attempts to recover their **real**
+Ghidra C pseudocode. It independently checks the authenticated original
+`.pdata` extent index (291,757 entries), confirms that each target lies in
+original executable memory *outside* those extents, and verifies the source
+CALL instruction witness before permitting the result to be counted.
+
+The first [8-target real Ghidra runner](../../.github/workflows/fortnite541-ghidra-extra-call-recovery.yml)
+successfully produced **8/8 genuine nonempty C pseudocode bodies**, with
+**zero missing or decompiler-failed targets**. This is a separate actual
+reverse-engineering milestone, not a fabricated extension of `.pdata`
+coverage or recompilable original C++.
+
+On main, the eight-worker workflow checks all 58 original targets and merges
+only source-verified results to the separate
+`discovery/nonpdata_recovery` directory. Its independent audit checks
+original RVA, callsite witness, CALL count, actual nonempty C, every shard
+report and unique original index. Coverage of the original 291,757 `.pdata`
+functions remains unchanged by these extra functions.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
