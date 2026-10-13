@@ -1,0 +1,68 @@
+# Fortnite 5.41 — full Ghidra decompilation
+
+This repository intentionally hosts the **public** C-like pseudocode exported by
+Ghidra for the original Fortnite 5.41 Win64 shipping client. The source binary
+is not committed or uploaded as a file in Git.
+
+## Authenticated original executable
+
+- Retail source: `Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe`
+- SHA-256: `7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108`
+- Architecture: AMD64 PE32+, image base `0x140000000`
+- Original unwind/function entries after Ghidra deduplication: **291,757**
+
+## Where the permanent dump lives
+
+The generated code and function metadata are committed into the public
+[`re/fortnite541-ghidra-full`](https://github.com/lizardpeter/Fortnite-reverse/tree/re/fortnite541-ghidra-full)
+branch:
+
+- `decompilation/fortnite541/pdata_index.jsonl.gz` — original function
+  entrypoints, end addresses and unwinding information (complete inventory).
+- `decompilation/fortnite541/functions/pdata_XXXXXX_YYYYYY.jsonl.gz` —
+  full generated C pseudocode, original addresses, function signatures,
+  callers/callees counts, and explicit decompiler failures for every entry.
+- `decompilation/fortnite541/reports/pdata_XXXXXX_YYYYYY.json` — exported
+  function counts and failures for each parallel batch.
+- `decompilation/fortnite541/last_batch.json` — first smoke-run summary.
+
+Files are compressed, but all content remains human-readable JSON after
+decompression. Function address and original `.pdata` ordinal are durable keys.
+
+## Workers and automatic continuation
+
+Two workflows use the public repository's GitHub-hosted runners:
+
+1. [Single-batch/full-analysis entry point](../../.github/workflows/fortnite541-ghidra-full.yml)
+   — authenticated original executable, pinned Ghidra 12.1.4 SHA-256,
+   first 12-function smoke test, optional manually selected batch.
+2. [Parallel automated completion](../../.github/workflows/fortnite541-ghidra-parallel.yml)
+   — up to **16 independent workers**, normally **2,000 original functions
+   each per wave**, with source SHA verification on every runner. Each
+   wave is committed transactionally to the dump branch, then dispatches
+   the next wave until every item from the original unwind index has a
+   record. A three-hour scheduled run serves as a recovery mechanism for
+   runner failures and interrupted chains.
+
+The batch planner reads the existing original-address-based shards from Git,
+so old successes are never lost or needlessly reprocessed. It also prevents
+failed or merely started jobs from counting toward verified coverage.
+
+## What “complete” means
+
+- **Inventory complete:** Every unique `.pdata` function-boundary entry
+  gets exactly one indexed record, with status `decompiled`,
+  `decompiler_failed`, or `missing_function`.
+- **Decompiler completion:** Only records with `status=decompiled` actually
+  contain generated C pseudocode. Report the status counts; do not relabel
+  failures as successful.
+- **Not necessarily all executable routines:** Functions without a `.pdata`
+  entry (e.g., some leaf functions and thunks) are a further recovery frontier.
+- **Not fully reconstructed original C++:** Decompiled C is approximate and
+  not equivalent to a compiling, linked, behaviorally verified original
+  game project. Recovering class layouts, object lifetimes and exact
+  shader/material bindings is subsequent reverse-engineering work.
+
+This public dump is intended to accelerate the Fortnite 5.41
+`FMaterialShaderMap`, `FShaderResource`, D3D11 resource-binding,
+uniform-expression and UE4.21 material serialization reconstruction.
