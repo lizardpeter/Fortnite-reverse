@@ -133,6 +133,27 @@ entries to verify safety and practical recovery rate before scaling. Output
 is stored separately in `recovery/split_v1` and combined into the existing
 effective ledger only after independent audit.
 
+## Final unresolved function analysis
+
+The verified original `.pdata` pass and source-backed retry stages now contain
+**291,691 real Ghidra C pseudocode bodies out of 291,757 original entries**
+(**99.977378%**). The remaining **66** are explicitly unresolved in the
+permanent recovery ledger: 25 missing-function records and 41 Ghidra
+decompiler failures.
+
+A bounded `full_v1` experimental stage analyzes the whole authenticated
+retail PE using Ghidra's normal analyzers before retrying the authenticated
+original `.pdata` entrypoints. This is substantially more expensive than the
+previous fast import. The first test is capped at eight of those 66 original
+entries, with a 600-second analysis timeout and independent pseudocode output
+audit. Only genuine nonempty C bodies that are RVA verified against the
+original executable increase the effective completion percentage.
+
+Remaining entries are **not** replaced with generated stubs, guessed
+implementations, or invented function signatures. An original function entry
+can remain unresolved due to bad disassembly, overlap, corrupt Ghidra IR,
+or other compiler/runtime conditions.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
