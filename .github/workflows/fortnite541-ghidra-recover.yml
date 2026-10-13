@@ -1,0 +1,164 @@
+name: Fortnite 5.41 recover unresolved Ghidra functions
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-recover.yml"
+      - "crates/fortnite_541/ghidra/Fortnite541Recover.java"
+      - "crates/fortnite_541/tools/prepare_ghidra_recovery.py"
+  workflow_dispatch:
+    inputs:
+      queue_start:
+        type: string
+        default: "0"
+        required: true
+        description: "Start ordinal into the audited unresolved-function queue"
+      count:
+        type: string
+        default: "128"
+        required: true
+        description: "Number of unresolved functions to retry"
+      full_analysis:
+        type: boolean
+        default: false
+        required: true
+        description: "Run whole-program Ghidra analysis before targeted retries"
+      timeout_seconds:
+        type: string
+        default: "30"
+        required: true
+        description: "Decompilation timeout per retry, 1-120 seconds"
+
+permissions:
+  contents: write
+
+jobs:
+  recover-original-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 175
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      DUMP_BRANCH: re/fortnite541-ghidra-full
+      QUEUE_START: ${{ inputs.queue_start || '0' }}
+      RETRY_COUNT: ${{ inputs.count || '128' }}
+      TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
+      FULL_ANALYSIS: ${{ inputs.full_analysis && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Select only original retail-function entries that failed the initial pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
+          mkdir -p "$RUNNER_TEMP/input" "$RUNNER_TEMP/original" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/ghidra-project" "$RUNNER_TEMP/recovery"
+          git fetch origin "$DUMP_BRANCH"
+          git show "origin/$DUMP_BRANCH:decompilation/fortnite541/unresolved.jsonl.gz" > "$RUNNER_TEMP/input/unresolved.jsonl.gz"
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py \
+            --unresolved "$RUNNER_TEMP/input/unresolved.jsonl.gz" \
+            --start "$QUEUE_START" --count "$RETRY_COUNT" \
+            --out "$RUNNER_TEMP/input/targets.tsv"
+      - name: Authenticate original Fortnite and official Ghidra
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/original/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/original/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 "$GHIDRA_URL" -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          ghidra="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$ghidra"
+          chmod +x "$ghidra"
+          echo "GHIDRA_BIN=$ghidra" >> "$GITHUB_ENV"
+      - name: Recover only the selected original failed functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          options=()
+          if [[ "$FULL_ANALYSIS" != "true" ]]; then
+            options+=("-noanalysis")
+          else
+            options+=("-analysisTimeoutPerFile" "9000")
+          fi
+          "$GHIDRA_BIN" "$RUNNER_TEMP/ghidra-project" Fortnite541Recovery \
+            -import "$RUNNER_TEMP/original/FortniteClient-Win64-Shipping.exe" \
+            "${options[@]}" \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541Recover.java "$RUNNER_TEMP/recovery" "$RUNNER_TEMP/input/targets.tsv" "$TIMEOUT_SECONDS" \
+            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/recovery/ghidra.log"
+          grep -q FORTNITE541_GHIDRA_RECOVERY_COMPLETE "$RUNNER_TEMP/recovery/ghidra.log"
+      - name: Verify original ordinal identity and retry results before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob,gzip,json,os,pathlib
+          t=pathlib.Path(os.environ["RUNNER_TEMP"])
+          expected=[(int(a),a1,a2) for a,a1,a2 in
+                    (line.rstrip().split("\t") for line in (t/"input/targets.tsv").read_text().splitlines())]
+          files=glob.glob(str(t/"recovery/records/*.jsonl.gz"))
+          assert len(files)==1,files
+          with gzip.open(files[0],"rt") as f:
+              actual=[json.loads(s) for s in f if s.strip()]
+          assert len(actual)==len(expected),(len(actual),len(expected))
+          assert all((row["index"],row["rva"],row["end_rva"])==entry
+                     for row,entry in zip(actual,expected))
+          assert all(row["status"] in ("decompiled","decompiler_failed","missing_function") for row in actual)
+          assert all(isinstance(row["c"],str) and row["c"].strip()
+                     for row in actual if row["status"]=="decompiled")
+          summary=json.loads((t/"recovery/recovery_summary.json").read_text())
+          assert summary["retry_count"]==len(actual)
+          assert summary["recovered"]==sum(r["status"]=="decompiled" for r in actual)
+          assert summary["missing"]==sum(r["status"]=="missing_function" for r in actual)
+          assert summary["decompiler_failed"]==sum(r["status"]=="decompiler_failed" for r in actual)
+          print("ORIGINAL_RETAIL_FUNCTION_RECOVERY_VERIFIED",summary)
+          PY
+      - name: Commit source-authenticated recovery results permanently
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          kind=fast_v1
+          if [[ "$FULL_ANALYSIS" == "true" ]]; then kind=full_v1; fi
+          source_dir="$RUNNER_TEMP/recovery"
+          summary_name="$(basename "$(find "$source_dir/records" -name '*.jsonl.gz' -print -quit)" .jsonl.gz).json"
+          mkdir -p "$source_dir/reports"
+          mv "$source_dir/recovery_summary.json" "$source_dir/reports/$summary_name"
+          rm -f "$source_dir/ghidra.log"
+          git config user.name "Fortnite 5.41 Ghidra recovery"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          mkdir -p "decompilation/fortnite541/recovery/$kind"
+          cp -r "$source_dir/." "decompilation/fortnite541/recovery/$kind/"
+          git add decompilation/fortnite541/recovery
+          if ! git diff --cached --quiet; then
+            git commit -m "Ghidra: source-verified recovery of original unresolved entries $QUEUE_START"
+            for attempt in 1 2 3 4 5; do
+              if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
+              git fetch origin "$DUMP_BRANCH"
+              git rebase "origin/$DUMP_BRANCH"
+              if [[ "$attempt" -eq 5 ]]; then exit 1; fi
+              sleep "$attempt"
+            done
+          fi
+      - name: Upload diagnostic logs and exact recovery proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-ghidra-recovery-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/recovery/
+            ${{ runner.temp }}/input/targets.tsv
+          if-no-files-found: warn
+          retention-days: 90
