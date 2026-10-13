@@ -178,5 +178,5 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo run --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_preview_validation -- \
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_preview_validation -- \
             "$HOME/Steam/steamapps/workshop/content/730/3620630831/3620630831_dir.vpk"
