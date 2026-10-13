@@ -45,6 +45,7 @@ jobs:
           APP_TITLE: ${{ matrix.title }}
         shell: bash
         run: |
+          set +e
           set -uo pipefail
           cd "$RUNNER_TEMP/steamcmd"
           mkdir -p "$RUNNER_TEMP/install"
@@ -59,7 +60,11 @@ jobs:
           if grep -qi 'No subscription' "$RUNNER_TEMP/steamcmd-app.log"; then
             echo "APP_RESULT=$APP_ID NO_SUBSCRIPTION"
           elif grep -q 'Success! App' "$RUNNER_TEMP/steamcmd-app.log"; then
-            echo "APP_RESULT=$APP_ID SUCCESS"
+            if find "$RUNNER_TEMP/install" -type f ! -name 'appmanifest_*.acf' -print -quit | grep -q .; then
+              echo "APP_RESULT=$APP_ID SUCCESS_GAME_FILES"
+            else
+              echo "APP_RESULT=$APP_ID SUCCESS_ONLY_EMPTY_MANIFEST"
+            fi
           elif find "$RUNNER_TEMP/install" -type f -print -quit | grep -q .; then
             echo "APP_RESULT=$APP_ID FILES_PRESENT_PARTIAL"
           elif grep -qi 'Update state\|Downloading' "$RUNNER_TEMP/steamcmd-app.log"; then
