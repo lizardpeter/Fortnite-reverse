@@ -1,0 +1,36 @@
+name: Ubisoft Far Cry 4 unsigned CDN HTTP probe
+on:
+  push:
+    branches:
+      - probe/ubisoft-anonymous-fc4-420
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unsigned-cdn:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - name: Test HTTP and legacy CDN TLS without an auth token
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import urllib.request,urllib.error,ssl,hashlib
+          root="uplaypc-s-ubisoft.cdn.ubi.com/uplaypc/downloads/420/manifests/"
+          for mid in ["5E0E479E72659DD0AA481B9F0B504E0B82239FA8","23DB238D7796D96A9F6F3D7964EFEE9A00E64127"]:
+              for scheme in ["http","https"]:
+                  url=scheme+"://"+root+mid+".manifest"
+                  req=urllib.request.Request(url,headers={"Range":"bytes=0-511","User-Agent":"Ubisoft-anonymous-FC4-probe/1.0"})
+                  ctx=ssl._create_unverified_context() if scheme=="https" else None
+                  print(f"PROBE {scheme} product=420 manifest={mid} no_token=yes",flush=True)
+                  try:
+                      with urllib.request.urlopen(req,timeout=14,context=ctx) as r:
+                          sample=r.read(512)
+                          print(f"RESULT status={r.status} final_url={r.url.split('?')[0]} type={r.headers.get('Content-Type')} range={r.headers.get('Content-Range')} content_length={r.headers.get('Content-Length')} nbytes_read={len(sample)} prefix={sample[:24].hex()} sha256sample={hashlib.sha256(sample).hexdigest()}",flush=True)
+                  except urllib.error.HTTPError as e:
+                      print(f"RESULT http_status={e.code} content_type={e.headers.get('Content-Type')} body={e.read(200)!r}",flush=True)
+                  except Exception as e:
+                      print(f"RESULT error={type(e).__name__}: {e}",flush=True)
+          print("NOTE: HTTPS certificate checks disabled only for anonymous diagnostic requests to legacy hostname; no credentials or private headers transmitted.",flush=True)
+          PY
