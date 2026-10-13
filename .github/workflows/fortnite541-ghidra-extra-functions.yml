@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/fortnite541-ghidra-extra-functions.yml"
       - "crates/fortnite_541/ghidra/Fortnite541LeafDiscovery.java"
+      - "crates/fortnite_541/ghidra/Fortnite541DirectCalls.java"
   workflow_dispatch:
 
 permissions:
@@ -59,8 +60,10 @@ jobs:
             "${options[@]}" \
             -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
             -postScript Fortnite541LeafDiscovery.java "$RUNNER_TEMP/discovery" \
+            -postScript Fortnite541DirectCalls.java "$RUNNER_TEMP/discovery" \
             -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra-discovery.log"
           grep -q FORTNITE541_NONPDATA_COMPLETE "$RUNNER_TEMP/ghidra-discovery.log"
+          grep -q FORTNITE541_NONPDATA_DIRECT_CALLS_COMPLETE "$RUNNER_TEMP/ghidra-discovery.log"
       - name: Verify independent leaf-candidate classification
         shell: bash
         run: |
@@ -78,6 +81,22 @@ jobs:
           assert all(x["classification"] in ("inside_existing_pdata","outside_original_pdata") for x in rows)
           assert all(x["memory_block"] and isinstance(x["body_bytes"],int) for x in rows)
           print("AUTHENTICATED_NONPDATA_GHIDRA_CANDIDATES_VERIFIED",report)
+          direct=json.loads((base/"nonpdata_direct_calls_report.json").read_text())
+          assert direct["original_pdata_entries"]==291757,direct
+          with gzip.open(base/"nonpdata_direct_calls.jsonl.gz","rt") as f:
+              call_targets=[json.loads(line) for line in f if line.strip()]
+          assert len(call_targets)==direct["nonpdata_unique_call_targets"],direct
+          assert len({r["target_rva"] for r in call_targets})==len(call_targets)
+          assert sum(r["direct_calls"] for r in call_targets)==direct["nonpdata_direct_call_edges"]
+          assert sum(r["has_entry_instruction"] for r in call_targets)==direct["target_entry_instruction_decoded"]
+          assert sum(r["ghidra_function"] for r in call_targets)==direct["target_ghidra_functions"]
+          assert sum(r["is_thunk"] for r in call_targets)==direct["target_ghidra_thunks"]
+          assert all(r["target_rva"].startswith("0x") and r["first_callsite_rva"].startswith("0x")
+                     and r["direct_calls"]>0 and (not r["is_thunk"] or r["ghidra_function"])
+                     for r in call_targets)
+          assert all(int(r["target_rva"],16)>=0 and int(r["first_callsite_rva"],16)>=0
+                     for r in call_targets)
+          print("AUTHENTICATED_NONPDATA_DIRECT_CALL_EVIDENCE_VERIFIED",direct)
           PY
       - name: Commit original function-discovery evidence separately from real C pseudocode
         if: github.ref == 'refs/heads/main'
@@ -91,6 +110,8 @@ jobs:
           mkdir -p decompilation/fortnite541/discovery
           cp "$RUNNER_TEMP/discovery/nonpdata_candidates.jsonl.gz" decompilation/fortnite541/discovery/
           cp "$RUNNER_TEMP/discovery/nonpdata_report.json" decompilation/fortnite541/discovery/
+          cp "$RUNNER_TEMP/discovery/nonpdata_direct_calls.jsonl.gz" decompilation/fortnite541/discovery/
+          cp "$RUNNER_TEMP/discovery/nonpdata_direct_calls_report.json" decompilation/fortnite541/discovery/
           git add decompilation/fortnite541/discovery
           git commit -m "Ghidra: original executable leaf candidate inventory outside .pdata"
           for attempt in 1 2 3 4 5; do
