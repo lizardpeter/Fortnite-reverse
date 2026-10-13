@@ -1,0 +1,76 @@
+name: BO1 source archive metadata probe
+on:
+  push:
+    branches: [probe/bo1-t5-source-zip-inventory-20261013]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - name: Probe user supplied T5 ZIP by ranged HTTP without downloading full game
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import urllib.request,urllib.error,ssl,zipfile,io,collections,os,sys
+          url="https://r2.houseofkublai.com/downloads/games/pluto_t5_full_game.zip"
+          h={'User-Agent':'Mozilla/5.0 (BO1 T5 authorized-source importer inspector)'}
+          def query(method, range_header=None):
+              hs=dict(h)
+              if range_header:hs['Range']=range_header
+              return urllib.request.urlopen(urllib.request.Request(url,method=method,headers=hs),timeout=35)
+          try:
+              with query('HEAD') as r:
+                  size=int(r.headers.get('Content-Length',0))
+                  accept=r.headers.get('Accept-Ranges')
+                  etag=r.headers.get('ETag')
+                  print('SOURCE_HEAD',dict(status=r.status,content_length=size,accept_ranges=accept,etag=etag,type=r.headers.get('Content-Type'),url=r.url),flush=True)
+          except Exception as e:
+              print('SOURCE_HEAD_ERROR',repr(e),flush=True);sys.exit(0)
+          if size <= 0:sys.exit(0)
+          try:
+              with query('GET','bytes=-65536') as r:
+                  tail=r.read(min(size,131072))
+                  print('TAIL_PROBE',dict(code=r.status,range=r.headers.get('Content-Range'),read=len(tail),zip_end=tail.rfind(b'PK\x05\x06')),flush=True)
+                  if r.status!=206:
+                      print('SERVER_NO_RANGE_SUPPORT: not downloading entire full game zip',flush=True)
+                      sys.exit(0)
+          except Exception as e:
+              print('TAIL_PROBE_ERROR',repr(e),flush=True);sys.exit(0)
+          class RangeZip(io.RawIOBase):
+              def __init__(self,size):self.size=size;self.pos=0;self.count=0;self.bytes=0
+              def seekable(self):return True
+              def readable(self):return True
+              def seek(self,n,whence=0):
+                  self.pos=n if whence==0 else self.pos+n if whence==1 else self.size+n
+                  return self.pos
+              def tell(self):return self.pos
+              def read(self,n=-1):
+                  if n<0:n=self.size-self.pos
+                  n=min(n,self.size-self.pos)
+                  if n<=0:return b''
+                  if self.count>=45 or self.bytes+n>50*1024*1024:raise OSError("Archive inventory request budget exhausted")
+                  start=self.pos;end=start+n-1
+                  with query('GET',f'bytes={start}-{end}') as r:
+                      if r.status!=206:raise OSError('No ranged response')
+                      data=r.read(n)
+                  self.pos+=len(data);self.count+=1;self.bytes+=len(data)
+                  return data
+          try:
+              rr=RangeZip(size)
+              with zipfile.ZipFile(rr) as z:
+                  infos=z.infolist()
+                  print('ZIP_ENTRIES',len(infos),'TOTAL_UNCOMPRESSED',sum(v.file_size for v in infos),'HTTP_READ_REQUESTS',rr.count,'HTTP_READ_BYTES',rr.bytes,flush=True)
+                  exts=collections.Counter((os.path.splitext(v.filename)[1].lower() or '(none)') for v in infos if not v.is_dir())
+                  print('TOP_EXTENSIONS',exts.most_common(30),flush=True)
+                  print('TOP_LEVELS',collections.Counter(v.filename.split('/')[0] for v in infos).most_common(30),flush=True)
+                  interesting=[x for x in infos if x.filename.lower().endswith(('.ff','.iwd','.pak','.ipak','.exe','.dll','.csv','.map','.bsp','.gdt','.zt','.xpak','.iwi','.xmodel_bin','.cfg'))]
+                  print('IMPORTANT_ENTRIES',len(interesting),flush=True)
+                  for i in interesting[:85]: print('SOURCE_FILE',i.filename,i.file_size,i.compress_size,hex(i.CRC),flush=True)
+                  for i in sorted(infos,key=lambda i:-i.file_size)[:20]:
+                      print('LARGEST_FILE',i.filename,i.file_size,i.compress_size,flush=True)
+          except Exception as e:
+              print('ZIP_INVENTORY_ERROR',type(e).__name__,str(e),flush=True)
+          PY
