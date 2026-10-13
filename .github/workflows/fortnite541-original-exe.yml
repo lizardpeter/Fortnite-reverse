@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/fortnite-pe-tools"
-          "$RUNNER_TEMP/fortnite-pe-tools/bin/python" -m pip install --quiet 'capstone>=5,<6'
+          "$RUNNER_TEMP/fortnite-pe-tools/bin/python" -m pip install --quiet 'capstone>=5,<6' 'iced-x86>=1.21,<2'
       - name: Recover original material shader x64 function references and instruction sequences
         shell: bash
         env:
