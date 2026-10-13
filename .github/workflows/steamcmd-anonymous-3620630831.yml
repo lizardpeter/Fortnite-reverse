@@ -1,0 +1,50 @@
+name: Anonymous Steam Workshop download test
+on:
+  push:
+    branches:
+      - probe/steamcmd-anonymous-3620630831
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  anonymous-download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Install SteamCMD runtime and download SteamCMD
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lib32gcc-s1 ca-certificates curl
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl --fail --location --retry 3 --connect-timeout 20 \
+            https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            -o "$RUNNER_TEMP/steamcmd.tar.gz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
+      - name: Download map anonymously and report result
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd "$RUNNER_TEMP/steamcmd"
+          echo "Testing anonymous access to app=730 workshop_item=3620630831"
+          timeout 1200 ./steamcmd.sh +login anonymous +workshop_download_item 730 3620630831 +quit 2>&1 | tee "$RUNNER_TEMP/steamcmd-attempt.log"
+          steam_status=${PIPESTATUS[0]}
+          echo "SteamCMD process exit status: $steam_status"
+          echo "SteamCMD outcome lines:"
+          grep -Ei 'Downloading item|Downloaded item|ERROR!|Access Denied|fail|success' "$RUNNER_TEMP/steamcmd-attempt.log" | tail -n 45 || true
+          echo "Looking for actual downloaded item files..."
+          map_dir=$(find "$RUNNER_TEMP/steamcmd" "$HOME/.steam" "$HOME/.local/share/Steam" -type d -path '*/workshop/content/730/3620630831' -print -quit 2>/dev/null)
+          if [[ -n "$map_dir" ]] && [[ -n "$(find "$map_dir" -type f -print -quit)" ]]; then
+            echo "SUCCESS: anonymous download produced actual files."
+            echo "Map directory: $map_dir"
+            du -sh "$map_dir"
+            find "$map_dir" -type f -printf '%P (%s bytes)\n' | head -n 40
+            echo "### Anonymous SteamCMD: SUCCESS" >> "$GITHUB_STEP_SUMMARY"
+            echo "App 730, Workshop 3620630831: files downloaded. File sizes listed in job logs." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "FAILURE: No map files downloaded anonymously; see SteamCMD output above."
+            echo "### Anonymous SteamCMD: FAILED" >> "$GITHUB_STEP_SUMMARY"
+            echo "App 730, Workshop 3620630831: no map files found. Inspect job logs for access denial or other error." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
