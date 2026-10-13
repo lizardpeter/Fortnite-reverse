@@ -9,6 +9,7 @@ import ghidra.app.decompiler.DecompInterface;
 import ghidra.app.decompiler.DecompileResults;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Instruction;
 import ghidra.program.model.mem.Memory;
 import ghidra.program.model.mem.MemoryBlock;
 import java.io.BufferedWriter;
@@ -101,8 +102,11 @@ public class Fortnite541Recover extends GhidraScript {
     }
     @Override public void run()throws Exception{
         String[] args=getScriptArgs();
-        if(args.length!=3)throw new IllegalArgumentException(
-            "Expected OUTPUT_DIR ORIGINAL_ORDINAL_RVA_TSV TIMEOUT_SECONDS");
+        if(args.length!=3 && args.length!=4)throw new IllegalArgumentException(
+            "Expected OUTPUT_DIR ORIGINAL_ORDINAL_RVA_TSV TIMEOUT_SECONDS [fast|split]");
+        String strategy=args.length==4?args[3]:"fast";
+        if(!strategy.equals("fast")&&!strategy.equals("split"))
+            throw new IllegalArgumentException("Unsupported original function repair mode");
         Path output=Paths.get(args[0]);
         Path input=Paths.get(args[1]);
         int timeout=Integer.parseInt(args[2]);
@@ -114,7 +118,7 @@ public class Fortnite541Recover extends GhidraScript {
             jobs.get(0).index,jobs.get(jobs.size()-1).index);
         Path destination=output.resolve(filename);
         Path part=Paths.get(destination.toString()+".part");
-        int successes=0,failed=0,missing=0,containing=0;
+        int successes=0,failed=0,missing=0,containing=0,parentsRemoved=0,instructionsRepaired=0;
         Address base=currentProgram.getImageBase();
         DecompInterface dec=new DecompInterface();
         dec.toggleCCode(true);
@@ -137,6 +141,26 @@ public class Fortnite541Recover extends GhidraScript {
                         containing++;
                         diagnostics="original .pdata entry lies inside "+owner.getName()+
                             " at "+owner.getEntryPoint().toString();
+                        if(strategy.equals("split") &&
+                           owner.getEntryPoint().compareTo(entry)<0){
+                            try{
+                                Address parentStart=owner.getEntryPoint();
+                                if(currentProgram.getFunctionManager().removeFunction(parentStart)){
+                                    parentsRemoved++;
+                                    diagnostics+="; overlapping inferred parent removed";
+                                    Instruction crossed=currentProgram.getListing()
+                                        .getInstructionContaining(entry);
+                                    if(crossed!=null && !crossed.getMinAddress().equals(entry)){
+                                        currentProgram.getListing().clearCodeUnits(
+                                            crossed.getMinAddress(),crossed.getMaxAddress(),false);
+                                        instructionsRepaired++;
+                                        diagnostics+="; misaligned crossing instruction cleared";
+                                    }
+                                }
+                            }catch(Exception repairError){
+                                diagnostics+="; boundary repair failed: "+repairError.toString();
+                            }
+                        }
                     }
                     try{
                         disassemble(entry);
@@ -190,6 +214,9 @@ public class Fortnite541Recover extends GhidraScript {
             ",\"decompiler_failed\":"+failed+
             ",\"missing\":"+missing+
             ",\"overlapping_parent_functions\":"+containing+
+            ",\"removed_inferred_parent_functions\":"+parentsRemoved+
+            ",\"repaired_crossing_instructions\":"+instructionsRepaired+
+            ",\"strategy\":"+json(strategy)+
             ",\"first_original_index\":"+jobs.get(0).index+
             ",\"last_original_index\":"+jobs.get(jobs.size()-1).index+
             ",\"elapsed_ms\":"+(System.currentTimeMillis()-started)+

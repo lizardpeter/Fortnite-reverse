@@ -52,7 +52,7 @@ jobs:
         id: queue
         shell: bash
         env:
-          MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'all' || 'single' }}
+          MODE: ${{ github.event_name == 'push' && 'split_probe' || 'single' }}
           QUEUE_START: ${{ inputs.queue_start || '0' }}
           RETRY_COUNT: ${{ inputs.count || '128' }}
         run: |
@@ -60,12 +60,14 @@ jobs:
           python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
           python3 crates/fortnite_541/tools/audit_ghidra_recovery.py --self-test
           git fetch origin re/fortnite541-ghidra-full
-          git show "origin/re/fortnite541-ghidra-full:decompilation/fortnite541/unresolved.jsonl.gz" > "$RUNNER_TEMP/unresolved.jsonl.gz"
+          git show "origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_remaining.jsonl.gz" > "$RUNNER_TEMP/unresolved.jsonl.gz"
           python3 - <<'PY'
           import gzip,json,os
           with gzip.open(os.path.join(os.environ["RUNNER_TEMP"],"unresolved.jsonl.gz"),"rt") as f:
               total=sum(bool(line.strip()) for line in f)
-          if os.environ["MODE"]=="all":
+          if os.environ["MODE"]=="split_probe":
+              chunks=[{"start":0,"count":min(64,total),"label":"000000"}]
+          elif os.environ["MODE"]=="all":
               chunks=[{"start":i,"count":min(500,total-i),"label":f"{i:06d}"} for i in range(0,total,500)]
           else:
               start=int(os.environ["QUEUE_START"])
@@ -117,7 +119,7 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/input" "$RUNNER_TEMP/original" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/ghidra-project" "$RUNNER_TEMP/recovery"
           git fetch origin "$DUMP_BRANCH"
-          git show "origin/$DUMP_BRANCH:decompilation/fortnite541/unresolved.jsonl.gz" > "$RUNNER_TEMP/input/unresolved.jsonl.gz"
+          git show "origin/$DUMP_BRANCH:decompilation/fortnite541/recovery_remaining.jsonl.gz" > "$RUNNER_TEMP/input/unresolved.jsonl.gz"
           python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py \
             --unresolved "$RUNNER_TEMP/input/unresolved.jsonl.gz" \
             --start "$QUEUE_START" --count "$RETRY_COUNT" \
@@ -149,7 +151,7 @@ jobs:
             -import "$RUNNER_TEMP/original/FortniteClient-Win64-Shipping.exe" \
             "${options[@]}" \
             -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
-            -postScript Fortnite541Recover.java "$RUNNER_TEMP/recovery" "$RUNNER_TEMP/input/targets.tsv" "$TIMEOUT_SECONDS" \
+            -postScript Fortnite541Recover.java "$RUNNER_TEMP/recovery" "$RUNNER_TEMP/input/targets.tsv" "$TIMEOUT_SECONDS" split \
             -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
           grep -q FORTNITE541_GHIDRA_RECOVERY_COMPLETE "$RUNNER_TEMP/ghidra.log"
       - name: Verify original ordinal identity, pseudocode and Ghidra report
@@ -228,9 +230,12 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin "$DUMP_BRANCH"
           git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
-          kind=fast_v1
+          kind=split_v1
           if [[ "$FULL_ANALYSIS" == "true" ]]; then kind=full_v1; fi
           mkdir -p "decompilation/fortnite541/recovery/$kind"
+          if [[ "$kind" == "split_v1" && ! -f "decompilation/fortnite541/recovery/$kind/source_unresolved.jsonl.gz" ]]; then
+            cp decompilation/fortnite541/recovery_remaining.jsonl.gz "decompilation/fortnite541/recovery/$kind/source_unresolved.jsonl.gz"
+          fi
           cp -r "$RUNNER_TEMP/shards/." "decompilation/fortnite541/recovery/$kind/"
           python3 "$RUNNER_TEMP/audit_ghidra_recovery.py" --root decompilation/fortnite541
           git add decompilation/fortnite541/recovery decompilation/fortnite541/recovery_status.json decompilation/fortnite541/recovery_remaining.jsonl.gz

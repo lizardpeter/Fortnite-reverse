@@ -106,6 +106,33 @@ counted as reconstructed C pseudocode. Full automatic PE analysis is an
 optional deeper retry mode, not proof that failed original functions are valid
 C++ source.
 
+## Remaining source-function boundary conflicts
+
+After the fast 16-runner retry wave, 6,918 additional functions had real C
+pseudocode; the **effective** .pdata result reached 291,310/291,757 (99.84679%).
+The remaining 447 consist of 406 missing functions and 41 decompiler failures
+as observed in the fast second-pass records.
+
+The source-backed fast retry reports separately recorded 390 cases in which
+Ghidra's automatically inferred function body contains another original
+`.pdata` entry. This motivates a constrained third-pass `split` mode:
+
+1. Confirm the missing function's original `.pdata` RVA and end against the
+   SHA256-verified original PE.
+2. If Ghidra assigned that genuine start to an earlier inferred containing
+   function, remove the conflicting inferred function **only in the temporary
+   Ghidra analysis project**, preserving every previously exported C body.
+3. Clear only a decoded instruction that incorrectly crosses the original
+   function-entry boundary, then disassemble and create the function at its
+   authenticated original start.
+4. Export actual C, or a machine-readable missing/decompiler-failed record.
+   Never claim source-level reconstruction from a stub or manufactured C.
+
+The first split-mode run is deliberately capped at 64 unresolved original
+entries to verify safety and practical recovery rate before scaling. Output
+is stored separately in `recovery/split_v1` and combined into the existing
+effective ledger only after independent audit.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
