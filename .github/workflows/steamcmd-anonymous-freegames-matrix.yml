@@ -1,0 +1,72 @@
+name: Anonymous SteamCMD free playable games test
+on:
+  push:
+    branches: [probe/steamcmd-anon-freegames-20261013]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        include:
+          - {appid: 730, title: CounterStrike2}
+          - {appid: 440, title: TeamFortress2}
+          - {appid: 570, title: Dota2}
+          - {appid: 304930, title: Unturned}
+          - {appid: 225840, title: SvenCoop}
+          - {appid: 17500, title: ZombiePanicSource}
+    steps:
+      - name: Install SteamCMD
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lib32gcc-s1 ca-certificates curl
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl -fsSL --retry 3 https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz -o "$RUNNER_TEMP/steamcmd.tar.gz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
+      - name: Attempt anonymous download and inventory game/server files
+        env:
+          APP_ID: ${{ matrix.appid }}
+          APP_TITLE: ${{ matrix.title }}
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          cd "$RUNNER_TEMP/steamcmd"
+          mkdir -p "$RUNNER_TEMP/install"
+          echo "APP_TEST_START=$APP_ID TITLE=$APP_TITLE"
+          timeout 42 ./steamcmd.sh +@sSteamCmdForcePlatformType windows +force_install_dir "$RUNNER_TEMP/install" +login anonymous +app_update "$APP_ID" +quit > "$RUNNER_TEMP/steamcmd-app.log" 2>&1
+          rc=$?
+          echo "APP_EXIT_CODE=$rc"
+          grep -Ei 'No subscription|ERROR!|Success!|Update state|Downloading|fully installed' "$RUNNER_TEMP/steamcmd-app.log" | tail -n 18 || true
+          echo 'GAME_OR_SERVER_FILES:'
+          find "$RUNNER_TEMP/install" -type f -printf '%P (%s bytes)\n' | head -n 18 || true
+          du -sh "$RUNNER_TEMP/install" || true
+          if grep -qi 'No subscription' "$RUNNER_TEMP/steamcmd-app.log"; then
+            echo "APP_RESULT=$APP_ID NO_SUBSCRIPTION"
+          elif grep -q 'Success! App' "$RUNNER_TEMP/steamcmd-app.log"; then
+            if find "$RUNNER_TEMP/install" -type f ! -name 'appmanifest_*.acf' -print -quit | grep -q .; then
+              echo "APP_RESULT=$APP_ID SUCCESS_GAME_FILES"
+            else
+              echo "APP_RESULT=$APP_ID SUCCESS_ONLY_EMPTY_MANIFEST"
+            fi
+          elif find "$RUNNER_TEMP/install" -type f -print -quit | grep -q .; then
+            echo "APP_RESULT=$APP_ID FILES_PRESENT_PARTIAL"
+          elif grep -qi 'Update state\|Downloading' "$RUNNER_TEMP/steamcmd-app.log"; then
+            echo "APP_RESULT=$APP_ID DOWNLOAD_STATUS_SEEN_NO_FILES"
+          else
+            echo "APP_RESULT=$APP_ID UNKNOWN_NO_FILES"
+          fi
+      - name: Save logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freegame-anonymous-${{ matrix.appid }}-log
+          path: ${{ runner.temp }}/steamcmd-app.log
+          if-no-files-found: warn
+          retention-days: 14
