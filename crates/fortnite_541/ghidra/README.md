@@ -70,6 +70,42 @@ successful decompilation without C code.
 The independent integrity check can also run through
 [fortnite541-ghidra-audit.yml](../../.github/workflows/fortnite541-ghidra-audit.yml).
 
+## Second pass: targeted recovery of original unresolved entries
+
+The **entire** source-authenticated .pdata inventory received a first-pass record.
+The first-pass ledger at completion reads: 291,757 inventory entries, 284,392
+successfully decompiled, 7,325 missing Ghidra functions, and 40 decompiler
+failures. These last 7,365 entries are work, not successes.
+
+`Fortnite541Recover.java` retries exactly those original PE ordinals and RVAs
+taken from the audited `unresolved.jsonl.gz` queue; it checks every RVA against
+the freshly parsed retail executable's .pdata index before attempting C
+decompilation. The first 128-entry source-authenticated probe recovered 115
+additional real pseudocode bodies, with eight still missing and five failing.
+
+The [parallel recovery workflow](../../.github/workflows/fortnite541-ghidra-recover.yml)
+runs up to 16 workers. On the first main-branch push of the recovery
+implementation, it divides the original unresolved queue into bounded shards
+of 500 original entries, without repeating any first-pass successes.
+
+- Original successful first-pass shards remain **unchanged** at
+  `decompilation/fortnite541/functions/`.
+- Second-pass original RVA results live at
+  `decompilation/fortnite541/recovery/fast_v1/records/` or
+  `recovery/full_v1/records/` with independent source summary reports.
+- `recovery_status.json` counts distinct second-pass original functions with
+  verified nonempty C pseudocode, alongside effective total completion.
+- `recovery_remaining.jsonl.gz` preserves the unresolved original entries
+  after deduplicating successful recoveries.
+- `audit_ghidra_recovery.py` validates the original entry and address,
+  all compressed recovery records, and their independent Ghidra reports before
+  publishing the combined recovery ledger.
+
+No guessed function bodies, placeholder C, or originally missing routines are
+counted as reconstructed C pseudocode. Full automatic PE analysis is an
+optional deeper retry mode, not proof that failed original functions are valid
+C++ source.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
