@@ -1,0 +1,103 @@
+name: Fortnite 5.41 exact original x64 fallback for unresolved functions
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - "crates/fortnite_541/tools/disassemble_original_remaining.py"
+      - ".github/workflows/fortnite541-original-x64-fallback.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  decode-original-source-x64-function-bodies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      ORIGINAL_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      DUMP_BRANCH: re/fortnite541-ghidra-full
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install exact instruction decoder and PE parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install capstone==5.0.6 pefile==2024.8.26
+          python3 crates/fortnite_541/tools/disassemble_original_remaining.py --self-test
+      - name: Download and SHA256-authenticate original Win64 retail executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/source" "$RUNNER_TEMP/evidence"
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$ORIGINAL_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+      - name: Verify every original function RVA and extract genuine source x64 bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/disassemble_original_remaining.py "$RUNNER_TEMP/disassemble_original_remaining.py"
+          git fetch origin "$DUMP_BRANCH"
+          git show "origin/$DUMP_BRANCH:decompilation/fortnite541/recovery_remaining.jsonl.gz" > "$RUNNER_TEMP/source/remaining.jsonl.gz"
+          python3 "$RUNNER_TEMP/disassemble_original_remaining.py" \
+            --original-exe "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" \
+            --remaining "$RUNNER_TEMP/source/remaining.jsonl.gz" \
+            --expected-sha256 "$ORIGINAL_SHA256" \
+            --out "$RUNNER_TEMP/evidence"
+      - name: Validate original addresses, exact byte digests, and conservative decoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import gzip,json,os,pathlib
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])/"evidence"
+          report=json.loads((base/"original_unresolved_x64_status.json").read_text())
+          assert report["original_pdata_function_count"]==291757
+          with gzip.open(base/"original_unresolved_x64.jsonl.gz","rt") as src:
+              rows=[json.loads(line) for line in src if line.strip()]
+          assert len(rows)==report["original_functions"]
+          assert len({r["index"] for r in rows})==len(rows)
+          assert sum(r["source_body_bytes"] for r in rows)==report["original_bytes"]
+          assert sum(r["linear_decoded_bytes"] for r in rows)==report["linear_decoded_bytes"]
+          assert sum(len(r["linear_instructions"]) for r in rows)==report["linear_instruction_count"]
+          assert all(len(r["source_body_sha256"])==64 for r in rows)
+          assert all(r["source_body_bytes"]==r["linear_decoded_bytes"]+r["undecoded_remaining_bytes"]
+                     for r in rows)
+          print("ORIGINAL_RETAIL_X64_EXACT_FUNCTION_BYTES_VERIFIED",report)
+          PY
+      - name: Commit immutable original x64 evidence to public RE dump
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite 5.41 original x64 evidence"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          mkdir -p decompilation/fortnite541/remaining_original_x64
+          cp "$RUNNER_TEMP/evidence/"* decompilation/fortnite541/remaining_original_x64/
+          git add decompilation/fortnite541/remaining_original_x64
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Ghidra: exact original retail x64 instructions for failed C pseudocode"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
+            git fetch origin "$DUMP_BRANCH"
+            git rebase "origin/$DUMP_BRANCH"
+            if [[ "$attempt" -eq 5 ]]; then exit 1; fi
+            sleep "$attempt"
+          done
+      - name: Preserve exact original x64 evidence and verification result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-x64-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/evidence/
+          retention-days: 30
+          if-no-files-found: warn
