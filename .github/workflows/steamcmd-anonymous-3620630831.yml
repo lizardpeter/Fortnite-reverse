@@ -56,3 +56,54 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
+      - name: Inspect actual Source 2 VPK directory
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import struct, collections, pathlib
+          path=pathlib.Path.home()/'Steam/steamapps/workshop/content/730/3620630831/3620630831_dir.vpk'
+          raw=path.read_bytes()
+          print('VPK_DIR_BYTES',len(raw),'HEADER_64',raw[:64].hex(' '))
+          if len(raw)<28: raise ValueError('short directory')
+          u32=lambda at: struct.unpack_from('<I',raw,at)[0]
+          print('VPK_SIGNATURE',hex(u32(0)),'VERSION',u32(4),'TREE_SIZE',u32(8))
+          for i in range(12,28,4): print('HEADER_WORD',i,u32(i))
+          if u32(0)!=0x55aa1234: raise ValueError('Not VPK')
+          version=u32(4)
+          cursor=12 if version==1 else 28
+          tree_end=cursor+u32(8)
+          if tree_end>len(raw): raise ValueError('Tree past EOF')
+          count=0
+          exts=collections.Counter()
+          samples=[]
+          def string():
+              global cursor
+              end=raw.find(b'\0',cursor,tree_end)
+              if end<0: raise ValueError('unterminated string at '+str(cursor))
+              value=raw[cursor:end].decode('utf-8','replace')
+              cursor=end+1
+              return value
+          while cursor<tree_end:
+              ext=string()
+              if not ext: break
+              while True:
+                  directory=string()
+                  if not directory: break
+                  while True:
+                      stem=string()
+                      if not stem: break
+                      if cursor+18>tree_end: raise ValueError('Entry truncated')
+                      crc,preload,archive,offset,length,marker=struct.unpack_from('<IHHIIH',raw,cursor)
+                      cursor+=18
+                      if marker!=0xffff: raise ValueError(f'Bad entry sentinel {marker:x} at {cursor}')
+                      cursor+=preload
+                      count+=1
+                      exts[ext]+=1
+                      filename=stem+'.'+ext
+                      full=(directory+'/' if directory!=' ' else '')+filename
+                      if len(samples)<60 or ext.lower() in ('vwrld_c','vmap_c','vwnod_c','vmdl_c'):
+                          if len(samples)<120: samples.append((full,archive,offset,length,preload))
+          print('FILE_COUNT',count,'TREE_END',tree_end,'PARSED_TO',cursor)
+          print('EXTENSIONS',exts.most_common(40))
+          for entry in samples[:120]: print('ENTRY',repr(entry))
+          PY
