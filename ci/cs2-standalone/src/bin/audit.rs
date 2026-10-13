@@ -22,6 +22,19 @@ fn run() -> Result<(),String> {
     }
     for map in &report.maps {
         let graph=cs2_importer::world::from_workshop(&path,&map.label)?;
+        let src=VpkArchive::open_directory(&path)?;
+        let sub=src.open_nested(&map.label)?;
+        for ent in sub.entries().keys().filter(|p|p.ends_with(".vents_c")).take(2) {
+            let data=sub.read_entry(ent)?;
+            let h=ResourceHeader::parse(&data)?;
+            println!("  ENTITY SOURCE {ent} blocks {:?}",h.blocks.iter().map(|x|x.name()).collect::<Vec<_>>());
+            if let Some(bin)=h.block(&data,b"DATA") {
+                match cs2_importer::kv3::decode(bin) {
+                    Ok(doc)=> {println!("  ENTITY ROOT {}",format!("{:?}",doc.root).chars().take(4000).collect::<String>());}
+                    Err(e)=>println!("  ENTITY DECODE pending {e}"),
+                }
+            }
+        }
         println!("  SOURCE WORLD graph {}: nodes={}, placements={}, aggregate groups={}, aggregate draws={}, lightmaps={}, entity lumps={}, unresolved source model references={}",
             map.label,graph.nodes.len(),
             graph.nodes.iter().map(|n|n.scene_objects.len()).sum::<usize>(),
@@ -84,6 +97,20 @@ fn run() -> Result<(),String> {
             let header=ResourceHeader::parse(&bytes)?;
             let kind=header.blocks.iter().map(|b|b.name()).collect::<Vec<_>>();
             println!("  source model {model}: {} bytes blocks {kind:?}",bytes.len());
+            match cs2_importer::draw::decode_model(&bytes,model) {
+                Ok(decoded) => {
+                    println!("    authored Source 2 draw calls={}",decoded.draws.len());
+                    for draw in decoded.draws.iter().take(3) {
+                        match cs2_importer::surface::lower_draw(&decoded,draw) {
+                            Ok(surface)=>println!("    SOURCE TRIANGLES material={} triangles={} unique_vertices={} source_tint={:?} source_lightmap={}",
+                                surface.material,surface.indices.len()/3,surface.vertices.len(),
+                                surface.tint,surface.lightmapped),
+                            Err(e)=>println!("    SOURCE TRIANGLES blocked {}: {e}",draw.material),
+                        }
+                    }
+                },
+                Err(e)=>println!("    ORIGINAL MATERIAL DRAW decode blocked {e}"),
+            }
             if let Some(mdat)=header.block(&bytes,b"MDAT") {
                 match cs2_importer::kv3::decode(mdat) {
                     Ok(doc)=>{

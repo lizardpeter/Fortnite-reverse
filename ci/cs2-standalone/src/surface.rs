@@ -1,0 +1,173 @@
+//! Exact CS2 vertex streams and triangle-range lowering, preserving Source 2
+//! draw-call material provenance. Engine-space transform is performed only in
+//! the optional neutral-scene layer, never by the source stream decoder.
+use std::collections::HashMap;
+use crate::{draw::{SourceDraw,SourceModel},vbib::{Attribute,Buffer}};
+
+#[derive(Clone,Copy,Debug,Default,PartialEq)]
+pub struct SurfaceVertex {
+    pub position:[f32;3],
+    pub normal:[f32;3],
+    pub tangent:[f32;4],
+    pub uv:[f32;2],
+    pub secondary_uv:Option<[f32;2]>,
+}
+#[derive(Clone,Debug)]
+pub struct SourceSurface{
+    pub material:String,
+    pub vertices:Vec<SurfaceVertex>,
+    pub indices:Vec<u32>,
+    pub tint:Option<[f32;3]>,
+    pub alpha:Option<f32>,
+    pub lightmapped:bool,
+}
+
+fn read<T:TryFrom<[u8;4]>>(v:&[u8],at:usize)->Result<[u8;4],String>{
+    let b=v.get(at..at.checked_add(4).ok_or("vertex byte offset overflow")?)
+        .ok_or("vertex component out of bounds")?;
+    Ok(b.try_into().unwrap())
+}
+fn f32_component(v:&[u8],at:usize)->Result<f32,String>{
+    let f=f32::from_le_bytes(read::<[u8;4]>(v,at)?);
+    if f.is_finite() {Ok(f)} else{Err("non-finite Source 2 vertex component".into())}
+}
+fn u32_component(v:&[u8],at:usize)->Result<u32,String>{
+    Ok(u32::from_le_bytes(read::<[u8;4]>(v,at)?))
+}
+fn u16_component(v:&[u8],at:usize)->Result<u16,String>{
+    let b=v.get(at..at.checked_add(2).ok_or("vertex byte offset overflow")?)
+        .ok_or("vertex component out of bounds")?;
+    Ok(u16::from_le_bytes(b.try_into().unwrap()))
+}
+fn normalize(v:[f32;3])->[f32;3]{
+    let sq=v[0]*v[0]+v[1]*v[1]+v[2]*v[2];
+    if sq>1e-20 {let inv=sq.sqrt().recip();[v[0]*inv,v[1]*inv,v[2]*inv]}else{[0.,0.,1.]}
+}
+/// Original Source 2 compressed R32_UINT normal+tangent frame (0 sign, 11
+/// tangent-angle bits, 10+10 octahedral XY). Matches the upstream unpack math.
+pub fn decode_packed_normal(frame:u32)->([f32;3],[f32;4]){
+    let sign=frame&1;
+    let angle=((frame>>1)&0x7ff) as f32/2047.*std::f32::consts::TAU;
+    let x=((frame>>12)&0x3ff) as f32/1023.*2.-1.;
+    let y=((frame>>22)&0x3ff) as f32/1023.*2.-1.;
+    let z=1.-x.abs()-y.abs();
+    let delta=(-z).clamp(0.,1.);
+    let n=normalize([x+if x>=0.{-delta}else{delta},y+if y>=0.{-delta}else{delta},z]);
+    let s=if n[2]>=0.{1.}else{-1.};
+    let rcp=1./(s+n[2]);
+    let tx=1.-s*n[0]*n[0]*rcp;
+    let ty=-s*n[0]*n[1]*rcp;
+    let tz=-s*n[0];
+    let cos=angle.cos();
+    let sin=angle.sin();
+    let cross=[n[1]*tz-n[2]*ty,n[2]*tx-n[0]*tz,n[0]*ty-n[1]*tx];
+    let tangent=[tx*cos+cross[0]*sin,ty*cos+cross[1]*sin,tz*cos+cross[2]*sin,
+        if sign==0{-1.}else{1.}];
+    (n,tangent)
+}
+fn vector2(v:&[u8],at:usize,format:u32)->Result<[f32;2],String>{
+    match format {
+        16=>Ok([f32_component(v,at)?,f32_component(v,at+4)?]), // R32G32_FLOAT
+        34=>Ok([half::f16::from_bits(u16_component(v,at)?).to_f32(),
+                 half::f16::from_bits(u16_component(v,at+2)?).to_f32()]),
+        35=>Ok([u16_component(v,at)? as f32/65535.,u16_component(v,at+2)? as f32/65535.]),
+        37=>Ok([((u16_component(v,at)? as i16) as f32/32767.).clamp(-1.,1.),
+                 ((u16_component(v,at+2)? as i16) as f32/32767.).clamp(-1.,1.)]),
+        _=>Err(format!("unimplemented Source 2 TEXCOORD DXGI format {format}")),
+    }
+}
+fn base_vertex<'a>(stream:&'a Buffer,idx:usize)->Result<&'a [u8],String>{
+    let start=idx.checked_mul(stream.stride).ok_or("vertex stride overflow")?;
+    stream.bytes.get(start..start.checked_add(stream.stride).ok_or("vertex slice overflow")?)
+        .ok_or_else(||format!("vertex index {idx} outside buffer"))
+}
+fn vertex_attributes(model:&SourceModel,draw:&SourceDraw,index:usize)->Result<SurfaceVertex,String>{
+    let mut result=SurfaceVertex::default();
+    let mut position=false;
+    let mut normal=false;
+    let mut texcoords=0;
+    let mut normal_attr:Option<(&Buffer,&Attribute)>=None;
+    for handle in &draw.vertex_buffers{
+        let buffer=model.buffers.vertices.get(*handle).ok_or("bad source vertex stream")?;
+        let bytes=base_vertex(buffer,index)?;
+        for attr in &buffer.attributes{
+            let at=attr.offset as usize;
+            match attr.semantic.as_str(){
+                "POSITION" if attr.dxgi_format==6 => {
+                    result.position=[f32_component(bytes,at)?,f32_component(bytes,at+4)?,f32_component(bytes,at+8)?];
+                    position=true;
+                },
+                "NORMAL" if attr.dxgi_format==42 => {
+                    let (n,t)=decode_packed_normal(u32_component(bytes,at)?);
+                    result.normal=n;result.tangent=t;normal=true;normal_attr=Some((buffer,attr));
+                },
+                "NORMAL" if attr.dxgi_format==6 => {
+                    result.normal=normalize([f32_component(bytes,at)?,f32_component(bytes,at+4)?,f32_component(bytes,at+8)?]);
+                    normal=true;normal_attr=Some((buffer,attr));
+                },
+                "TEXCOORD"=>{
+                    let uv=vector2(bytes,at,attr.dxgi_format)?;
+                    if texcoords==0 {result.uv=uv;}
+                    else if texcoords==1 {result.secondary_uv=Some(uv);}
+                    texcoords+=1;
+                },
+                _=>{},
+            }
+        }
+    }
+    if !position || !normal {return Err(format!("vertex missing exact POSITION or NORMAL; normal attribute seen={}",normal_attr.is_some()));}
+    Ok(result)
+}
+fn source_index(stream:&Buffer,index:usize)->Result<usize,String>{
+    let at=index.checked_mul(stream.stride).ok_or("index offset overflow")?;
+    let val=match stream.stride {
+        2=>u16_component(&stream.bytes,at)? as usize,
+        4=>u32_component(&stream.bytes,at)? as usize,
+        _=>return Err("unsupported index stride".into()),
+    };
+    Ok(val)
+}
+pub fn lower_draw(model:&SourceModel,draw:&SourceDraw)->Result<SourceSurface,String>{
+    let indices=model.buffers.indices.get(draw.index_buffer).ok_or("draw index buffer unavailable")?;
+    let end=draw.start_index.checked_add(draw.index_count).ok_or("draw source index overflow")?;
+    if end>indices.count || draw.index_count%3!=0{return Err("draw invalid source index range".into());}
+    let primary=model.buffers.vertices.get(*draw.vertex_buffers.first().ok_or("no vertex buffer")?)
+        .ok_or("source vertex buffer not found")?;
+    let mut reverse=HashMap::<usize,u32>::new();
+    let mut vertices=Vec::new();
+    let mut output=Vec::with_capacity(draw.index_count);
+    for index in draw.start_index..end {
+        let raw=source_index(indices,index)?;
+        let actual=(raw as i64).checked_add(draw.base_vertex).ok_or("base vertex overflow")?;
+        let src=usize::try_from(actual).map_err(|_|format!("negative Source 2 vertex index {actual}"))?;
+        if src>=primary.count{return Err(format!("source vertex index {src} outside {}",primary.count));}
+        if let Some(i)=reverse.get(&src){output.push(*i);continue}
+        let vertex=vertex_attributes(model,draw,src)?;
+        let local=u32::try_from(vertices.len()).map_err(|_|"Source 2 draw exceeds u32 vertex count")?;
+        vertices.push(vertex);
+        reverse.insert(src,local);
+        output.push(local);
+    }
+    Ok(SourceSurface {material:draw.material.clone(),vertices,indices:output,
+        tint:draw.tint,alpha:draw.alpha,lightmapped:draw.lightmapped})
+}
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[test]
+    fn packed_normal_bits_produce_finite_orthogonal_tangent(){
+        for source in [0,1,u32::MAX,0xab76cd13]{
+            let (n,t)=decode_packed_normal(source);
+            let len=(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]).sqrt();
+            assert!((len-1.).abs()<1e-3);
+            assert!(t.iter().all(|x|x.is_finite()));
+            assert!((n[0]*t[0]+n[1]*t[1]+n[2]*t[2]).abs()<1e-3);
+        }
+    }
+    #[test]
+    fn signed_uvs_decode_negative_source_values(){
+        let b=[0x01,0x80,0xff,0x7f];
+        let uv=vector2(&b,0,37).unwrap();
+        assert!((uv[0]+1.).abs()<1e-2&&uv[1]>0.999);
+    }
+}

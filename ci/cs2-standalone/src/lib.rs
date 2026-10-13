@@ -7,6 +7,8 @@
 pub mod kv3;
 pub mod vbib;
 pub mod world;
+pub mod draw;
+pub mod surface;
 pub mod resource;
 pub mod vpk;
 
