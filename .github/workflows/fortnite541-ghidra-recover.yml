@@ -7,44 +7,100 @@ on:
       - ".github/workflows/fortnite541-ghidra-recover.yml"
       - "crates/fortnite_541/ghidra/Fortnite541Recover.java"
       - "crates/fortnite_541/tools/prepare_ghidra_recovery.py"
+      - "crates/fortnite_541/tools/audit_ghidra_recovery.py"
   workflow_dispatch:
     inputs:
       queue_start:
         type: string
         default: "0"
         required: true
-        description: "Start ordinal into the audited unresolved-function queue"
+        description: "First entry in unresolved-function queue"
       count:
         type: string
         default: "128"
         required: true
-        description: "Number of unresolved functions to retry"
+        description: "Number of unresolved functions for a targeted retry"
       full_analysis:
         type: boolean
         default: false
         required: true
-        description: "Run whole-program Ghidra analysis before targeted retries"
+        description: "Analyze whole PE before retrying these functions"
       timeout_seconds:
         type: string
         default: "30"
         required: true
-        description: "Decompilation timeout per retry, 1-120 seconds"
+        description: "Ghidra timeout per retry, 1-120 seconds"
 
 permissions:
   contents: write
 
+concurrency:
+  group: fortnite541-original-function-recovery-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  plan-source-verified-recovery:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.queue.outputs.matrix }}
+      mode: ${{ steps.queue.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Plan targeted probe or all unresolved original function shards
+        id: queue
+        shell: bash
+        env:
+          MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'all' || 'single' }}
+          QUEUE_START: ${{ inputs.queue_start || '0' }}
+          RETRY_COUNT: ${{ inputs.count || '128' }}
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
+          python3 crates/fortnite_541/tools/audit_ghidra_recovery.py --self-test
+          git fetch origin re/fortnite541-ghidra-full
+          git show "origin/re/fortnite541-ghidra-full:decompilation/fortnite541/unresolved.jsonl.gz" > "$RUNNER_TEMP/unresolved.jsonl.gz"
+          python3 - <<'PY'
+          import gzip,json,os
+          with gzip.open(os.path.join(os.environ["RUNNER_TEMP"],"unresolved.jsonl.gz"),"rt") as f:
+              total=sum(bool(line.strip()) for line in f)
+          if os.environ["MODE"]=="all":
+              chunks=[{"start":i,"count":min(500,total-i),"label":f"{i:06d}"} for i in range(0,total,500)]
+          else:
+              start=int(os.environ["QUEUE_START"])
+              count=int(os.environ["RETRY_COUNT"])
+              if start<0 or count<1 or start+count>total:
+                  raise ValueError("Invalid selected unresolved-function queue interval")
+              chunks=[{"start":start,"count":count,"label":f"{start:06d}"}]
+          if not chunks or len(chunks)>16:
+              raise ValueError("Expected 1-16 bounded original-function recovery shards")
+          with open(os.environ["GITHUB_OUTPUT"],"a") as out:
+              out.write("matrix="+json.dumps({"include":chunks},separators=(",",":"))+"\n")
+              out.write("mode="+os.environ["MODE"]+"\n")
+          print("SOURCE_AUTHENTICATED_GHIDRA_RECOVERY_PLAN",json.dumps({
+              "unresolved_original_functions":total,
+              "parallel_workers":len(chunks),
+              "retry_count":sum(x["count"] for x in chunks),
+              "mode":os.environ["MODE"]}))
+          PY
+
   recover-original-functions:
+    needs: plan-source-verified-recovery
     runs-on: ubuntu-latest
     timeout-minutes: 175
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.plan-source-verified-recovery.outputs.matrix) }}
     env:
       SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
       SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
       GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
       GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
       DUMP_BRANCH: re/fortnite541-ghidra-full
-      QUEUE_START: ${{ inputs.queue_start || '0' }}
-      RETRY_COUNT: ${{ inputs.count || '128' }}
+      QUEUE_START: ${{ matrix.start }}
+      RETRY_COUNT: ${{ matrix.count }}
       TIMEOUT_SECONDS: ${{ inputs.timeout_seconds || '30' }}
       FULL_ANALYSIS: ${{ inputs.full_analysis && 'true' || 'false' }}
     steps:
@@ -55,11 +111,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Select only original retail-function entries that failed the initial pass
+      - name: Stage precise original retail unresolved-function targets
         shell: bash
         run: |
           set -euo pipefail
-          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
           mkdir -p "$RUNNER_TEMP/input" "$RUNNER_TEMP/original" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/ghidra-project" "$RUNNER_TEMP/recovery"
           git fetch origin "$DUMP_BRANCH"
           git show "origin/$DUMP_BRANCH:decompilation/fortnite541/unresolved.jsonl.gz" > "$RUNNER_TEMP/input/unresolved.jsonl.gz"
@@ -80,7 +135,7 @@ jobs:
           test -n "$ghidra"
           chmod +x "$ghidra"
           echo "GHIDRA_BIN=$ghidra" >> "$GITHUB_ENV"
-      - name: Recover only the selected original failed functions
+      - name: Recover selected original Ghidra function entries
         shell: bash
         run: |
           set -euo pipefail
@@ -95,9 +150,9 @@ jobs:
             "${options[@]}" \
             -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
             -postScript Fortnite541Recover.java "$RUNNER_TEMP/recovery" "$RUNNER_TEMP/input/targets.tsv" "$TIMEOUT_SECONDS" \
-            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/recovery/ghidra.log"
-          grep -q FORTNITE541_GHIDRA_RECOVERY_COMPLETE "$RUNNER_TEMP/recovery/ghidra.log"
-      - name: Verify original ordinal identity and retry results before publication
+            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_GHIDRA_RECOVERY_COMPLETE "$RUNNER_TEMP/ghidra.log"
+      - name: Verify original ordinal identity, pseudocode and Ghidra report
         shell: bash
         run: |
           set -euo pipefail
@@ -123,42 +178,68 @@ jobs:
           assert summary["decompiler_failed"]==sum(r["status"]=="decompiler_failed" for r in actual)
           print("ORIGINAL_RETAIL_FUNCTION_RECOVERY_VERIFIED",summary)
           PY
-      - name: Commit source-authenticated recovery results permanently
-        if: github.ref == 'refs/heads/main'
+          summary_name="$(basename "$(find "$RUNNER_TEMP/recovery/records" -name '*.jsonl.gz' -print -quit)" .jsonl.gz).json"
+          mkdir -p "$RUNNER_TEMP/recovery/reports"
+          mv "$RUNNER_TEMP/recovery/recovery_summary.json" "$RUNNER_TEMP/recovery/reports/$summary_name"
+      - name: Publish original-function recovery shard to aggregator
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite-original-recovery-${{ matrix.label }}
+          path: |
+            ${{ runner.temp }}/recovery/records/
+            ${{ runner.temp }}/recovery/reports/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Preserve source-recovery Ghidra diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite-recovery-diagnostics-${{ matrix.label }}
+          path: |
+            ${{ runner.temp }}/ghidra.log
+            ${{ runner.temp }}/input/targets.tsv
+          retention-days: 14
+          if-no-files-found: warn
+
+  merge-and-audit-original-recoveries:
+    if: github.ref == 'refs/heads/main'
+    needs: [plan-source-verified-recovery, recover-original-functions]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fortnite-original-recovery-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/shards
+      - name: Merge all new source-verified Ghidra recoveries and regenerate audited progress
         shell: bash
+        env:
+          DUMP_BRANCH: re/fortnite541-ghidra-full
+          FULL_ANALYSIS: ${{ inputs.full_analysis && 'true' || 'false' }}
         run: |
           set -euo pipefail
-          kind=fast_v1
-          if [[ "$FULL_ANALYSIS" == "true" ]]; then kind=full_v1; fi
-          source_dir="$RUNNER_TEMP/recovery"
-          summary_name="$(basename "$(find "$source_dir/records" -name '*.jsonl.gz' -print -quit)" .jsonl.gz).json"
-          mkdir -p "$source_dir/reports"
-          mv "$source_dir/recovery_summary.json" "$source_dir/reports/$summary_name"
-          rm -f "$source_dir/ghidra.log"
+          cp crates/fortnite_541/tools/audit_ghidra_recovery.py "$RUNNER_TEMP/audit_ghidra_recovery.py"
+          python3 "$RUNNER_TEMP/audit_ghidra_recovery.py" --self-test
           git config user.name "Fortnite 5.41 Ghidra recovery"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git fetch origin "$DUMP_BRANCH"
           git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          kind=fast_v1
+          if [[ "$FULL_ANALYSIS" == "true" ]]; then kind=full_v1; fi
           mkdir -p "decompilation/fortnite541/recovery/$kind"
-          cp -r "$source_dir/." "decompilation/fortnite541/recovery/$kind/"
-          git add decompilation/fortnite541/recovery
-          if ! git diff --cached --quiet; then
-            git commit -m "Ghidra: source-verified recovery of original unresolved entries $QUEUE_START"
-            for attempt in 1 2 3 4 5; do
-              if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
-              git fetch origin "$DUMP_BRANCH"
-              git rebase "origin/$DUMP_BRANCH"
-              if [[ "$attempt" -eq 5 ]]; then exit 1; fi
-              sleep "$attempt"
-            done
-          fi
-      - name: Upload diagnostic logs and exact recovery proof
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fortnite541-ghidra-recovery-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/recovery/
-            ${{ runner.temp }}/input/targets.tsv
-          if-no-files-found: warn
-          retention-days: 90
+          cp -r "$RUNNER_TEMP/shards/." "decompilation/fortnite541/recovery/$kind/"
+          python3 "$RUNNER_TEMP/audit_ghidra_recovery.py" --root decompilation/fortnite541
+          git add decompilation/fortnite541/recovery decompilation/fortnite541/recovery_status.json decompilation/fortnite541/recovery_remaining.jsonl.gz
+          test -n "$(git diff --cached --name-only)"
+          git commit -m "Ghidra: original 5.41 unresolved-function recovery with validated C pseudocode"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
+            git fetch origin "$DUMP_BRANCH"
+            git rebase "origin/$DUMP_BRANCH"
+            if [[ "$attempt" -eq 5 ]]; then exit 1; fi
+            sleep "$attempt"
+          done
