@@ -1,0 +1,94 @@
+name: Ubisoft Connect anonymous Far Cry 4 download probe
+on:
+  push:
+    branches:
+      - probe/ubisoft-anonymous-fc4-420
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  anonymous-ubisoft-fc4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Probe official Ubisoft endpoints with no account, ticket or cookies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, socket, ssl, struct, urllib.request, urllib.error, json
+          APP_ID = "685a3038-2b04-47ee-9c5a-6403381a46aa"
+          manifest_ids = ["23DB238D7796D96A9F6F3D7964EFEE9A00E64127", "5E0E479E72659DD0AA481B9F0B504E0B82239FA8"]
+          def probe(label, url, *, method="GET", body=None, range_bytes=True):
+              headers={"User-Agent":"Mozilla/5.0 (anonymous-game-download-probe/1.0)", "Accept":"*/*"}
+              if "ubiservices" in url:
+                  headers.update({"Ubi-AppId":APP_ID,"Ubi-RequestedPlatformType":"uplay"})
+              if range_bytes:
+                  headers["Range"]="bytes=0-1023"
+              if method=="POST":
+                  headers["Content-Type"]="application/json"
+              print(f"\nPROBE {label}\n  method={method} url={url}",flush=True)
+              req=urllib.request.Request(url, data=body, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req, timeout=18) as r:
+                      sample=r.read(1024)
+                      print(f"  STATUS={r.status} TYPE={r.headers.get('Content-Type')} CONTENT_RANGE={r.headers.get('Content-Range')} CONTENT_LENGTH={r.headers.get('Content-Length')} READ={len(sample)} FIRST_48={sample[:48].hex()} SHA256_OF_SAMPLE={hashlib.sha256(sample).hexdigest()}",flush=True)
+                      print("  BODY_TEXT_SAMPLE="+repr(sample[:200].decode("utf-8","replace")),flush=True)
+              except urllib.error.HTTPError as e:
+                  sample=e.read(384)
+                  print(f"  STATUS={e.code} TYPE={e.headers.get('Content-Type')} BODY={sample.decode('utf-8','replace')[:320]!r}",flush=True)
+              except Exception as e:
+                  print(f"  ERROR={type(e).__name__}: {e}",flush=True)
+          probe("ubiservices-me-no-session","https://public-ubiservices.ubi.com/v3/profiles/me",range_bytes=False)
+          probe("ubiservices-session-creation-no-credentials","https://public-ubiservices.ubi.com/v3/profiles/sessions",method="POST",body=b'{"rememberMe":false}',range_bytes=False)
+          for m in manifest_ids:
+              probe("farcry4-product420-unsigned-manifest-"+m[:8],f"https://uplaypc-s-ubisoft.cdn.ubi.com/uplaypc/downloads/420/manifests/{m}.manifest")
+          probe("public-uplay-installer-control","https://ubistatic3-a.akamaihd.net/orbit/launcher_installer/UplayInstaller.exe")
+          def vi(n):
+              out=b""
+              while n>=128:
+                  out+=bytes([(n&127)|128]);n>>=7
+              return out+bytes([n])
+          def var(field,n):
+              return vi((field<<3)|0)+vi(n)
+          def encbytes(field,blob):
+              return vi((field<<3)|2)+vi(len(blob))+blob
+          def recv_frame(ss):
+              head=ss.recv(4)
+              if not head:
+                  return None
+              while len(head)<4:
+                  z=ss.recv(4-len(head))
+                  if not z:return None
+                  head+=z
+              count=int.from_bytes(head,"big")
+              if count>1024*1024:raise ValueError(f"Unexpected large message: {count}")
+              body=bytearray()
+              while len(body)<count:
+                  b=ss.recv(count-len(body))
+                  if not b:break
+                  body.extend(b)
+              return bytes(body)
+          print("\nPROBE unauthenticated Demux ownership_service TCP/TLS protocol handshake",flush=True)
+          try:
+              sock=socket.create_connection(("dmx.upc.ubisoft.com",443),timeout=12)
+              sock.settimeout(8)
+              with ssl.create_default_context().wrap_socket(sock,server_hostname="dmx.upc.ubisoft.com") as ss:
+                  # Upstream.push.client_version.version = 13247, no identity/authorization supplied
+                  version=encbytes(2,encbytes(4,var(1,13247)))
+                  ss.sendall(struct.pack(">I",len(version))+version)
+                  # Upstream.req.open_connection_req.service_name = "ownership_service"
+                  openreq=encbytes(1,var(1,1)+encbytes(3,encbytes(2,b"ownership_service")))
+                  ss.sendall(struct.pack(">I",len(openreq))+openreq)
+                  for i in range(3):
+                      try:
+                          frame=recv_frame(ss)
+                          print(f"  DEMUX_RESPONSE_{i}: {frame.hex() if frame is not None else 'CONNECTION_CLOSED'}",flush=True)
+                          if frame is None:break
+                      except socket.timeout:
+                          print(f"  DEMUX_RESPONSE_{i}: TIMEOUT",flush=True)
+                          break
+          except Exception as e:
+              print(f"  DEMUX_ERROR: {type(e).__name__}: {e}",flush=True)
+          print("\nNOTE: Probe uses no Ubisoft credentials, ownership token, signed URL, or account cookies; only 1024-byte samples fetched.",flush=True)
+          PY
