@@ -154,6 +154,36 @@ implementations, or invented function signatures. An original function entry
 can remain unresolved due to bad disassembly, overlap, corrupt Ghidra IR,
 or other compiler/runtime conditions.
 
+## Native function discovery outside PE unwind metadata
+
+A **separate, strictly candidate-level** inventory is provided by
+`Fortnite541LeafDiscovery.java` and its
+[original-source workflow](../../.github/workflows/fortnite541-ghidra-extra-functions.yml).
+
+It compares executable native functions recognized by Ghidra with the original
+source-authenticated and deduplicated `.pdata` entrypoint set. Additional
+Ghidra-discovered functions are classified as either:
+
+- `outside_original_pdata`: executable function entrypoints not represented
+  by, or contained within, an original `.pdata` range. These may include
+  legitimate x64 leaf functions, thunks and Ghidra analysis false positives.
+- `inside_existing_pdata`: Ghidra-defined starts inside an original unwind
+  function range, not an additional confirmed original function. These may
+  reflect real alternate entries or Ghidra segmentation mistakes.
+
+Each candidate preserves its original RVA, executable section, Ghidra name,
+body size, thunk status and whether a decoded entry instruction exists.
+`discovery/nonpdata_candidates.jsonl.gz` and
+`discovery/nonpdata_report.json` live separately from actual C pseudocode
+once verified and committed.
+
+A **candidate is not counted as decompiled** or as a new confirmed native
+function merely because Ghidra identified it. The no-analysis workflow is a
+fast compile/runtime smoke check; the `main` workflow runs full Ghidra PE
+analysis before emitting the discovery report. Resolving and decompiling these
+candidates is a distinct verification frontier beyond the complete original
+`.pdata` inventory.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
