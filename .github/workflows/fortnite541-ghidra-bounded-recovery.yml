@@ -1,0 +1,176 @@
+name: Fortnite 5.41 source-bounded last 56 Ghidra functions
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-bounded-recovery.yml"
+      - "crates/fortnite_541/ghidra/Fortnite541BoundedRecover.java"
+      - "crates/fortnite_541/tools/audit_ghidra_recovery.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare exact original .pdata remaining work
+        id: select
+        env:
+          RUN_ALL: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
+          python3 crates/fortnite_541/tools/audit_ghidra_recovery.py --self-test
+          git fetch origin re/fortnite541-ghidra-full
+          git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_remaining.jsonl.gz > "$RUNNER_TEMP/remaining.gz"
+          python3 - <<'PY'
+          import gzip,json,os
+          with gzip.open(os.environ["RUNNER_TEMP"]+"/remaining.gz","rt") as f:
+              rows=[json.loads(s) for s in f if s.strip()]
+          assert 1<=len(rows)<=56
+          assert len({x["index"] for x in rows})==len(rows)
+          n=len(rows) if os.environ["RUN_ALL"]=="true" else min(8,len(rows))
+          tasks=[{"start":i,"count":min(8,n-i),"label":f"{i:06d}"} for i in range(0,n,8)]
+          with open(os.environ["GITHUB_OUTPUT"],"a") as out:
+              out.write("matrix="+json.dumps({"include":tasks},separators=(",",":"))+"\n")
+          print("RETAIL_541_ORIGINAL_BOUNDARY_SOURCE_QUEUE",len(rows),"tasks",len(tasks))
+          PY
+  recover:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      START: ${{ matrix.start }}
+      COUNT: ${{ matrix.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch source-authenticated original failure addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/source" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/project" "$RUNNER_TEMP/recovered"
+          git fetch origin re/fortnite541-ghidra-full
+          git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_remaining.jsonl.gz > "$RUNNER_TEMP/source/remaining.gz"
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --unresolved "$RUNNER_TEMP/source/remaining.gz" \
+            --start "$START" --count "$COUNT" --out "$RUNNER_TEMP/source/targets.tsv"
+      - name: SHA256-verify original PE and Ghidra
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 "$GHIDRA_URL" -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          exe="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$exe"
+          chmod +x "$exe"
+          echo "GHIDRA_BIN=$exe" >> "$GITHUB_ENV"
+      - name: Decompile exact original function extents rather than inferred oversized bodies
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GHIDRA_BIN" "$RUNNER_TEMP/project" Fortnite541OriginalBounded \
+            -import "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" -noanalysis \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541BoundedRecover.java "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/source/targets.tsv" 40 \
+            -max-cpu 2 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_GHIDRA_BOUNDED_COMPLETE "$RUNNER_TEMP/ghidra.log"
+      - name: Validate exact source RVA and every actual Ghidra C result
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import gzip,glob,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])
+          expected=[(int(i),r,e) for i,r,e in (line.split("\t") for line in
+                    (root/"source/targets.tsv").read_text().splitlines())]
+          paths=list((root/"recovered/records").glob("retry_*.jsonl.gz"))
+          assert len(paths)==1
+          with gzip.open(paths[0],"rt") as f:
+              rows=[json.loads(s) for s in f if s.strip()]
+          assert len(rows)==len(expected)==int(os.environ["COUNT"])
+          assert all((r["index"],r["rva"],r["end_rva"])==want for r,want in zip(rows,expected))
+          assert all(r["status"] in ("decompiled","decompiler_failed","missing_function") for r in rows)
+          assert all(r["original_pdata_body_bounded"] and r["c"] and r["c"].strip()
+                     for r in rows if r["status"]=="decompiled")
+          meta=json.loads((root/"recovered/recovery_summary.json").read_text())
+          assert meta["recovered"]==sum(x["status"]=="decompiled" for x in rows)
+          assert meta["decompiler_failed"]==sum(x["status"]=="decompiler_failed" for x in rows)
+          assert meta["missing"]==sum(x["status"]=="missing_function" for x in rows)
+          reports=root/"recovered/reports"
+          reports.mkdir()
+          (reports/(paths[0].name.replace(".jsonl.gz",".json"))).write_text(json.dumps(meta,indent=2)+"\n")
+          (root/"recovered/recovery_summary.json").unlink()
+          print("BOUND_GENUINE_GHIDRA_C_SOURCE_RESULTS",meta)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-pdata-bounded-${{ matrix.label }}
+          path: ${{ runner.temp }}/recovered/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+      - name: Preserve original Ghidra failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-pdata-bounded-logs-${{ matrix.label }}
+          path: ${{ runner.temp }}/ghidra.log
+          retention-days: 14
+          if-no-files-found: warn
+  commit:
+    if: github.ref == 'refs/heads/main'
+    needs: [plan, recover]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: source-pdata-bounded-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/results
+      - name: Audit original decompiled C and commit only verified results
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/audit_ghidra_recovery.py "$RUNNER_TEMP/audit_recovery.py"
+          git config user.name "Fortnite original bounded Ghidra"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout -B re/fortnite541-ghidra-full origin/re/fortnite541-ghidra-full
+          mkdir -p decompilation/fortnite541/recovery/bounded_v1
+          cp -r "$RUNNER_TEMP/results/." decompilation/fortnite541/recovery/bounded_v1/
+          python3 "$RUNNER_TEMP/audit_recovery.py" --root decompilation/fortnite541
+          git add decompilation/fortnite541/recovery/bounded_v1 \
+            decompilation/fortnite541/recovery_status.json \
+            decompilation/fortnite541/recovery_remaining.jsonl.gz
+          git diff --cached --quiet || git commit -m "Ghidra original .pdata bounded-recovery C and audited final failures"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:refs/heads/re/fortnite541-ghidra-full; then break; fi
+            git fetch origin re/fortnite541-ghidra-full
+            git rebase origin/re/fortnite541-ghidra-full
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+          done
