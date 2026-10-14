@@ -63,7 +63,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: cs2-dust2-compact-resource-manifest
-          run-id: INVENTORY_RUN_ID
+          run-id: 38590838501
           github-token: '${{ github.token }}'
           path: '${{ runner.temp }}/index'
       - name: Retrieve verified original VPKs from earlier download
@@ -119,7 +119,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: cs2-dust2-compact-resource-manifest
-          run-id: INVENTORY_RUN_ID
+          run-id: 38590838501
           github-token: '${{ github.token }}'
           path: '${{ runner.temp }}/index'
       - name: Retrieve all CRC-verified compiled resource parts
