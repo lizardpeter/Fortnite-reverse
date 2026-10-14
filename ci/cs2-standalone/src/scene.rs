@@ -283,6 +283,37 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         retail_game.is_some(),
         census.material_unresolved.iter().take(10).cloned().collect::<Vec<_>>().join("; ")
     ));
+    if let Some(base)=retail_game.as_ref() {
+        // A VPK directory is only an index. A referenced resource listed in
+        // pak01_dir.vpk is NOT available until its numbered VPK is present.
+        // Report physical archive gaps in descending order of source usage,
+        // so developers download the highest-impact original archives first.
+        let mut missing_archive_files=BTreeSet::<String>::new();
+        missing_archive_files.extend(census.texture_unresolved.iter().cloned());
+        missing_archive_files.extend(census.material_unresolved.iter().map(|path|{
+            if path.ends_with("_c"){path.clone()}else{format!("{path}_c")}
+        }));
+        let mut archive_paths=BTreeMap::<u16,usize>::new();
+        for path in &missing_archive_files {
+            if base.available(path){continue;}
+            if let Some(entry)=base.entries().get(path) {
+                if entry.archive_index != 0x7fff {
+                    *archive_paths.entry(entry.archive_index).or_default()+=1;
+                }
+            }
+        }
+        if !archive_paths.is_empty() {
+            let mut ranked=archive_paths.into_iter().collect::<Vec<_>>();
+            ranked.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.cmp(&b.0)));
+            scene.report.lines.push(format!(
+                "CS2 MISSING PHYSICAL SOURCE VPKS: {} numbered original base-game archives absent. Highest-impact: {}. Keep downloaded pak01_XXX.vpk files beside pak01_dir.vpk; the index alone is insufficient to texture this map.",
+                ranked.len(),
+                ranked.iter().take(20).map(|(index,count)|
+                    format!("pak01_{index:03}.vpk ({count} needed resources)")
+                ).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
     if !census.texture_unresolved.is_empty() {
         scene.report.lines.push(format!(
             "CS2 missing compiled source textures: {} unique paths; first samples: {}",
