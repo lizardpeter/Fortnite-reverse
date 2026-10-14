@@ -1,0 +1,15 @@
+{
+  "additional_real_original_c_bodies": 0,
+  "latest_genuine_ghidra_status": "missing_function",
+  "original_pdata_coverage_unchanged": true,
+  "original_pe_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "original_source_direct_call_targets": 58,
+  "original_source_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "preserved_successful_original_c_bodies": 57,
+  "queue_file": "/home/runner/work/_temp/input/one_missing.tsv",
+  "retry_only_missing": 1,
+  "retry_original_callsite": "0x0317b42f",
+  "retry_original_rva": "0x05ea88af",
+  "retry_source_ordinal": 57,
+  "total_58_original_direct_call_targets_with_c": 57
+}
