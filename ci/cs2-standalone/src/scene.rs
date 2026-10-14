@@ -285,15 +285,14 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
                         )
                     }){
                         Ok(faces)=>{
-                            // Source cube face ordinal (+X,-X,+Y,-Y,+Z,-Z)
-                            // converted from source Z-up to engine Y-up.
-                            let order=[0,1,4,5,3,2];
-                            scene.sky=Some(NeutralSky{
-                                faces:std::array::from_fn(|i|faces[order[i]].clone()),
-                                intensity:1.,cycle:None
-                            });
+                            // A 90-degree world-axis change needs rotation
+                            // WITHIN the six authored faces, not just face
+                            // permutation. The earlier permutation generated
+                            // a visible rectangular horizon seam.
+                            let faces=crate::cubemap_axis::source_z_up_to_engine_y_up(faces)?;
+                            scene.sky=Some(NeutralSky{faces,intensity:1.,cycle:None});
                             scene.report.lines.push(format!(
-                                "CS2 ORIGINAL SKY: source-authored original BC1/BC6H cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure/face orientation parity pending).",
+                                "CS2 ORIGINAL SKY: source-authored original BC1/BC6H cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure and Vulkan image-space validation pending).",
                                 path
                             ));
                         },
