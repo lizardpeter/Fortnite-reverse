@@ -114,7 +114,7 @@ mod tests{
         // in CI, so verify large configured budgets and unlimited mode by
         // asserting the invariant rather than changing global process env.
         assert!(4096usize.saturating_mul(1024*1024)>512*1024*1024);
-        assert_eq!(std::mem::size_of::<Option<usize>>(),std::mem::size_of::<usize>());
+        assert!(texture_budget().is_none_or(|bytes| bytes >= 512*1024*1024));
     }
     #[test]
     fn selects_only_source_authored_generic_channels(){
