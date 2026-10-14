@@ -49,6 +49,27 @@ fn run() -> Result<(),String> {
             }
         }
     }
+    {
+        let outer=VpkArchive::open_directory(&path)?;
+        for map in &report.maps {
+            let nested=outer.open_nested(&map.label)?;
+            let lumps=cs2_importer::entity::from_nested_map(&nested)?;
+            let types=cs2_importer::entity::class_counts(&lumps);
+            let spawns=cs2_importer::entity::team_spawns(&lumps);
+            println!("CS2 ENTITY CENSUS {}: entities={} classes={} spawns={} sky={:?}",
+                map.label,lumps.iter().map(|l|l.entities.len()).sum::<usize>(),
+                types.len(),spawns.len(),cs2_importer::entity::sky_name(&lumps));
+            for (name,count) in &types {
+                if name.contains("spawn") || name.contains("player") || name.contains("sky") || name.contains("light") {
+                    println!("CS2 ENTITY CLASS {name} = {count}");
+                }
+            }
+            for spawn in spawns.iter().take(5){
+                println!("CS2 AUTHORED SPAWN {} origin={:?} angles={:?}",
+                    spawn.classname,spawn.source_origin,spawn.source_angles);
+            }
+        }
+    }
     let outer=VpkArchive::open_directory(&path)?;
     let mut good_resources=0usize;
     for map_report in &report.maps {
