@@ -56,6 +56,44 @@ jobs:
           ci/cs2-standalone/target/release/cs2_inventory materials \
             "$WORKSHOP_DIR/3620630831_dir.vpk" "$BASE_DIR/pak01_dir.vpk" | tee "$RUNNER_TEMP/material-indices.log"
           grep 'ASSET_PLAN_END' "$RUNNER_TEMP/material-indices.log"
+      - name: Download all exact original material definition VPK parts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          root=pathlib.Path(__import__('os').environ['RUNNER_TEMP'])
+          lines=(root/'material-indices.log').read_text().splitlines()
+          parts=[int(row.split('|')[2]) for row in lines if row.startswith('ASSET_PLAN_PART|materials|')]
+          assert parts, 'Empty Source 2 material asset plan'
+          (root/'materials-filelist.txt').write_text(
+            ''.join(f'game/csgo/pak01_{idx:03d}.vpk\n' for idx in parts))
+          print('DOWNLOAD_ORIGINAL_MATERIAL_VPKS',','.join(f'{i:03d}' for i in parts))
+          PY
+          timeout 1100 "$RUNNER_TEMP/depot-tool/DepotDownloader" -app 730 -depot 2347770 \
+            -filelist "$RUNNER_TEMP/materials-filelist.txt" -dir "$RUNNER_TEMP/base" -max-downloads 5
+          python3 - <<'PY'
+          import os,pathlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          names=[x.rsplit('/',1)[-1] for x in (root/'materials-filelist.txt').read_text().splitlines()]
+          for n in names:
+              f=root/'base/game/csgo'/n
+              assert f.exists() and f.stat().st_size>0, f'Missing original VMAT archive {n}'
+          print('SOURCE_VMATS_DOWNLOADED',len(names),'base_dir_size_bytes',sum(x.stat().st_size for x in (root/'base/game/csgo').glob('*.vpk')))
+          PY
+      - name: Resolve exact VTEX and lightmap dependencies from every original VMAT
+        shell: bash
+        run: |
+          set -euo pipefail
+          ci/cs2-standalone/target/release/cs2_inventory textures \
+            "$WORKSHOP_DIR/3620630831_dir.vpk" "$BASE_DIR/pak01_dir.vpk" | tee "$RUNNER_TEMP/texture-indices.log"
+          grep 'ASSET_PLAN_END' "$RUNNER_TEMP/texture-indices.log"
+      - name: Upload original texture dependency index
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-dust2-exact-texture-vpk-index
+          path: ${{ runner.temp }}/texture-indices.log
+          retention-days: 30
       - name: Upload source VMAT index
         uses: actions/upload-artifact@v4
         with:
