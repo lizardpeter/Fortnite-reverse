@@ -1,4 +1,10 @@
 {
+  "cfg_branch_edges": 90,
+  "cfg_edges_outside_original_extent": 59,
+  "cfg_functions_with_unknown_bytes": 52,
+  "cfg_instruction_bytes": 1511,
+  "cfg_instruction_count": 560,
+  "cfg_unreached_or_undecodable_bytes": 6130,
   "functions_with_undecoded_tail": 52,
   "linear_decoded_bytes": 1234,
   "linear_instruction_count": 469,
