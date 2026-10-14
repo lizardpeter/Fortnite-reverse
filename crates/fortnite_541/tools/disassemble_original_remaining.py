@@ -16,7 +16,8 @@ import json
 from pathlib import Path
 import struct
 
-from capstone import Cs, CS_ARCH_X86, CS_MODE_64
+from capstone import Cs, CS_ARCH_X86, CS_MODE_64, CS_GRP_CALL, CS_GRP_JUMP, CS_GRP_RET, CS_GRP_INT
+from capstone.x86 import X86_OP_IMM
 import pefile
 
 ORIGINAL_COUNT = 291757
@@ -84,6 +85,96 @@ def decode_original_x64(data: bytes, image_base: int, rva: int) -> dict:
     }
 
 
+
+
+def decode_reachable_cfg(data: bytes, image_base: int, rva: int) -> dict:
+    """Conservative recursive descent from the real unwind entrypoint.
+
+    Only instruction bytes reached via decoded fallthrough/relative branches
+    within the original .pdata interval are marked. No heuristic jump-table,
+    exception-edge or indirect-flow inference is silently accepted.
+    """
+    decoder = Cs(CS_ARCH_X86, CS_MODE_64)
+    decoder.detail = True
+    base = image_base + rva
+    count = len(data)
+    queued: list[int] = [0]
+    decoded: dict[int, dict] = {}
+    byte_owner: dict[int, int] = {}
+    undecodable: set[int] = set()
+    conflicting: set[int] = set()
+    branch_edges: list[dict] = []
+    outside_edges = 0
+
+    while queued:
+        cursor = queued.pop()
+        while 0 <= cursor < count:
+            if cursor in decoded:
+                break
+            if cursor in byte_owner:
+                conflicting.add(cursor)
+                break
+            instruction = next(decoder.disasm(data[cursor:], base + cursor, count=1), None)
+            if instruction is None or instruction.size < 1 or cursor + instruction.size > count:
+                undecodable.add(cursor)
+                break
+            if any(at in byte_owner for at in range(cursor, cursor + instruction.size)):
+                conflicting.add(cursor)
+                break
+            for at in range(cursor, cursor + instruction.size):
+                byte_owner[at] = cursor
+            is_call = instruction.group(CS_GRP_CALL)
+            is_jump = instruction.group(CS_GRP_JUMP)
+            is_ret = instruction.group(CS_GRP_RET)
+            is_interrupt = instruction.group(CS_GRP_INT)
+            target_va = None
+            if (is_call or is_jump) and instruction.operands and instruction.operands[0].type == X86_OP_IMM:
+                target_va = int(instruction.operands[0].imm)
+            item = {
+                "rva": f"0x{rva + cursor:08x}",
+                "bytes": instruction.bytes.hex(),
+                "mnemonic": instruction.mnemonic,
+                "operands": instruction.op_str,
+                "length": instruction.size,
+            }
+            if target_va is not None:
+                target_rva = target_va - image_base
+                in_body = rva <= target_rva < rva + count
+                kind = "call" if is_call else "jump"
+                branch_edges.append({
+                    "from_rva": item["rva"],
+                    "to_rva": f"0x{target_rva:08x}" if 0 <= target_rva <= 0xffffffff else str(target_rva),
+                    "kind": kind,
+                    "inside_original_extent": in_body,
+                })
+                if in_body and is_jump:
+                    queued.append(int(target_rva - rva))
+                if not in_body:
+                    outside_edges += 1
+            decoded[cursor] = item
+            # Explicit terminal x86 control transfers have no fallthrough.
+            if is_ret or is_interrupt or instruction.mnemonic in ("ud2", "hlt", "jmp", "ljmp"):
+                break
+            cursor += instruction.size
+
+    instructions = [decoded[k] for k in sorted(decoded)]
+    covered = len(byte_owner)
+    return {
+        "method": "capstone_x86_64_reachable_cfg_conservative",
+        "warning": "Only statically reachable original instruction bytes; indirect branches, exceptions and jump tables unresolved",
+        "instructions": instructions,
+        "instruction_count": len(instructions),
+        "instruction_bytes": covered,
+        "unreached_or_undecodable_bytes": count - covered,
+        "explicit_undecodable_entries": [f"0x{rva + p:08x}" for p in sorted(undecodable)],
+        "overlapping_entry_conflicts": [f"0x{rva + p:08x}" for p in sorted(conflicting)],
+        "branch_edges": branch_edges,
+        "edges_outside_original_extent": outside_edges,
+        "instruction_byte_range_sha256": hashlib.sha256(
+            b"".join(data[k:k + len(bytes.fromhex(decoded[k]["bytes"]))] for k in sorted(decoded))
+        ).hexdigest(),
+    }
+
 def export(source: Path, unresolved: Path, output: Path,
            expected_sha256: str | None = None) -> dict:
     exe = source.read_bytes()
@@ -100,7 +191,9 @@ def export(source: Path, unresolved: Path, output: Path,
     output.mkdir(parents=True, exist_ok=True)
     record_path = output / "original_unresolved_x64.jsonl.gz"
     counts = Counter()
-    with gzip.open(record_path, "wt", encoding="utf-8", compresslevel=9) as stream:
+    cfg_path = output / "original_unresolved_cfg.jsonl.gz"
+    with (gzip.open(record_path, "wt", encoding="utf-8", compresslevel=9) as stream,
+          gzip.open(cfg_path, "wt", encoding="utf-8", compresslevel=9) as cfg_stream):
         for row in remaining:
             index = row["index"]
             if not isinstance(index, int) or not 0 <= index < len(spans):
@@ -115,6 +208,20 @@ def export(source: Path, unresolved: Path, output: Path,
             if len(body) != end - begin:
                 raise ValueError(f"Source original function bytes truncated: {index}")
             decoded = decode_original_x64(body, pe.OPTIONAL_HEADER.ImageBase, begin)
+            graph = decode_reachable_cfg(body, pe.OPTIONAL_HEADER.ImageBase, begin)
+            counts["cfg_instruction_count"] += graph["instruction_count"]
+            counts["cfg_instruction_bytes"] += graph["instruction_bytes"]
+            counts["cfg_unreached_or_undecodable_bytes"] += graph["unreached_or_undecodable_bytes"]
+            counts["cfg_branch_edges"] += len(graph["branch_edges"])
+            counts["cfg_edges_outside_original_extent"] += graph["edges_outside_original_extent"]
+            counts["cfg_functions_with_unknown_bytes"] += int(graph["unreached_or_undecodable_bytes"] > 0)
+            cfg_stream.write(json.dumps({
+                "index": index,
+                "rva": row["rva"],
+                "end_rva": row["end_rva"],
+                "original_source_sha256": hashlib.sha256(body).hexdigest(),
+                **graph,
+            }, separators=(",", ":")) + "\n")
             counts["original_functions"] += 1
             counts["original_bytes"] += len(body)
             counts["linear_decoded_bytes"] += decoded["linear_decoded_bytes"]
@@ -157,6 +264,20 @@ def self_test() -> None:
     damaged = decode_original_x64(b"\x0f", 0x140000000, 0x1000)
     assert damaged["linear_instructions"] == []
     assert damaged["undecoded_remaining_bytes"] == 1
+    # Jump over invalid/embedded data to a real reachable return.
+    jump_over_data = bytes.fromhex("eb050f0f0f0f0f31c0c3")
+    cfg = decode_reachable_cfg(jump_over_data, 0x140000000, 0x1000)
+    assert [x["mnemonic"] for x in cfg["instructions"]] == ["jmp", "xor", "ret"], cfg
+    assert cfg["instruction_bytes"] == 5 and cfg["unreached_or_undecodable_bytes"] == 5, cfg
+    assert cfg["edges_outside_original_extent"] == 0
+    # A conditional jump must record both outcomes, but never guess a data island.
+    conditional = bytes.fromhex("750390c30f31c0c3")
+    graph = decode_reachable_cfg(conditional, 0x140000000, 0x2000)
+    assert graph["instruction_bytes"] == 7, graph
+    assert graph["unreached_or_undecodable_bytes"] == 1, graph
+    # An invalid instruction must remain explicitly undecodable, never become C.
+    invalid = decode_reachable_cfg(b"\x0f", 0x140000000, 0x3000)
+    assert invalid["instruction_count"] == 0 and len(invalid["explicit_undecodable_entries"]) == 1
     print("FORTNITE541_ORIGINAL_X64_FALLBACK_TESTS_PASSED")
 
 
