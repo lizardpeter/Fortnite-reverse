@@ -42,6 +42,10 @@ pub struct SourceWorld {
     pub world_path:String,
     pub nodes:Vec<SourceWorldNode>,
     pub lighting_textures:Vec<String>,
+    /// Exact Source 2 worldLightingInfo version for atlas shader selection.
+    pub lightmap_version:[i64;2],
+    /// Authored atlas UV multiplier; never replace with a guessed texture size.
+    pub lightmap_uv_scale:[f32;2],
     pub entity_lumps:Vec<String>,
     pub unresolved_placements:Vec<String>,
     pub source_bounds:Option<([f32;3],[f32;3])>,
@@ -98,7 +102,21 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
             [number(&max[0]).ok()?,number(&max[1]).ok()?,number(&max[2]).ok()?]
         ))
     });
-    let lighting_textures=world_root.field("m_worldLightingInfo")
+    let source_light=world_root.field("m_worldLightingInfo");
+    let number=|key:&str|->i64{
+        source_light.and_then(|value|value.field(key))
+            .and_then(Value::as_float).map(|v|v as i64).unwrap_or(0)
+    };
+    let lightmap_version=[number("m_nLightmapVersionNumber"),number("m_nLightmapGameVersionNumber")];
+    let lightmap_uv_scale=source_light.and_then(|v|v.field("m_vLightmapUvScale"))
+        .and_then(Value::as_array)
+        .filter(|a|a.len()>=2)
+        .map(|a|{
+            let coord=|i:usize|a[i].as_float().filter(|x|x.is_finite()&&*x>0.)
+                .map(|x|x as f32).unwrap_or(1.);
+            [coord(0),coord(1)]
+        }).unwrap_or([1.,1.]);
+    let lighting_textures=source_light
         .and_then(|x|x.field("m_lightMaps")).and_then(Value::as_array)
         .unwrap_or(&[]).iter().filter_map(Value::as_text).map(str::to_owned).collect();
     let entity_lumps=world_root.field("m_entityLumps").and_then(Value::as_array)
@@ -188,7 +206,7 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
         });
     }
     Ok(SourceWorld{map_package:map_package.to_owned(),world_path,nodes,lighting_textures,
-        entity_lumps,unresolved_placements,source_bounds})
+        lightmap_version,lightmap_uv_scale,entity_lumps,unresolved_placements,source_bounds})
 }
 
 #[cfg(test)]
