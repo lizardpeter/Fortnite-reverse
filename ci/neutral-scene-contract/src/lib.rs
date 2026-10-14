@@ -7,6 +7,7 @@ pub struct NeutralReport{pub lines:Vec<String>}
 pub struct NeutralScene{
     pub meshes:Vec<NeutralMesh>,
     pub materials:Vec<NeutralMaterial>,
+    pub textures:Vec<NeutralTexture>,
     pub instances:Vec<NeutralInstance>,
     pub report:NeutralReport,
     pub sun:Option<NeutralSun>,
@@ -94,3 +95,8 @@ pub struct NeutralLocalLight{
     pub outer_angle_degrees:f32,
     pub specular_strength:f32,
 }
+
+#[derive(Clone,Debug)]
+pub struct NeutralTexture{pub name:String,pub width:u32,pub height:u32,pub rgba:Vec<u8>,pub mips:Vec<NeutralTextureMip>,pub compressed:Option<()>}
+#[derive(Clone,Debug)]
+pub struct NeutralTextureMip{pub width:u32,pub height:u32,pub rgba:Vec<u8>}
