@@ -2,7 +2,7 @@ name: CS2 4GiB original materials and skylight validation
 on:
   push:
     branches: [assets/cs2-dust2-complete-vpk-20261014]
-    paths: ['.github/workflows/cs2-4gib-skylight-validation.yml']
+    paths: ['.github/workflows/cs2-4gib-skylight-validation.yml', 'ci/cs2-standalone/src/**', 'ci/neutral-scene-contract/**']
   workflow_dispatch:
 permissions:
   actions: read
