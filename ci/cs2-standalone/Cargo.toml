@@ -28,3 +28,7 @@ path = "src/bin/preview_validation.rs"
 [[bin]]
 name = "texture_audit"
 path = "src/bin/texture_audit.rs"
+
+[[bin]]
+name = "cs2_inventory"
+path = "src/bin/inventory.rs"
