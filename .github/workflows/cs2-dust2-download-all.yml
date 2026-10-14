@@ -91,7 +91,6 @@ jobs:
           (root/'SHA256SUMS.txt').write_text('\n'.join(listing)+'\n')
           print('VERIFIED_PACK_COUNT',len(ids),'BYTES',sum((root/f'pak01_{i}.vpk').stat().st_size for i in ids))
           PY
-          cp "$RUNNER_TEMP/SHA256SUMS.txt" "$RUNNER_TEMP/dust2-base/game/csgo/SHA256SUMS.txt"
       - name: Make this package available for the user's Windows CS2 folder
         uses: actions/upload-artifact@v4
         with:
