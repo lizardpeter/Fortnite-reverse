@@ -1,0 +1,11 @@
+{
+  "actually_attempted": 3,
+  "decompiler_failed": 0,
+  "genuine_additional_C_pseudocode": 3,
+  "invalid_source_call_witness": 0,
+  "missing_function": 0,
+  "schema_version": 1,
+  "separate_from_original_pdata_decompilation": true,
+  "separate_from_previous_57_extra_C_bodies": true,
+  "source_new_original_direct_call_targets": 3
+}
