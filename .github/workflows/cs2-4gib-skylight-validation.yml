@@ -44,6 +44,12 @@ jobs:
           test "$(find "$root" -maxdepth 1 -name 'pak01_*.vpk' | wc -l)" -eq 0
       - name: Verify shader source inventory, sky texture and original lighting resource formats
         run: cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin sky_light_audit -- "$CS2_WORKSHOP"
+      - name: Inspect original baked lightmap mesh UV streams
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin lightmap_layout_audit -- "$CS2_WORKSHOP/3620630831_dir.vpk" | tee "$RUNNER_TEMP/atlas-census.log"
+          grep 'CS2_LIGHTMAP_VERTEX_CENSUS' "$RUNNER_TEMP/atlas-census.log"
       - name: Verify expanded source material admission and both world conversions
         shell: bash
         run: |
