@@ -73,7 +73,7 @@ def build(root, output):
         begin, end = int(entry["rva"], 16), int(entry["end_rva"], 16)
         if first is None:
             first = begin
-        last = max(last, end)
+        last = end if last is None else max(last, end)
         count += 1
     if count != status["original_pdata_functions"] or count != 291757:
         raise ValueError("Incomplete authenticated original .pdata manifest")
