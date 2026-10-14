@@ -1,0 +1,19 @@
+{
+  "candidate_original_xref_functions": 4,
+  "description": "C pseudocode named FUN_ addresses, preserving source original function ordinal and shard; not verified branch-reachable machine CALL edges",
+  "edge_is_machine_call_verified": false,
+  "edge_is_original_type_identification": false,
+  "original_pdata_functions": 291757,
+  "original_pe_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "real_ghidra_c_functions": 291701,
+  "recovery_modes_selected": {
+    "fast_v1": 6918,
+    "full_v1": 10,
+    "split_v1": 381
+  },
+  "remaining_without_c": 56,
+  "schema_version": 1,
+  "total_named_call_mentions": 16,
+  "unique_named_edges_to_nonpdata_or_unindexed": 0,
+  "unique_named_edges_to_original_pdata": 15
+}
