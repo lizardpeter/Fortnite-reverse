@@ -156,7 +156,7 @@ def direct_calls(code, rva, imagebase, decoder):
             yield ins.address - imagebase, ins.operands[0].imm - imagebase
 
 
-def discover(b, imagebase, sections, pdata, anchors, pointers=None):
+def discover(b, imagebase, sections, pdata, anchors, pointers=None, edges_sink=None):
     from capstone import Cs, CS_ARCH_X86, CS_MODE_64
     from capstone.x86_const import X86_OP_MEM, X86_REG_RIP
     decoder = Cs(CS_ARCH_X86, CS_MODE_64)
@@ -198,15 +198,31 @@ def discover(b, imagebase, sections, pdata, anchors, pointers=None):
     candidates = set(fn_hits)
     incoming, outgoing = defaultdict(list), defaultdict(list)
     begins = [f[0] for f in pdata]
+    call_instructions = mapped_calls = exact_entry_calls = 0
     for start, end in pdata:
         code = function_code(b, sections, start, end)
         if code is None:
             continue
         for site, target in direct_calls(code, start, imagebase, decoder):
+            call_instructions += 1
             j = bisect.bisect_right(begins, target) - 1
-            if j < 0 or target >= pdata[j][1]:
+            callee = pdata[j][0] if j >= 0 and target < pdata[j][1] else None
+            if callee is not None:
+                mapped_calls += 1
+                exact_entry_calls += target == callee
+            # Every E8/direct x64 call in the original source-bounded linear
+            # decode is persisted, even calls outside the .pdata inventory.
+            # This is not a control-flow-reachability or linker verification.
+            if edges_sink is not None:
+                edges_sink.write(json.dumps({
+                    "caller_rva": hx(start), "callsite_rva": hx(site),
+                    "target_rva": hx(target),
+                    "target_original_pdata_start": hx(callee) if callee is not None else None,
+                    "target_is_exact_original_entry": target == callee if callee is not None else False,
+                    "evidence_level": "source_x64_linear_direct_call_not_cfg_verified",
+                }, separators=(",", ":")) + "\n")
+            if callee is None:
                 continue
-            callee = pdata[j][0]
             if callee in candidates:
                 incoming[callee].append({
                     "caller_rva": hx(start), "callsite_rva": hx(site),
@@ -217,7 +233,10 @@ def discover(b, imagebase, sections, pdata, anchors, pointers=None):
                     "callee_rva": hx(callee), "callsite_rva": hx(site),
                     "target_rva": hx(target), "exact_entry": target == callee,
                 })
-    return source_refs, fn_hits, incoming, outgoing, visited, skipped
+    counts = {"linear_direct_call_instructions": call_instructions,
+              "linear_direct_calls_into_pdata": mapped_calls,
+              "linear_direct_calls_to_exact_entries": exact_entry_calls}
+    return source_refs, fn_hits, incoming, outgoing, visited, skipped, counts
 
 
 def write_gzip(path, rows):
@@ -241,10 +260,12 @@ def main():
         raise SystemExit(f"wrong original .pdata count: {len(pdata)}")
     anchors = scan_anchors(b, sections)
     pointers = original_string_pointer_slots(b, imagebase, sections, anchors)
-    refs, hits, incoming, outgoing, visited, skipped = discover(
-        b, imagebase, sections, pdata, anchors, pointers
-    )
     args.out.mkdir(parents=True, exist_ok=True)
+    with gzip.open(args.out / "original_x64_linear_direct_calls.jsonl.gz",
+                   "wt", encoding="utf-8", compresslevel=9) as edges:
+        refs, hits, incoming, outgoing, visited, skipped, call_counts = discover(
+            b, imagebase, sections, pdata, anchors, pointers, edges_sink=edges
+        )
     write_gzip(
         args.out / "string_reference_evidence.jsonl.gz",
         ({**anchors[k], "references": refs.get(k, [])} for k in sorted(anchors)),
@@ -279,6 +300,7 @@ def main():
             sum(e["reference_kind"] == "indirect_original_va_pointer_slot" for e in items)
             for items in refs.values()
         ),
+        **call_counts,
         "candidate_functions": len(hits),
         "candidate_incoming_calls": sum(map(len, incoming.values())),
         "candidate_outgoing_calls": sum(map(len, outgoing.values())),
