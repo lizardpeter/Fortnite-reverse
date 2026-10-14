@@ -1,0 +1,108 @@
+name: CS2 Dust2 required base VPK downloads
+on:
+  push:
+    branches: [assets/cs2-dust2-complete-vpk-20261014]
+    paths: ['.github/workflows/cs2-dust2-download-all.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  download:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+        - pack: "01"
+          indices: "003,009,021,022,023,024,031"
+        - pack: "02"
+          indices: "039,041,042,043,067,079,086"
+        - pack: "03"
+          indices: "087,089,091,092,095,100,103"
+        - pack: "04"
+          indices: "106,108,110,129,134,137,140"
+        - pack: "05"
+          indices: "142,145,146,147,150,151,153"
+        - pack: "06"
+          indices: "154,158,161,172,174,177,179"
+        - pack: "07"
+          indices: "185,187,188,190,192,193,194"
+        - pack: "08"
+          indices: "197,198,204,206,211,215,216"
+        - pack: "09"
+          indices: "220,221,222,224,226,227,229"
+        - pack: "10"
+          indices: "235,236,237,240,241,243,249"
+        - pack: "11"
+          indices: "253,254,255,257,259,261,263"
+        - pack: "12"
+          indices: "266,267,268,269,271,275,279"
+        - pack: "13"
+          indices: "280,281,304,305,306,307,313"
+        - pack: "14"
+          indices: "314,315,321,335,352,354,359"
+        - pack: "15"
+          indices: "373,375,377,387,390,391,392"
+        - pack: "16"
+          indices: "407,408,409,412,433,445,471"
+        - pack: "17"
+          indices: "472,499,502,504"
+    env:
+      VPK_IDS: '${{ matrix.indices }}'
+    steps:
+      - name: Install official SteamRE DepotDownloader
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ca-certificates curl unzip
+          mkdir -p "$RUNNER_TEMP/depot-tool"
+          curl -fL --retry 4 --connect-timeout 20 https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip -o "$RUNNER_TEMP/depot-tool.zip"
+          unzip -q "$RUNNER_TEMP/depot-tool.zip" -d "$RUNNER_TEMP/depot-tool"
+          chmod +x "$RUNNER_TEMP/depot-tool/DepotDownloader"
+      - name: Download all referenced original VPK archive segments anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os,pathlib
+          ids=os.environ['VPK_IDS'].split(',')
+          assert ids and all(len(x)==3 and x.isdigit() for x in ids)
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          (root/'selected-vpks.txt').write_text(''.join(f'game/csgo/pak01_{i}.vpk\n' for i in ids))
+          print('Downloading exact original Dust2 segments:',','.join(ids))
+          PY
+          timeout 1600 "$RUNNER_TEMP/depot-tool/DepotDownloader" -app 730 -depot 2347770 -filelist "$RUNNER_TEMP/selected-vpks.txt" -dir "$RUNNER_TEMP/dust2-base" -max-downloads 4
+          python3 - <<'PY'
+          import os,pathlib,hashlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'dust2-base/game/csgo'
+          ids=os.environ['VPK_IDS'].split(',')
+          listing=[]
+          for i in ids:
+              file=root/f'pak01_{i}.vpk'
+              assert file.is_file() and file.stat().st_size>0,f'Missing or empty original {file.name}'
+              h=hashlib.sha256()
+              with file.open('rb') as f:
+                  for block in iter(lambda:f.read(4*1024*1024),b''):h.update(block)
+              listing.append(f'{h.hexdigest()}  {file.name}')
+              print('VERIFIED_CS2_DUST2_PART',file.name,file.stat().st_size,h.hexdigest())
+          (root/'SHA256SUMS.txt').write_text('\n'.join(listing)+'\n')
+          print('VERIFIED_PACK_COUNT',len(ids),'BYTES',sum((root/f'pak01_{i}.vpk').stat().st_size for i in ids))
+          PY
+          cp "$RUNNER_TEMP/SHA256SUMS.txt" "$RUNNER_TEMP/dust2-base/game/csgo/SHA256SUMS.txt"
+      - name: Make this package available for the user's Windows CS2 folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-dust2-needed-vpks-${{ matrix.pack }}
+          path: ${{ runner.temp }}/dust2-base/game/csgo/*
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Summary
+        shell: bash
+        run: |
+          echo "### CS2 Dust2 base files package ${{ matrix.pack }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Original VPK indices: $VPK_IDS" >> "$GITHUB_STEP_SUMMARY"
+          echo "All required files downloaded anonymously, SHA-256 verified, and uploaded as an Actions artifact." >> "$GITHUB_STEP_SUMMARY"
