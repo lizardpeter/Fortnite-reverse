@@ -100,7 +100,7 @@ pub struct NeutralLocalLight{
 #[derive(Clone,Debug)]
 pub struct NeutralTexture{pub name:String,pub width:u32,pub height:u32,pub rgba:Vec<u8>,pub mips:Vec<NeutralTextureMip>,pub compressed:Option<NeutralCompressedTexture>}
 #[derive(Clone,Copy,Debug)]
-pub enum NeutralBlockFormat {Bc1,Bc3,Bc5,Bc7}
+pub enum NeutralBlockFormat {Bc1,Bc3,Bc4,Bc5,Bc7}
 #[derive(Clone,Debug)]
 pub struct NeutralCompressedLevel {pub width:u32,pub height:u32,pub blocks:Vec<u8>}
 #[derive(Clone,Debug)]
