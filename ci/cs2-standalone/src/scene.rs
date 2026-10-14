@@ -24,6 +24,15 @@ fn engine_transform(s:[[f32;4];3])->[[f32;4];3]{
         [-s[1][0],-s[1][2],s[1][1],-s[1][3]*SOURCE_UNITS_TO_METRES],
     ]
 }
+/// CS2 toolssolidblocklight is an authored shadow/lighting blocker. Its
+/// worldnode *_shadow model is not a color-pass surface; drawing it as an
+/// opaque neutral material created the 50-75 m triangles covering Dust2.
+/// Keep the source mesh/placement data for provenance, but flag invisible so
+/// the common NeutralScene bridge omits it from visible world instances.
+fn source_color_pass_visible(name:&str)->bool{
+    !matches!(name,"materials/tools/toolssolidblocklight.vmat"
+        |"materials/tools/toolsnodraw.vmat")
+}
 fn material(name:&str,alpha:Option<f32>)->NeutralMaterial{
     NeutralMaterial{
         name:name.to_owned(),base_color_texture:None,normal_texture:None,
@@ -32,7 +41,7 @@ fn material(name:&str,alpha:Option<f32>)->NeutralMaterial{
         point_sampled:false,gloss_from_color_alpha:false,
         alpha:if alpha.is_some_and(|a|a<0.999) {NeutralAlpha::Blend} else{NeutralAlpha::Opaque},
         double_sided:false,front_culled:false,unlit:false,emissive_scale:1.,
-        layers:Default::default(),visible:true,
+        layers:Default::default(),visible:source_color_pass_visible(name),
         // Rendering geometry is not the same as an authored physics mesh.
         collides:false,program:None,
     }
@@ -229,6 +238,15 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         }
     }
     if scene.meshes.is_empty(){return Err("Source 2 world contains no decodable original direct geometry".into());}
+    let omitted_color_instances=scene.instances.iter().filter(|instance|{
+        scene.meshes.get(instance.mesh).and_then(|mesh|scene.materials.get(mesh.material))
+            .is_some_and(|mat|!mat.visible)
+    }).count();
+    scene.report.lines.push(format!(
+        "CS2 SOURCE NON-COLOR GEOMETRY: {} tool shadow/blocklight/nodraw placements kept as original source but excluded from universal color render pass. Source2 shadow pipeline translation remains separate.",
+        omitted_color_instances
+    ));
+
     let authored_lumps=entity::from_nested_map(&inner)?;
     let authored_lighting=lighting::decode(&authored_lumps);
     let light_count=authored_lighting.local.len();
@@ -297,6 +315,18 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retail_shadow_blockers_are_not_visible_materials(){
+        for name in ["materials/tools/toolssolidblocklight.vmat",
+                     "materials/tools/toolsnodraw.vmat"] {
+            assert!(!source_color_pass_visible(name));
+            let mat=material(name,None);
+            assert!(!mat.visible);
+            assert!(!mat.collides);
+        }
+        assert!(source_color_pass_visible("materials/de_dust/hr_dust/hr_dust_plaster_01.vmat"));
+        assert!(material("materials/de_dust/hr_dust/hr_dust_plaster_01.vmat",None).visible);
+    }
     #[test]
     fn source_xyz_to_engine_y_up_is_right_handed(){
         let p=engine_position([1.,2.,3.]);
