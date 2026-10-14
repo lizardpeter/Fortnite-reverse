@@ -1,0 +1,151 @@
+name: CS2 compact original Dust2 resources
+on:
+  push:
+    branches: [assets/cs2-dust2-complete-vpk-20261014]
+    paths: ['.github/workflows/cs2-dust2-compact.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+        - pack: "00"
+          indices: "262,386"
+        - pack: "01"
+          indices: "003,009,021,022,023,024,031"
+        - pack: "02"
+          indices: "039,041,042,043,067,079,086"
+        - pack: "03"
+          indices: "087,089,091,092,095,100,103"
+        - pack: "04"
+          indices: "106,108,110,129,134,137,140"
+        - pack: "05"
+          indices: "142,145,146,147,150,151,153"
+        - pack: "06"
+          indices: "154,158,161,172,174,177,179"
+        - pack: "07"
+          indices: "185,187,188,190,192,193,194"
+        - pack: "08"
+          indices: "197,198,204,206,211,215,216"
+        - pack: "09"
+          indices: "220,221,222,224,226,227,229"
+        - pack: "10"
+          indices: "235,236,237,240,241,243,249"
+        - pack: "11"
+          indices: "253,254,255,257,259,261,263"
+        - pack: "12"
+          indices: "266,267,268,269,271,275,279"
+        - pack: "13"
+          indices: "280,281,304,305,306,307,313"
+        - pack: "14"
+          indices: "314,315,321,335,352,354,359"
+        - pack: "15"
+          indices: "373,375,377,387,390,391,392"
+        - pack: "16"
+          indices: "407,408,409,412,433,445,471"
+        - pack: "17"
+          indices: "472,499,502,504"
+    env:
+      VPK_IDS: '${{ matrix.indices }}'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+      - name: Fetch exact source manifest from successful inventory
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-dust2-compact-resource-manifest
+          run-id: INVENTORY_RUN_ID
+          github-token: '${{ github.token }}'
+          path: '${{ runner.temp }}/index'
+      - name: Retrieve verified original VPKs from earlier download
+        if: matrix.pack != '00'
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-dust2-needed-vpks-${{ matrix.pack }}
+          run-id: 38584177934
+          github-token: '${{ github.token }}'
+          path: '${{ runner.temp }}/original-vpks'
+      - name: Download remaining existing 262 and 386 source VPKs anonymously
+        if: matrix.pack == '00'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dd"
+          curl -fL --retry 3 https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip -o "$RUNNER_TEMP/dd.zip"
+          unzip -q "$RUNNER_TEMP/dd.zip" -d "$RUNNER_TEMP/dd"
+          chmod +x "$RUNNER_TEMP/dd/DepotDownloader"
+          printf '%s\n' 'game/csgo/pak01_262.vpk' 'game/csgo/pak01_386.vpk' > "$RUNNER_TEMP/part00.txt"
+          timeout 700 "$RUNNER_TEMP/dd/DepotDownloader" -app 730 -depot 2347770 -filelist "$RUNNER_TEMP/part00.txt" -dir "$RUNNER_TEMP/part00"
+          mkdir -p "$RUNNER_TEMP/original-vpks"
+          cp "$RUNNER_TEMP/part00/game/csgo/pak01_262.vpk" "$RUNNER_TEMP/original-vpks/"
+          cp "$RUNNER_TEMP/part00/game/csgo/pak01_386.vpk" "$RUNNER_TEMP/original-vpks/"
+      - name: Extract exact compiled resource bytes, verify Valve CRC32 and SHA256
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/cs2-standalone/scripts/extract_compact.py \
+            --manifest "$RUNNER_TEMP/index/asset-records.txt" \
+            --archive-dir "$RUNNER_TEMP/original-vpks" \
+            --output "$RUNNER_TEMP/compact" \
+            --indices "$VPK_IDS"
+          du -sh "$RUNNER_TEMP/compact"
+      - name: Upload compact source portion, no unrelated game archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-compact-part-${{ matrix.pack }}
+          path: '${{ runner.temp }}/compact/'
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+  bundle:
+    needs: extract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+      - name: Read exact source resource manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-dust2-compact-resource-manifest
+          run-id: INVENTORY_RUN_ID
+          github-token: '${{ github.token }}'
+          path: '${{ runner.temp }}/index'
+      - name: Retrieve all CRC-verified compiled resource parts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cs2-compact-part-*
+          path: '${{ runner.temp }}/parts'
+      - name: Assemble and validate complete original-source bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/cs2-standalone/scripts/assemble_compact.py \
+            --manifest "$RUNNER_TEMP/index/asset-records.txt" \
+            --parts "$RUNNER_TEMP/parts" \
+            --output "$RUNNER_TEMP/final"
+          du -sh "$RUNNER_TEMP/final"
+      - name: Publish single compact source download for Rust-test
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-dust2-compact-source-bundle
+          path: '${{ runner.temp }}/final/'
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Summary
+        shell: bash
+        run: |
+          echo '### CS2 Dust2 source-only bundle ready' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Extract one artifact directly beside your Workshop _dir.vpk. Compiled VMAT/VTEX resources retain original bytes.' >> "$GITHUB_STEP_SUMMARY"
