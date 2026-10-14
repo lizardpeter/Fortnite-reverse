@@ -64,5 +64,25 @@ class XrefTests(unittest.TestCase):
         self.assertEqual(dict(outgoing), {})
 
 
+    def test_source_pointer_slot_reaches_original_function(self):
+        image = 0x140000000
+        data = struct.pack("<Q", image + 0x2000)
+        sec = {"name": ".rdata", "va": 0x3000, "rawptr": 0,
+               "rawsize": len(data), "flags": 0x40000040}
+        anchors = {0x2000: {"byte_length": 20, "score": 10}}
+        pointers = module.original_string_pointer_slots(data, image, [sec], anchors)
+        self.assertEqual(pointers, {0x3000: 0x2000})
+        code = b"\x48\x8d\x05\xf9\x1f\x00\x00\xc3"
+        text = {"name": ".text", "va": 0x1000, "rawptr": 0,
+                "rawsize": len(code), "flags": 0x60000020}
+        refs, hits, _in, _out, visited, skipped = module.discover(
+            code, image, [text], [(0x1000, 0x1008)], anchors, pointers
+        )
+        self.assertEqual((visited, skipped), (1, 0))
+        self.assertEqual(refs[0x2000][0]["reference_kind"],
+                         "indirect_original_va_pointer_slot")
+        self.assertIn(0x1000, hits)
+
+
 if __name__ == "__main__":
     unittest.main()
