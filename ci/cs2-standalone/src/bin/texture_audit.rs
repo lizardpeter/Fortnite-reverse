@@ -1,13 +1,29 @@
 //! Source-only material and texture audit on original Workshop + base game VPKs.
 //! Prints exact base archive numbers for missing source materials and their
 //! original VTEX paths. Decodes genuine texture mip pixels in memory.
-use cs2_importer::{material::{SourcePacks,MaterialCoverage},vpk::VpkArchive,texture};
+use cs2_importer::{material::{SourcePacks},vpk::VpkArchive,texture};
 use std::{collections::{BTreeMap,BTreeSet},env,path::PathBuf,process::ExitCode};
 fn run()->Result<(),String>{
     let workshop=PathBuf::from(env::args_os().nth(1).ok_or("expected Workshop _dir.vpk")?);
     let base=PathBuf::from(env::args_os().nth(2).ok_or("expected CS2 game pak01_dir.vpk")?);
     let outer=VpkArchive::open_directory(&workshop)?;
     let cs2=VpkArchive::open_directory(&base)?;
+    for sample in [
+        "materials/de_dust/hr_dust/hr_dust_decal_mudbrick_wear_01_color_psd_4a3a0ad0.vtex_c",
+        "materials/de_dust/hr_dust/hr_dust_decal_road_striping_color_psd_3c1a7134.vtex_c",
+    ]{
+        if let Ok(bytes)=cs2.read_entry(sample){
+            let resource=cs2_importer::resource::ResourceHeader::parse(&bytes)?;
+            if let Some(data)=resource.blocks.iter().find(|b|&b.kind==b"DATA"){
+                let h=bytes.get(data.offset..data.offset+data.length).unwrap_or(&[]);
+                println!("CS2 VTEX RAW SOURCE {sample} resource_size={} data_offset={} data_bytes={} header_100={}",
+                    bytes.len(),data.offset,data.length,
+                    h.iter().take(100).map(|b|format!("{b:02x}")).collect::<Vec<_>>().join(" "));
+                println!("CS2 VTEX DECODE INSPECT {:?}",cs2_importer::texture::inspect(&bytes));
+            }
+        }
+    }
+
     let mut sample_texture_count=0;
     for path in outer.entries().keys().filter(|p|p.ends_with(".vtex_c")).take(30){
         match outer.read_entry(path).and_then(|b|texture::decode(&b,path)){
