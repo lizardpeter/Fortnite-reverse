@@ -11,6 +11,9 @@ pub struct SurfaceVertex {
     pub tangent:[f32;4],
     pub uv:[f32;2],
     pub secondary_uv:Option<[f32;2]>,
+    /// Authored Source2 TEXCOORD semantic index 3, the vLightmapUV channel,
+    /// distinct from TEXCOORD1 (layer UV). This is unscaled atlas UV.
+    pub lightmap_uv:Option<[f32;2]>,
     /// Authored Source 2 vertex colour. Defaults to white when no COLOR
     /// attribute exists; never synthesize paint/blend-layer weights.
     pub color:[f32;4],
@@ -18,7 +21,7 @@ pub struct SurfaceVertex {
 impl Default for SurfaceVertex {
     fn default()->Self {
         Self {position:[0.;3],normal:[0.;3],tangent:[0.;4],uv:[0.;2],
-            secondary_uv:None,color:[1.;4]}
+            secondary_uv:None,lightmap_uv:None,color:[1.;4]}
     }
 }
 #[derive(Clone,Debug)]
@@ -111,7 +114,6 @@ fn vertex_attributes(model:&SourceModel,draw:&SourceDraw,index:usize)->Result<Su
     let mut result=SurfaceVertex::default();
     let mut position=false;
     let mut normal=false;
-    let mut texcoords=0;
     let mut normal_attr:Option<(&Buffer,&Attribute)>=None;
     for handle in &draw.vertex_buffers{
         let buffer=model.buffers.vertices.get(*handle).ok_or("bad source vertex stream")?;
@@ -139,17 +141,24 @@ fn vertex_attributes(model:&SourceModel,draw:&SourceDraw,index:usize)->Result<Su
                     }
                 },
                 "TEXCOORD"=>{
+                    // Do not interpret semantic index 3 as an ordinary
+                    // second UV simply because it is the second buffer attr.
+                    // The original Source2 CS2 v8.2 mesh layouts have
+                    // TEXCOORD0 = material UV, TEXCOORD3 = baked atlas UV.
                     let uv=vector2(bytes,at,attr.dxgi_format)?;
-                    if texcoords==0 {result.uv=uv;}
-                    else if texcoords==1 {result.secondary_uv=Some(uv);}
-                    // RGBA8 input carries four author-supplied channels;
-                    // retain ZW as an additional UV pair when no dedicated
-                    // second TEXCOORD has been encountered yet.
-                    if texcoords==0 && attr.dxgi_format==28 {
-                        let b=bytes.get(at+2..at+4).ok_or("truncated RGBA8 source UV")?;
-                        result.secondary_uv=Some([b[0] as f32/255.,b[1] as f32/255.]);
+                    match attr.semantic_index {
+                        0=>{
+                            result.uv=uv;
+                            if attr.dxgi_format==28 {
+                                let b=bytes.get(at+2..at+4)
+                                    .ok_or("truncated RGBA8 source UV")?;
+                                result.secondary_uv=Some([b[0] as f32/255.,b[1] as f32/255.]);
+                            }
+                        },
+                        1=>result.secondary_uv=Some(uv),
+                        3=>result.lightmap_uv=Some(uv),
+                        _=>{}, // preserve geometry; other semantics still need shader binding
                     }
-                    texcoords+=1;
                 },
                 _=>{},
             }
@@ -213,6 +222,18 @@ mod tests{
         assert!((c[3]-192./255.).abs()<1e-5);
         assert_eq!(SurfaceVertex::default().color,[1.;4]);
         assert!(source_color(&raw,0,999).unwrap().is_none());
+    }
+    #[test]
+    fn source_lightmap_uv_is_a_separate_authored_attribute(){
+        let source=SurfaceVertex::default();
+        assert_eq!(source.uv,[0.;2]);
+        assert_eq!(source.secondary_uv,None);
+        assert_eq!(source.lightmap_uv,None);
+        // Source2 TEXCOORD3 DXGI35 is R16G16_UNORM.
+        let bytes=[0xff,0x7f,0,0x80];
+        let uv=vector2(&bytes,0,35).unwrap();
+        assert!((uv[0]-0.5).abs()<0.00003);
+        assert!((uv[1]-0.5).abs()<0.00003);
     }
     #[test]
     fn signed_uvs_decode_negative_source_values(){
