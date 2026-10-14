@@ -80,6 +80,7 @@ jobs:
           echo "$ORIGINAL_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
           git fetch origin re/fortnite541-ghidra-full
           git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/discovery/nonpdata_direct_calls.jsonl.gz > "$RUNNER_TEMP/known/direct_calls.jsonl.gz"
+          git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/pdata_index.jsonl.gz > "$RUNNER_TEMP/known/pdata_index.jsonl.gz"
       - name: Decode real executable-reachable CALL instructions in original .pdata functions
         shell: bash
         run: |
@@ -97,7 +98,8 @@ jobs:
           set -euo pipefail
           python3 crates/fortnite_541/tools/audit_recursive_nonpdata_calls.py \
             --root "$RUNNER_TEMP/result" \
-            --known "$RUNNER_TEMP/known/direct_calls.jsonl.gz"
+            --known "$RUNNER_TEMP/known/direct_calls.jsonl.gz" \
+            --pdata-manifest "$RUNNER_TEMP/known/pdata_index.jsonl.gz"
           python3 - <<'PY'
           import json,os,pathlib
           p=pathlib.Path(os.environ["RUNNER_TEMP"])/"result/recursive_call_status.json"
@@ -145,7 +147,19 @@ jobs:
           cp -r "$RUNNER_TEMP/recovered/." "$root/"
           python3 "$RUNNER_TEMP/audit_recursive_nonpdata_calls.py" \
             --root "$root" --complete \
-            --known decompilation/fortnite541/discovery/nonpdata_direct_calls.jsonl.gz
+            --known decompilation/fortnite541/discovery/nonpdata_direct_calls.jsonl.gz \
+            --pdata-manifest decompilation/fortnite541/pdata_index.jsonl.gz
+          python3 - <<'PY'
+          import gzip,json,pathlib
+          root=pathlib.Path("decompilation/fortnite541/discovery/recursive_calls")
+          summary=json.loads((root/"original_cfg_callgraph_status.json").read_text())
+          with gzip.open(root/"original_cfg_source_verified_calls.jsonl.gz","rt") as rows:
+              count=sum(1 for line in rows if line.strip() and json.loads(line))
+          assert count==summary["validated_original_e8_callgraph_rows"]
+          assert summary["complete_original_pdata_scan"]
+          assert summary["independent_pdata_manifest_checked"]
+          print("ORIGINAL_CFG_CALLGRAPH_INDEPENDENTLY_AUDITED",json.dumps(summary))
+          PY
           git add "$root"
           test -n "$(git diff --cached --name-only)"
           git commit -m "Fortnite: all-original native function source-reachable direct CALL census"
