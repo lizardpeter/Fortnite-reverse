@@ -1,0 +1,64 @@
+name: CS2 Dust2 exact archive inventory
+on:
+  push:
+    branches: [assets/cs2-dust2-complete-vpk-20261014]
+    paths:
+      - '.github/workflows/cs2-dust2-inventory.yml'
+      - 'ci/cs2-standalone/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Download original Workshop Dust2 files anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lib32gcc-s1 ca-certificates curl unzip
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl -fL --retry 3 --connect-timeout 20 https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz -o "$RUNNER_TEMP/steamcmd.tgz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tgz" -C "$RUNNER_TEMP/steamcmd"
+          cd "$RUNNER_TEMP/steamcmd"
+          timeout 900 ./steamcmd.sh +login anonymous +workshop_download_item 730 3620630831 +quit
+          src="$HOME/Steam/steamapps/workshop/content/730/3620630831"
+          for idx in 000 001 002 003; do test -s "$src/3620630831_$idx.vpk"; done
+          test -s "$src/3620630831_dir.vpk"
+          echo "WORKSHOP_DIR=$src" >> "$GITHUB_ENV"
+      - name: Download base pak01 index anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/depot-tool"
+          curl -fL --retry 3 --connect-timeout 20 https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip -o "$RUNNER_TEMP/dd.zip"
+          unzip -q "$RUNNER_TEMP/dd.zip" -d "$RUNNER_TEMP/depot-tool"
+          chmod +x "$RUNNER_TEMP/depot-tool/DepotDownloader"
+          printf '%s\n' 'game/csgo/pak01_dir.vpk' > "$RUNNER_TEMP/base-files.txt"
+          timeout 600 "$RUNNER_TEMP/depot-tool/DepotDownloader" -app 730 -depot 2347770 -filelist "$RUNNER_TEMP/base-files.txt" -dir "$RUNNER_TEMP/base"
+          test -s "$RUNNER_TEMP/base/game/csgo/pak01_dir.vpk"
+          echo "BASE_DIR=$RUNNER_TEMP/base/game/csgo" >> "$GITHUB_ENV"
+      - name: Compile exact source dep analyzer
+        shell: bash
+        run: |
+          cargo build --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_inventory
+      - name: Enumerate all source-authored VMAT archive indices for both maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          ci/cs2-standalone/target/release/cs2_inventory materials \
+            "$WORKSHOP_DIR/3620630831_dir.vpk" "$BASE_DIR/pak01_dir.vpk" | tee "$RUNNER_TEMP/material-indices.log"
+          grep 'ASSET_PLAN_END' "$RUNNER_TEMP/material-indices.log"
+      - name: Upload source VMAT index
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-dust2-exact-material-vpk-index
+          path: ${{ runner.temp }}/material-indices.log
+          retention-days: 30
