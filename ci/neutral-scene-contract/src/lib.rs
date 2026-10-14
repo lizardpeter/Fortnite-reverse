@@ -24,7 +24,7 @@ pub struct NeutralVertex{
     pub lightmap_uv:[f32;2],
 }
 #[derive(Clone,Copy,Debug,Default)]
-pub enum NeutralAlpha {#[default] Opaque,Blend}
+pub enum NeutralAlpha {#[default] Opaque,Blend,Additive}
 #[derive(Clone,Copy,Debug,Default)]
 pub struct NeutralLayer;
 #[derive(Clone,Debug)]
