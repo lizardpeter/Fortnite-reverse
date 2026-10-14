@@ -76,15 +76,21 @@ impl SourcePacks<'_>{
     pub fn has(&self,path:&str)->bool{
         self.workshop_map.available(path) ||
             self.workshop_outer.available(path) ||
+            self.workshop_outer.overlay_available(path) ||
             self.base_game.is_some_and(|v|v.available(path))
     }
     pub fn read(&self,path:&str)->Result<Vec<u8>,String>{
-        if self.workshop_map.entries().contains_key(path){self.workshop_map.read_entry(path)}
-        else if self.workshop_outer.entries().contains_key(path){self.workshop_outer.read_entry(path)}
-        else if let Some(base)=self.base_game {
-            if base.entries().contains_key(path){return base.read_entry(path);}
-            Err(format!("Source 2 resource is not in any configured original archive: {path}"))
-        } else{Err(format!("Source 2 resource {path} absent from Workshop; configure original CS2 game files"))}
+        if self.workshop_map.available(path){return self.workshop_map.read_entry(path);}
+        if self.workshop_outer.available(path){return self.workshop_outer.read_entry(path);}
+        // Prefer the exact compact original resource over an incomplete
+        // base pak01 directory whose numbered VPK file may not exist.
+        if self.workshop_outer.overlay_available(path){
+            return self.workshop_outer.read_overlay(path);
+        }
+        if let Some(base)=self.base_game {
+            if base.available(path){return base.read_entry(path);}
+        }
+        Err(format!("Source 2 original resource {path} not found in Workshop, compact cs2-base-resources, or installed base VPK"))
     }
     pub fn describe(&self,original:&str)->Result<Material,String>{
         let path=source_path(original,".vmat")?;
@@ -123,6 +129,12 @@ pub fn base_game_archive() ->Result<Option<VpkArchive>,String>{
     if let Some(path)=std::env::var_os("RUST_TEST_CS2_GAME_VPK_DIR"){
         let path=std::path::PathBuf::from(path);
         paths.push(if path.is_dir(){path.join("pak01_dir.vpk")}else{path});
+    }
+    // A user may keep the Workshop and downloaded base pak01 files together.
+    if let Some(source)=std::env::var_os("RUST_TEST_CS2_VPK_DIR") {
+        let source=std::path::PathBuf::from(source);
+        let folder=if source.is_dir() {source} else {source.parent().unwrap_or(Path::new(".")).to_path_buf()};
+        paths.push(folder.join("pak01_dir.vpk"));
     }
     if let Some(program_files)=std::env::var_os("ProgramFiles(x86)"){
         paths.push(Path::new(&program_files).join("Steam/steamapps/common/Counter-Strike Global Offensive/game/csgo/pak01_dir.vpk"));
