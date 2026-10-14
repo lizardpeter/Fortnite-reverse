@@ -28,15 +28,15 @@ jobs:
           set -uo pipefail
           cat > "$RUNNER_TEMP/cs2-filelist.txt" <<'ENDLIST'
           game/csgo/pak01_dir.vpk
-          game/csgo/pak01_000.vpk
-          game/csgo_core/pak01_dir.vpk
+          game/csgo/pak01_262.vpk
+          game/csgo/pak01_386.vpk
           ENDLIST
           mkdir -p "$RUNNER_TEMP/cs2-test"
           cd "$RUNNER_TEMP/depot-tool"
           exe=$(find . -type f \( -name DepotDownloader -o -name DepotDownloader.dll \) -print -quit)
           if [[ -z "$exe" ]]; then echo "ERROR: No DepotDownloader program in release ZIP"; exit 2; fi
           if [[ "$exe" == *.dll ]]; then cmd=(dotnet "$exe"); else chmod +x "$exe"; cmd=("$exe"); fi
-          echo "Trying Steam anonymous: app 730, depot 2347770, 3 selected VPK files."
+          echo "Trying Steam anonymous: app 730, depot 2347770, 3 relevant Dust2 base VPK files."
           echo "No Steam username/password is supplied."
           timeout 780 "${cmd[@]}" \
             -app 730 -depot 2347770 \
@@ -49,10 +49,11 @@ jobs:
           echo "Source files:"
           find "$RUNNER_TEMP/cs2-test" -type f -printf '%P (%s bytes)\n' | head -n 60
           dir="$RUNNER_TEMP/cs2-test/game/csgo/pak01_dir.vpk"
-          part="$RUNNER_TEMP/cs2-test/game/csgo/pak01_000.vpk"
-          if [[ -s "$dir" && -s "$part" ]]; then
+          part="$RUNNER_TEMP/cs2-test/game/csgo/pak01_262.vpk"
+          sky="$RUNNER_TEMP/cs2-test/game/csgo/pak01_386.vpk"
+          if [[ -s "$dir" && -s "$part" && -s "$sky" ]]; then
             echo "SUCCESS: original Counter-Strike 2 archive index AND numbered VPK downloaded anonymously."
-            sha256sum "$dir" "$part"
+            sha256sum "$dir" "$part" "$sky"
             du -sh "$RUNNER_TEMP/cs2-test"
             echo "### Success: CS2 base VPK files downloaded anonymously" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -102,15 +103,32 @@ jobs:
           print('CS2_BASE_VPK_VER',ver,'INDEX_SIZE',len(data),'TREE_ENTRIES',count)
           print('TOP_TYPES',exts.most_common(16))
           print('RELEVANT_MATERIAL_ENTRIES',matched)
+          # Validate exact archive payloads, not just filename metadata.
+          samples={
+            'materials/de_dust/hr_dust/hr_dust_blend_asphalt_07.vmat_c',
+            'materials/skybox/sky_de_dust2vmat.vmat_c',
+          }
+          folder=path.parent
+          for filename,archive,offset,size in matched:
+              if filename not in samples: continue
+              source=folder/f'pak01_{archive:03d}.vpk'
+              assert source.exists(),(filename,source)
+              with source.open('rb') as stream:
+                  stream.seek(offset)
+                  first=stream.read(min(32,size))
+              assert len(first)==min(32,size)
+              declared=int.from_bytes(first[:4],'little')
+              version=int.from_bytes(first[4:6],'little')
+              print('EXACT_SOURCE_RESOURCE',filename,'archive',archive,'bytes',size,'resource_version',version,'declared',declared,'header',first.hex(' '))
           PY
       - name: Publish CS2 base archive index and sample data
         uses: actions/upload-artifact@v4
         with:
-          name: cs2-anonymous-base-vpk-index-and-part000
+          name: cs2-anonymous-dust2-materials-and-sky-vpks
           path: |
             ${{ runner.temp }}/cs2-test/game/csgo/pak01_dir.vpk
-            ${{ runner.temp }}/cs2-test/game/csgo/pak01_000.vpk
-            ${{ runner.temp }}/cs2-test/game/csgo_core/pak01_dir.vpk
+            ${{ runner.temp }}/cs2-test/game/csgo/pak01_262.vpk
+            ${{ runner.temp }}/cs2-test/game/csgo/pak01_386.vpk
           if-no-files-found: warn
           retention-days: 7
           compression-level: 0
