@@ -181,7 +181,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/depot-tool"
           curl -fL --retry 3 https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip -o "$RUNNER_TEMP/depot-tool.zip"
           unzip -q "$RUNNER_TEMP/depot-tool.zip" -d "$RUNNER_TEMP/depot-tool"
-          printf '%s\n' 'game/csgo/pak01_dir.vpk' 'game/csgo/pak01_262.vpk' 'game/csgo/pak01_386.vpk' > "$RUNNER_TEMP/base-select.txt"
+          printf '%s\n' 'game/csgo/pak01_dir.vpk' 'game/csgo/pak01_262.vpk' 'game/csgo/pak01_386.vpk' 'game/csgo/pak01_021.vpk' 'game/csgo/pak01_022.vpk' 'game/csgo/pak01_067.vpk' 'game/csgo/pak01_095.vpk' 'game/csgo/pak01_140.vpk' 'game/csgo/pak01_153.vpk' 'game/csgo/pak01_154.vpk' 'game/csgo/pak01_174.vpk' 'game/csgo/pak01_187.vpk' 'game/csgo/pak01_215.vpk' 'game/csgo/pak01_229.vpk' > "$RUNNER_TEMP/base-select.txt"
           mkdir -p "$RUNNER_TEMP/cs2-base"
           chmod +x "$RUNNER_TEMP/depot-tool/DepotDownloader"
           timeout 780 "$RUNNER_TEMP/depot-tool/DepotDownloader" -app 730 -depot 2347770 -filelist "$RUNNER_TEMP/base-select.txt" -dir "$RUNNER_TEMP/cs2-base" -max-downloads 4
@@ -189,8 +189,20 @@ jobs:
           test -s "$base/pak01_dir.vpk"
           test -s "$base/pak01_262.vpk"
           test -s "$base/pak01_386.vpk"
+          test -s "$base/pak01_021.vpk"
+          test -s "$base/pak01_022.vpk"
+          test -s "$base/pak01_067.vpk"
+          test -s "$base/pak01_095.vpk"
+          test -s "$base/pak01_140.vpk"
+          test -s "$base/pak01_153.vpk"
+          test -s "$base/pak01_154.vpk"
+          test -s "$base/pak01_174.vpk"
+          test -s "$base/pak01_187.vpk"
+          test -s "$base/pak01_215.vpk"
+          test -s "$base/pak01_229.vpk"
           echo "RUST_TEST_CS2_GAME_VPK_DIR=$base" >> "$GITHUB_ENV"
           echo "Base CS2 files downloaded and available to source import test: $(du -sh "$base")"
+          find "$base" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort | head -n 45
       - name: Verify original CS2 texture pixels and base material dependencies
         shell: bash
         run: |
