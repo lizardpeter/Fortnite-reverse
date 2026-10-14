@@ -1,0 +1,116 @@
+name: Fortnite 5.41 original material and shader xref index
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-original-xrefs.yml"
+      - "crates/fortnite_541/tools/index_original_win64_xrefs.py"
+      - "crates/fortnite_541/tools/tests/test_original_win64_xrefs.py"
+  pull_request:
+    paths:
+      - ".github/workflows/fortnite541-original-xrefs.yml"
+      - "crates/fortnite_541/tools/index_original_win64_xrefs.py"
+      - "crates/fortnite_541/tools/tests/test_original_win64_xrefs.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fortnite541-original-xrefs
+  cancel-in-progress: false
+
+jobs:
+  source-index-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install source decoder
+        run: python -m pip install 'capstone>=5,<6'
+      - name: Compile and test exact-address indexing
+        run: |
+          python -m py_compile crates/fortnite_541/tools/index_original_win64_xrefs.py
+          python -m unittest discover -s crates/fortnite_541/tools/tests -p 'test_original_win64_xrefs.py' -v
+
+  index-original-retail-evidence:
+    needs: source-index-validation
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      DUMP_BRANCH: re/fortnite541-ghidra-full
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deterministic x86-64 decoder
+        run: python -m pip install 'capstone>=5,<6'
+      - name: Fetch original Windows executable, verify retail hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/retail" "$RUNNER_TEMP/xref-output"
+          curl --fail --location --retry 3 --connect-timeout 25 --max-time 600 \
+            "$SOURCE_URL" -o "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+      - name: Index retail string references and direct-call neighborhoods
+        shell: bash
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/index_original_win64_xrefs.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/xref-output" | tee "$RUNNER_TEMP/xref-summary.log"
+          python - <<'PY'
+          import gzip, json, os, pathlib
+          out=pathlib.Path(os.environ['RUNNER_TEMP'])/'xref-output'
+          report=json.loads((out/'summary.json').read_text())
+          assert report['original_pdata_count']==291757
+          assert report['scanned_pdata_functions']+report['unmapped_pdata_functions']==291757
+          assert report['control_flow_verified'] is False
+          for path in ('string_reference_evidence.jsonl.gz','candidate_function_evidence.jsonl.gz'):
+              with gzip.open(out/path,'rt') as rows:
+                  for row in rows:
+                      json.loads(row)
+          print("FORTNITE541_RETAIL_XREF_INDEX_VALIDATED",report)
+          PY
+      - name: Save source evidence to the existing public decompilation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite 5.41 reverse engineering"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          mkdir -p decompilation/fortnite541/index/original_xrefs
+          cp "$RUNNER_TEMP"/xref-output/* decompilation/fortnite541/index/original_xrefs/
+          git add decompilation/fortnite541/index/original_xrefs
+          if ! git diff --cached --quiet; then
+            git commit -m "Fortnite: original retail string xrefs and direct-call source evidence"
+            for attempt in 1 2 3 4 5; do
+              if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then exit 0; fi
+              git fetch origin "$DUMP_BRANCH"
+              git rebase "origin/$DUMP_BRANCH"
+              if [ "$attempt" -eq 5 ]; then exit 1; fi
+              sleep "$attempt"
+            done
+          fi
+      - name: Retain summary without proprietary original executable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-xref-summary-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/xref-output/summary.json
+            ${{ runner.temp }}/xref-summary.log
+          retention-days: 90
+          if-no-files-found: warn
