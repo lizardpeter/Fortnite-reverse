@@ -103,11 +103,11 @@ pub fn from_archive(outer:&VpkArchive,map_package:&str)->Result<SourceWorld,Stri
         ))
     });
     let source_light=world_root.field("m_worldLightingInfo");
-    let number=|key:&str|->i64{
+    let lighting_int=|key:&str|->i64{
         source_light.and_then(|value|value.field(key))
             .and_then(Value::as_float).map(|v|v as i64).unwrap_or(0)
     };
-    let lightmap_version=[number("m_nLightmapVersionNumber"),number("m_nLightmapGameVersionNumber")];
+    let lightmap_version=[lighting_int("m_nLightmapVersionNumber"),lighting_int("m_nLightmapGameVersionNumber")];
     let lightmap_uv_scale=source_light.and_then(|v|v.field("m_vLightmapUvScale"))
         .and_then(Value::as_array)
         .filter(|a|a.len()>=2)
