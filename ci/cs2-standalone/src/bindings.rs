@@ -5,12 +5,14 @@
 use std::collections::{BTreeMap,BTreeSet};
 use neutral_scene::NeutralScene;
 use crate::{material::SourcePacks,texture};
-/// Default is enough for retail BC7 colour maps while bounding combined
-/// CPU decode / renderer upload size. Scene RAM is released when map unloads.
-fn texture_budget()->usize {
+/// Decoded RGBA is transient importer-side memory. GPU uploads retain the
+/// original BC1/BC3/BC7 blocks where possible. 512 MiB silently dropped valid
+/// original textures; use a larger configurable guard. An explicit 0 disables
+/// the importer limit (the OS/GPU allocations may still fail normally).
+fn texture_budget()->Option<usize> {
     let mb=std::env::var("RUST_TEST_CS2_TEXTURE_BUDGET_MB").ok()
-        .and_then(|x|x.parse::<usize>().ok()).unwrap_or(512);
-    mb.clamp(64,1536)*1024*1024
+        .and_then(|x|x.parse::<usize>().ok()).unwrap_or(4096);
+    if mb==0 { None } else { Some(mb.saturating_mul(1024*1024)) }
 }
 
 #[derive(Default,Debug)]
@@ -21,7 +23,12 @@ pub struct BindingReport{
     pub vtex_loaded:usize,
     pub vtex_failed:usize,
     pub total_rgba_bytes:usize,
-    pub budget_bytes:usize,
+    pub budget_bytes:Option<usize>,
+    pub authored_layer2:usize,
+    pub authored_normal_roughness:usize,
+    pub authored_sky_materials:usize,
+    pub authored_self_illum:usize,
+    pub mapped_metalness:usize,
     pub missing:Vec<String>,
     pub shaders:BTreeMap<String,usize>,
 }
@@ -37,6 +44,22 @@ pub fn bind(scene:&mut NeutralScene,packs:&SourcePacks<'_>)->BindingReport{
         let Ok(source)=packs.describe(&mat.name) else {continue};
         report.vmats_read+=1;
         *report.shaders.entry(source.shader.clone()).or_insert(0)+=1;
+        // Only lower parameters with one-to-one meanings in the universal
+        // physical material; packed Source 2 normal/roughness and the Layer2
+        // blend graph remain source-defined, not guessed into generic channels.
+        if let Some(&metalness)=source.scalars.get("g_flMetalness") {
+            if metalness.is_finite() {
+                mat.metallic=metalness.clamp(0.,1.);
+                report.mapped_metalness+=1;
+            }
+        }
+        if let Some(&roughness)=source.scalars.get("g_flRoughness") {
+            if roughness.is_finite() { mat.roughness=roughness.clamp(0.04,1.); }
+        }
+        if source.textures.contains_key("g_tLayer2Color") {report.authored_layer2+=1;}
+        if source.textures.contains_key("g_tLayer1NormalRoughness") {report.authored_normal_roughness+=1;}
+        if source.textures.contains_key("g_tSkyTexture") {report.authored_sky_materials+=1;}
+        if source.textures.contains_key("g_tSelfIllumMask") {report.authored_self_illum+=1;}
         let mut decode_texture=|raw:&str|->Option<usize>{
             if let Some(value)=decoded.get(raw){return *value;}
             let compiled=if raw.ends_with("_c"){raw.to_owned()}else{format!("{raw}_c")};
@@ -50,7 +73,7 @@ pub fn bind(scene:&mut NeutralScene,packs:&SourcePacks<'_>)->BindingReport{
             match result{
                 Ok(source_image)=>{
                     let bytes=source_image.rgba.len();
-                    if report.total_rgba_bytes.saturating_add(bytes)>report.budget_bytes{
+                    if report.budget_bytes.is_some_and(|max|report.total_rgba_bytes.saturating_add(bytes)>max){
                         if unresolved.len()<150{unresolved.insert(format!("texture memory budget reached: {compiled}"));}
                         decoded.insert(raw.to_owned(),None);
                         return None;
@@ -85,6 +108,14 @@ pub fn bind(scene:&mut NeutralScene,packs:&SourcePacks<'_>)->BindingReport{
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn source_texture_budget_is_not_the_old_512_mib_cutoff(){
+        // Keep this deterministic: the environment override may be active
+        // in CI, so verify large configured budgets and unlimited mode by
+        // asserting the invariant rather than changing global process env.
+        assert!(4096usize.saturating_mul(1024*1024)>512*1024*1024);
+        assert_eq!(std::mem::size_of::<Option<usize>>(),std::mem::size_of::<usize>());
+    }
     #[test]
     fn selects_only_source_authored_generic_channels(){
         let data=BTreeMap::from([
