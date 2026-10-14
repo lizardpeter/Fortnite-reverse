@@ -59,6 +59,7 @@ fn append_source_model(
     material_ids:&mut BTreeMap<(String,u32),usize>,
     untextured:&mut BTreeSet<String>,
     triangles:&mut usize,
+    lightmap_uv_scale:[f32;2],
 )->Result<Vec<usize>,String>{
     let file=if archive.entries().contains_key(model){archive.read_entry(model)?}
         else{outer.read_entry(model)?};
@@ -91,7 +92,18 @@ fn append_source_model(
             vertices.push(NeutralVertex{
                 position:engine_position(src.position),
                 normal,tangent:[tangent[0],tangent[1],tangent[2],src.tangent[3]],
-                uv:src.uv,lightmap_uv:src.secondary_uv.unwrap_or(src.uv),
+                uv:src.uv,
+                // Source2 v8.2 baked UV is semantic TEXCOORD3 and must be
+                // multiplied by m_vLightmapUvScale, not TEXCOORD1.
+                // Do NOT silently substitute base UV when an authored baked
+                // lightmap stream is absent. No baked texture is bound until
+                // source lighting maps into the universal shader path.
+                lightmap_uv:if lower.lightmapped {
+                    src.lightmap_uv
+                        .map(|uv|[uv[0]*lightmap_uv_scale[0],
+                                  uv[1]*lightmap_uv_scale[1]])
+                        .unwrap_or([0.,0.])
+                }else{src.secondary_uv.unwrap_or(src.uv)},
                 color:[color[0]*src.color[0],color[1]*src.color[1],
                     color[2]*src.color[2],lower.alpha.unwrap_or(1.)*src.color[3]],
                 ..Default::default()
@@ -142,7 +154,7 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
                 let before_meshes=scene.meshes.len();
                 let before_triangles=triangles;
                 let list=match append_source_model(&mut scene,&inner,&outer,&placement.model,
-                    &mut material_ids,&mut untextured,&mut triangles) {
+                    &mut material_ids,&mut untextured,&mut triangles,graph.lightmap_uv_scale) {
                     Ok(list)=>list,
                     Err(error)=>{
                         scene.meshes.truncate(before_meshes);
@@ -168,7 +180,7 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
                 let before_meshes=scene.meshes.len();
                 let before_triangles=triangles;
                 let result=append_source_model(&mut scene,&inner,&outer,&agg.model,
-                    &mut material_ids,&mut untextured,&mut triangles);
+                    &mut material_ids,&mut untextured,&mut triangles,graph.lightmap_uv_scale);
                 let indices=match result {
                     Ok(v)=>v,
                     Err(error)=>{
