@@ -324,9 +324,10 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         }
     }
     scene.report.lines.push(format!(
-        "CS2 BAKED LIGHTMAP SOURCE AUDIT: {}/{} original lightmap reference(s) inspected. Original atlas UV/lighting semantics not yet translated: {}",
+        "CS2 BAKED LIGHTMAP SOURCE AUDIT: {}/{} original lightmap reference(s) inspected. Source shader lightmap version {}.{}, authored atlas UV scale {:?}; source lighting is NOT yet lowered into universal RGBM. File inventory: {}",
         authored_lightmap_formats.iter().filter(|value|value.contains("VTEX format")).count(),
-        graph.lighting_textures.len(),authored_lightmap_formats.join("; ")
+        graph.lighting_textures.len(),graph.lightmap_version[0],graph.lightmap_version[1],
+        graph.lightmap_uv_scale,authored_lightmap_formats.join("; ")
     ));
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
