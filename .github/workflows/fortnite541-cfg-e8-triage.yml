@@ -1,0 +1,79 @@
+name: Fortnite 5.41 diagnose original CFG CALL destinations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-cfg-e8-triage.yml"
+      - "crates/fortnite_541/tools/triage_original_cfg_e8.py"
+  pull_request:
+    paths:
+      - ".github/workflows/fortnite541-cfg-e8-triage.yml"
+      - "crates/fortnite_541/tools/triage_original_cfg_e8.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  source-e8-anomaly-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate signed original rel32 and source-address diagnostics
+        run: |
+          python3 -m py_compile crates/fortnite_541/tools/triage_original_cfg_e8.py
+          python3 crates/fortnite_541/tools/triage_original_cfg_e8.py --self-test
+      - name: Audit true original retail CALL source evidence and original pdata envelope
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/triage_original_cfg_e8.py "$RUNNER_TEMP/triage.py"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout --detach FETCH_HEAD
+          python3 "$RUNNER_TEMP/triage.py" \
+            --root decompilation/fortnite541 \
+            --out "$RUNNER_TEMP/triage" | tee "$RUNNER_TEMP/triage.log"
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ['RUNNER_TEMP'])/'triage/original_e8_displacement_triage.json'
+          data=json.loads(p.read_text())
+          assert data['original_pdata_entries']==291757
+          assert data['source_verified_e8_edges']==3258
+          assert sum(data['class_totals'].values())==3258
+          print('ORIGINAL_SHA256_SOURCE_E8_DISPLACEMENT_AUDITED')
+          PY
+      - name: Save diagnostic report on source decompilation branch
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite original E8 source diagnostics"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout -B re/fortnite541-ghidra-full origin/re/fortnite541-ghidra-full
+          mkdir -p decompilation/fortnite541/index/original_cfg_diagnostics
+          cp "$RUNNER_TEMP"/triage/* decompilation/fortnite541/index/original_cfg_diagnostics/
+          git add decompilation/fortnite541/index/original_cfg_diagnostics
+          if ! git diff --cached --quiet; then
+            git commit -m "Fortnite: audit real CFG E8 CALL target displacement and RVA anomaly distributions"
+            for attempt in 1 2 3 4 5; do
+              if git push origin HEAD:refs/heads/re/fortnite541-ghidra-full; then exit 0; fi
+              git fetch origin re/fortnite541-ghidra-full
+              git rebase origin/re/fortnite541-ghidra-full
+              if [ "$attempt" -eq 5 ]; then exit 1; fi
+              sleep "$attempt"
+            done
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fortnite541-original-cfg-e8-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/triage/original_e8_displacement_triage.json
+            ${{ runner.temp }}/triage.log
+          retention-days: 90
+          if-no-files-found: warn
