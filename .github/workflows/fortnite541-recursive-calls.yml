@@ -1,0 +1,158 @@
+name: Fortnite 5.41 original source CFG direct CALL census
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - ".github/workflows/fortnite541-recursive-calls.yml"
+      - "crates/fortnite_541/tools/discover_recursive_nonpdata_calls.py"
+      - "crates/fortnite_541/tools/audit_recursive_nonpdata_calls.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fortnite541-full-original-recursive-calls-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan-exact-original-native-functions:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate original instruction decoding, forged CALL rejection and bounded work
+        id: plan
+        shell: bash
+        env:
+          FULL: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          python3 -m pip install capstone==5.0.6 pefile==2024.8.26
+          python3 crates/fortnite_541/tools/disassemble_original_remaining.py --self-test
+          python3 crates/fortnite_541/tools/discover_recursive_nonpdata_calls.py --self-test
+          python3 crates/fortnite_541/tools/audit_recursive_nonpdata_calls.py --self-test
+          python3 - <<'PY'
+          import json,os
+          total=291757
+          if os.environ["FULL"]=="true":
+              stride=(total+15)//16
+              segments=[{"start":i,"count":min(stride,total-i),"label":f"{i:06d}"}
+                        for i in range(0,total,stride)]
+          else:
+              segments=[{"start":0,"count":2000,"label":"000000"}]
+          with open(os.environ["GITHUB_OUTPUT"],"a") as f:
+              f.write("matrix="+json.dumps({"include":segments},separators=(",",":"))+"\n")
+          print("SOURCE_VERIFIED_ORIGINAL_CALL_CENSUS_PLAN",json.dumps(segments))
+          PY
+
+  recover-real-original-call-instructions:
+    needs: plan-exact-original-native-functions
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.plan-exact-original-native-functions.outputs.matrix) }}
+    env:
+      ORIGINAL_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      ORIGINAL_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      START: ${{ matrix.start }}
+      COUNT: ${{ matrix.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Authenticate exact original retail PE and tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install capstone==5.0.6 pefile==2024.8.26
+          mkdir -p "$RUNNER_TEMP/source" "$RUNNER_TEMP/result" "$RUNNER_TEMP/known"
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$ORIGINAL_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$ORIGINAL_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          git fetch origin re/fortnite541-ghidra-full
+          git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/discovery/nonpdata_direct_calls.jsonl.gz > "$RUNNER_TEMP/known/direct_calls.jsonl.gz"
+      - name: Decode real executable-reachable CALL instructions in original .pdata functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/discover_recursive_nonpdata_calls.py \
+            --original-exe "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" \
+            --sha256 "$ORIGINAL_SHA256" --start "$START" --count "$COUNT" \
+            --out "$RUNNER_TEMP/result"
+          mkdir -p "$RUNNER_TEMP/result/records" "$RUNNER_TEMP/result/reports"
+          mv "$RUNNER_TEMP/result/"*.jsonl.gz "$RUNNER_TEMP/result/records/"
+          mv "$RUNNER_TEMP/result/"*.json "$RUNNER_TEMP/result/reports/"
+      - name: Independently audit exact source CALL bytes, original indexes and target counts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/audit_recursive_nonpdata_calls.py \
+            --root "$RUNNER_TEMP/result" \
+            --known "$RUNNER_TEMP/known/direct_calls.jsonl.gz"
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"result/recursive_call_status.json"
+          r=json.loads(p.read_text())
+          assert r["scanned_original_pdata_entries"]==int(os.environ["COUNT"])
+          assert r["original_pdata_functions"]==291757
+          print("ORIGINAL_RETAIL_REACHABLE_CALL_SHARD_VERIFIED",r)
+          PY
+      - name: Upload exact source-backed CALL records and shard report
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-source-calls-${{ matrix.label }}
+          path: |
+            ${{ runner.temp }}/result/records/
+            ${{ runner.temp }}/result/reports/
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+  merge-original-call-evidence:
+    if: github.ref == 'refs/heads/main'
+    needs: [plan-exact-original-native-functions, recover-real-original-call-instructions]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: fortnite541-source-calls-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/recovered
+      - name: Audit full 291757 indexed original functions and permanently commit real CALL witnesses
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/audit_recursive_nonpdata_calls.py "$RUNNER_TEMP/audit_recursive_nonpdata_calls.py"
+          git config user.name "Fortnite 5.41 original recursive CALL census"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout -B re/fortnite541-ghidra-full origin/re/fortnite541-ghidra-full
+          root=decompilation/fortnite541/discovery/recursive_calls
+          mkdir -p "$root"
+          cp -r "$RUNNER_TEMP/recovered/." "$root/"
+          python3 "$RUNNER_TEMP/audit_recursive_nonpdata_calls.py" \
+            --root "$root" --complete \
+            --known decompilation/fortnite541/discovery/nonpdata_direct_calls.jsonl.gz
+          git add "$root"
+          test -n "$(git diff --cached --name-only)"
+          git commit -m "Fortnite: all-original native function source-reachable direct CALL census"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:refs/heads/re/fortnite541-ghidra-full; then break; fi
+            git fetch origin re/fortnite541-ghidra-full
+            git rebase origin/re/fortnite541-ghidra-full
+            if [[ "$attempt" == 5 ]]; then exit 1; fi
+            sleep "$attempt"
+          done
