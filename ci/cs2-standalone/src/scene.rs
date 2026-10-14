@@ -307,6 +307,28 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
             Err(e)=>scene.report.lines.push(format!("CS2 SKY SOURCE MISSING: {e}")),
         }
     }
+    // Preserve a precise census of Source 2 baked texture dependencies.
+    // Source2 lightmaps contain lighting data and encoding-specific layer
+    // semantics. Never feed them to generic RGBM until the exact
+    // atlas/UV placement mapping and light transport contract are decoded.
+    let mut authored_lightmap_formats=Vec::new();
+    for original in &graph.lighting_textures {
+        let path=if original.ends_with("_c"){original.clone()}else{
+            format!("{original}_c")
+        };
+        match packages.read(&path).and_then(|bytes|crate::texture::inspect(&bytes)) {
+            Ok(meta)=>authored_lightmap_formats.push(format!(
+                "{}: {}x{}, VTEX format {}, {} mip(s), flags 0x{:04x}",
+                path,meta.width,meta.height,meta.format,meta.mips,meta.flags
+            )),
+            Err(error)=>authored_lightmap_formats.push(format!("{path}: {error}")),
+        }
+    }
+    scene.report.lines.push(format!(
+        "CS2 BAKED LIGHTMAP SOURCE AUDIT: {}/{} original lightmap reference(s) inspected. Original atlas UV/lighting semantics not yet translated: {}",
+        authored_lightmap_formats.iter().filter(|value|value.contains("VTEX format")).count(),
+        graph.lighting_textures.len(),authored_lightmap_formats.join("; ")
+    ));
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
