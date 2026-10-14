@@ -88,6 +88,21 @@ jobs:
           ci/cs2-standalone/target/release/cs2_inventory textures \
             "$WORKSHOP_DIR/3620630831_dir.vpk" "$BASE_DIR/pak01_dir.vpk" | tee "$RUNNER_TEMP/texture-indices.log"
           grep 'ASSET_PLAN_END' "$RUNNER_TEMP/texture-indices.log"
+      - name: Build exact source-byte extraction manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep '^ASSET_PLAN_RESOURCE|' "$RUNNER_TEMP/material-indices.log" > "$RUNNER_TEMP/asset-records.txt"
+          grep '^ASSET_PLAN_RESOURCE|' "$RUNNER_TEMP/texture-indices.log" >> "$RUNNER_TEMP/asset-records.txt"
+          sort -u "$RUNNER_TEMP/asset-records.txt" -o "$RUNNER_TEMP/asset-records.txt"
+          echo "ORIGINAL_COMPILED_RESOURCES=$(wc -l < "$RUNNER_TEMP/asset-records.txt")"
+          head -n 3 "$RUNNER_TEMP/asset-records.txt"
+      - name: Publish exact source resource manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-dust2-compact-resource-manifest
+          path: ${{ runner.temp }}/asset-records.txt
+          retention-days: 14
       - name: Upload original texture dependency index
         uses: actions/upload-artifact@v4
         with:
