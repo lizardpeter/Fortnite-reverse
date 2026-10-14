@@ -1,0 +1,15 @@
+{
+  "anchor_strings": 7379,
+  "candidate_functions": 4,
+  "candidate_incoming_calls": 0,
+  "candidate_outgoing_calls": 0,
+  "control_flow_verified": false,
+  "direct_string_references": 4,
+  "function_identity_verified": false,
+  "notes": "Original x64 RIP-relative references from function-bounded linear disassembly; candidates are not UE4 symbols or proven live branches.",
+  "original_pdata_count": 291757,
+  "scanned_pdata_functions": 291757,
+  "schema_version": 1,
+  "source_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "unmapped_pdata_functions": 0
+}
