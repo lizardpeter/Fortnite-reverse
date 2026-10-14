@@ -164,6 +164,32 @@ impl VpkArchive {
     }
 
     pub fn entries(&self) -> &BTreeMap<String,VpkEntry> { &self.entries }
+    /// Non-cached, compiled Source 2 base resources extracted from original
+    /// anonymous Steam archives. Files retain their exact original bytes.
+    /// A compact overlay is placed beside the Workshop _dir.vpk, under
+    /// cs2-base-resources/materials/...; it never replaces the Workshop VPK.
+    fn overlay_path(&self,name:&str)->Result<PathBuf,String>{
+        if !safe_path(name) || !(name.ends_with(".vmat_c")||name.ends_with(".vtex_c")) {
+            return Err(format!("unsafe or unsupported original source overlay path {name}"));
+        }
+        let parent=self.segment.path.parent().ok_or("Workshop has no base directory")?;
+        Ok(parent.join("cs2-base-resources").join(name))
+    }
+    pub fn overlay_available(&self,name:&str)->bool{
+        self.archive_prefix.is_some() &&
+            self.overlay_path(name).ok().is_some_and(|p|p.is_file())
+    }
+    pub fn read_overlay(&self,name:&str)->Result<Vec<u8>,String>{
+        if self.archive_prefix.is_none() {
+            return Err("nested map VPK has no external source asset overlay".into());
+        }
+        let path=self.overlay_path(name)?;
+        let len=std::fs::metadata(&path).map_err(|e|format!("Source 2 overlay {}: {e}",path.display()))?.len();
+        if len==0 || len>MAX_READ_BYTES as u64 {
+            return Err(format!("invalid original source overlay size {len} for {name}"));
+        }
+        std::fs::read(&path).map_err(|e|format!("read compiled original resource {}: {e}",path.display()))
+    }
     /// True only if a source entry's referenced physical archive is present
     /// and includes its exact byte range, not merely listed in pak01_dir.vpk.
     /// Supports intentional partial anonymous depot downloads.
@@ -242,6 +268,22 @@ mod tests {
         let path=std::env::temp_dir().join(format!("cs2-vpk-test-{}-{stamp}_dir.vpk",std::process::id()));
         std::fs::write(&path,data).unwrap();
         path
+    }
+    #[test]
+    fn compact_original_compiled_assets_are_read_beside_workshop(){
+        let path=temp_fixture(&fixture(b"workshop-data",false));
+        let root=path.parent().unwrap().join("cs2-base-resources").join("materials").join("overlay-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let original=root.join("test.vtex_c");
+        std::fs::write(&original,b"original-compiled-source-bytes").unwrap();
+        let archive=VpkArchive::open_directory(&path).unwrap();
+        assert!(archive.overlay_available("materials/overlay-test/test.vtex_c"));
+        assert_eq!(archive.read_overlay("materials/overlay-test/test.vtex_c").unwrap(),
+            b"original-compiled-source-bytes");
+        assert!(archive.read_overlay("../unsafe.vtex_c").is_err());
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(&original).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn reads_real_vpk2_tree_shape_and_checks_crc() {
