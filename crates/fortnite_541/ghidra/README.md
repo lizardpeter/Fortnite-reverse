@@ -309,6 +309,26 @@ contiguous nonoverlapping coverage of the entire original `.pdata` table
 before committing results under `discovery/recursive_calls`.
 The existing C pseudocode and verified `.pdata` coverage are unchanged.
 
+## Three additional source-confirmed executable routines
+
+The complete source-reachable CALL census found three native target RVAs
+outside the original `.pdata` extents and not present in the original 58
+Ghidra direct-call candidates. These have their own authenticated CALL rel32
+machine-instruction witnesses, independently checked against the original
+retail Win64 executable.
+
+`Fortnite541RecoverRecursiveCalls.java` now creates and decompiles native
+functions at the precise three candidate RVAs. The actual
+[GitHub runner](../../.github/workflows/fortnite541-recursive-call-recovery.yml)
+succeeded at **3/3 real nonempty C pseudocode functions**, with zero
+original call witness errors, missing functions or decompiler failures.
+
+On main, the resulting C and independent source audit are permanently
+committed under `discovery/recursive_calls/new_original_C/`. These are
+**additional original call targets**, distinct from the initial 57 successful
+non-`.pdata` functions and the existing 291,701 `.pdata` C bodies.
+Neither figure implies linked or behaviorally verified original C++.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
