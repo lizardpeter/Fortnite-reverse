@@ -1,0 +1,19 @@
+{
+  "callers_with_ghidra_c": 3256,
+  "evidence": "original_cfg_reachable_e8_and_original_C_pseudocode_crossref",
+  "native_cpp_linkage_verified": false,
+  "original_pdata_functions": 291757,
+  "source_original_pe_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "source_verified_cfg_e8_calls": 3258,
+  "target_classes": {
+    "exact_original_pdata_entry": 0,
+    "executable_nonpdata_target": 76,
+    "interior_original_pdata_extent": 88,
+    "nonexecutable_section_target": 58,
+    "unmapped_target": 3036
+  },
+  "targets_with_ghidra_c": 88,
+  "unique_indexed_target_owners": 88,
+  "unreal_function_identification_verified": false,
+  "verified_ghidra_c_bodies": 291701
+}
