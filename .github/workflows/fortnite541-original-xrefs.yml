@@ -81,6 +81,14 @@ jobs:
               with gzip.open(out/path,'rt') as rows:
                   for row in rows:
                       json.loads(row)
+          edges=0
+          with gzip.open(out/'original_x64_linear_direct_calls.jsonl.gz','rt') as calls:
+              for line in calls:
+                  edge=json.loads(line)
+                  assert edge['evidence_level']=='source_x64_linear_direct_call_not_cfg_verified'
+                  edges+=1
+          assert edges==report['linear_direct_call_instructions']
+          print("FORTNITE541_ORIGINAL_X64_DIRECT_CALL_EDGES",edges)
           print("FORTNITE541_RETAIL_XREF_INDEX_VALIDATED",report)
           PY
       - name: Save source evidence to the existing public decompilation branch
