@@ -108,7 +108,6 @@ def discover(exe_path: Path, start: int, count: int, out_dir: Path,
                     "target_rva": f"0x{target:08x}",
                     "source_original_pe_sha256": original_sha,
                     "direct_call_edges": 0,
-                    "unique_original_caller_functions": 0,
                     "callsite_witnesses": [],
                 }
                 target_rows[target] = item
