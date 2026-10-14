@@ -10,9 +10,15 @@
   "schema_version": 1,
   "source_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
   "start_original_index": 273525,
+  "target_executable_nonpdata_target": 1,
+  "target_interior_original_pdata_extent": 4,
+  "target_nonexecutable_section_target": 2,
+  "target_unmapped_target": 169,
   "unindexed_executable_call_edges": 1,
   "unique_nonpdata_call_targets_in_shard": 1,
   "unsupported_direct_call_encoding": 238,
+  "validated_e8_callgraph_file": "verified_e8_calls_273525_291757.jsonl.gz",
+  "validated_e8_callgraph_rows": 176,
   "verified_e8_rel32_edges": 176,
   "visited_original_functions": 18232
 }
