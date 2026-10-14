@@ -6,10 +6,13 @@
   "control_flow_verified": false,
   "direct_string_references": 4,
   "function_identity_verified": false,
-  "notes": "Original x64 RIP-relative references from function-bounded linear disassembly; candidates are not UE4 symbols or proven live branches.",
+  "indirect_string_pointer_references": 0,
+  "notes": "Original x64 RIP-relative string addresses or original retail absolute-VA string pointer slots in function-bounded linear disassembly; candidates are not confirmed UE4 symbols or proven live branches.",
   "original_pdata_count": 291757,
+  "retail_va_string_pointer_slots": 1603,
   "scanned_pdata_functions": 291757,
   "schema_version": 1,
   "source_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "string_or_pointer_references": 4,
   "unmapped_pdata_functions": 0
 }
