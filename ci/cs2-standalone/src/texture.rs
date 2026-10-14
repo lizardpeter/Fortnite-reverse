@@ -1,7 +1,7 @@
 //! Source 2 compiled VTEX (resource version 1) pixel-data decoder.
 //!
 //! Exact VTEX metadata and mip bytes are read from the original VPK. Supports
-//! author-compressed BC1/BC3/BC7, BC5 normals and raw RGBA/BGRA/R8 images.
+//! source-compressed BC1/BC3/BC4/BC5/BC7 and raw RGBA/BGRA/R8 images.
 //! No fallback noise, generated textures, or alternate game-specific shader.
 use crate::resource::ResourceHeader;
 use neutral_scene::{NeutralTexture,NeutralBlockFormat,NeutralCompressedTexture,NeutralCompressedLevel};
@@ -22,7 +22,7 @@ fn mip_size(width:usize,height:usize,format:u8)->Result<usize,String>{
     let block_count=width.div_ceil(4).checked_mul(height.div_ceil(4))
         .ok_or("VTEX block count overflow")?;
     match format {
-        1=>block_count.checked_mul(8), // DXT1 (BC1)
+        1|27=>block_count.checked_mul(8), // DXT1 (BC1), ATI1N (BC4)
         2|19|20|21=>block_count.checked_mul(16), // DXT5, BC6H, BC7, ATI2N
         4|28=>px.checked_mul(4), // RGBA8 / BGRA8
         3|33=>Some(px), // I8 / R8
@@ -99,7 +99,7 @@ fn decode_blocks(data:&[u8],width:usize,height:usize,format:u8)->Result<Vec<u8>,
     let out_size=width.checked_mul(height).and_then(|x|x.checked_mul(4))
         .ok_or("VTEX output size overflow")?;
     let mut rgba=vec![0u8;out_size];
-    let bpb=if format==1{8}else{16};
+    let bpb=if matches!(format,1|27){8}else{16};
     for by in 0..height.div_ceil(4){
         for bx in 0..width.div_ceil(4){
             let block_idx=by*width.div_ceil(4)+bx;
@@ -110,6 +110,16 @@ fn decode_blocks(data:&[u8],width:usize,height:usize,format:u8)->Result<Vec<u8>,
                 1=>bcdec_rs::bc1(chunk,&mut pixels,16),
                 2=>bcdec_rs::bc3(chunk,&mut pixels,16),
                 20=>bcdec_rs::bc7(chunk,&mut pixels,16),
+                27=>{
+                    // Source 2 VTexFormat ATI1N is unsigned BC4, one source
+                    // red channel. The same source mask also represents
+                    // direct_light_shadows, not an invented albedo.
+                    let mut r=[0u8;16];
+                    bcdec_rs::bc4(chunk,&mut r,4,false);
+                    for (i,&v) in r.iter().enumerate(){
+                        pixels[i*4..i*4+4].copy_from_slice(&[v,v,v,255]);
+                    }
+                },
                 21=>{
                     let mut channels=[0u8;32];
                     bcdec_rs::bc5(chunk,&mut channels,8,false);
@@ -182,7 +192,7 @@ pub fn decode(file:&[u8],name:&str)->Result<NeutralTexture,String>{
     };
     if bytes.len()!=exact {return Err("VTEX largest mip decode extent mismatch".into());}
     let rgba=match h.format{
-        1|2|20|21=>decode_blocks(&bytes,width,height,h.format)?,
+        1|2|20|21|27=>decode_blocks(&bytes,width,height,h.format)?,
         4|28|3|33=>decode_raw(&bytes,width,height,h.format)?,
         other=>return Err(format!("VTEX pixel type {other} not supported")),
     };
@@ -195,6 +205,7 @@ pub fn decode(file:&[u8],name:&str)->Result<NeutralTexture,String>{
         2=>Some(NeutralBlockFormat::Bc3),
         20=>Some(NeutralBlockFormat::Bc7),
         21=>Some(NeutralBlockFormat::Bc5),
+        27=>Some(NeutralBlockFormat::Bc4),
         _=>None
     }.map(|format|NeutralCompressedTexture{
         format,
@@ -306,6 +317,14 @@ mod tests{
         assert_eq!(mip_size(1024,1024,1).unwrap()*6,3_145_728);
     }
 
+    #[test]
+    fn source_ati1n_bc4_mask_preserves_original_red_channel(){
+        let block=[200u8,0,0,0,0,0,0,0];
+        assert_eq!(mip_size(4,4,27).unwrap(),8);
+        let pixels=decode_blocks(&block,4,4,27).unwrap();
+        assert_eq!(pixels.len(),64);
+        assert!(pixels.chunks_exact(4).all(|p|p==[200,200,200,255]));
+    }
     #[test]
     fn bc1_constant_block_is_opaque(){
         let bytes=[0xff,0xff,0xff,0xff,0,0,0,0];
