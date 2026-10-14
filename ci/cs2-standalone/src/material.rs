@@ -74,9 +74,9 @@ pub struct SourcePacks<'a> {
 }
 impl SourcePacks<'_>{
     pub fn has(&self,path:&str)->bool{
-        self.workshop_map.entries().contains_key(path) ||
-            self.workshop_outer.entries().contains_key(path) ||
-            self.base_game.is_some_and(|v|v.entries().contains_key(path))
+        self.workshop_map.available(path) ||
+            self.workshop_outer.available(path) ||
+            self.base_game.is_some_and(|v|v.available(path))
     }
     pub fn read(&self,path:&str)->Result<Vec<u8>,String>{
         if self.workshop_map.entries().contains_key(path){self.workshop_map.read_entry(path)}
