@@ -11,6 +11,7 @@ pub struct NeutralScene{
     pub instances:Vec<NeutralInstance>,
     pub report:NeutralReport,
     pub sun:Option<NeutralSun>,
+    pub sky:Option<NeutralSky>,
     pub local_lights:Vec<NeutralLocalLight>,
 }
 #[derive(Clone,Copy,Debug,Default)]
@@ -106,3 +107,6 @@ pub struct NeutralCompressedLevel {pub width:u32,pub height:u32,pub blocks:Vec<u
 pub struct NeutralCompressedTexture {pub format:NeutralBlockFormat,pub levels:Vec<NeutralCompressedLevel>}
 #[derive(Clone,Debug)]
 pub struct NeutralTextureMip{pub width:u32,pub height:u32,pub rgba:Vec<u8>}
+
+#[derive(Clone,Debug)]
+pub struct NeutralSky {pub faces:[NeutralTexture;6],pub intensity:f32,pub cycle:Option<()>}
