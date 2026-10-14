@@ -1,0 +1,93 @@
+name: BO1 local source and Rust build environment
+on:
+  push:
+    branches: [work/bo1-local-source-toolchain-transfer]
+permissions:
+  contents: read
+jobs:
+  build-env:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 24
+    steps:
+      - name: Package Linux Rust toolchain and offline Cargo dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "RUSTC_VERSION=$(rustc --version)"
+          echo "CARGO_VERSION=$(cargo --version)"
+          SYSROOT="$(rustc --print sysroot)"
+          mkdir -p "$RUNNER_TEMP/out/rust" "$RUNNER_TEMP/out/deps" "$RUNNER_TEMP/t5-deps/src"
+          command -v zstd
+          tar -C "$SYSROOT" -I 'zstd -T0 -3' -cf "$RUNNER_TEMP/out/rust/rust-linux-x86_64.tar.zst" \
+            --exclude='share' --exclude='lib/rustlib/src' --exclude='lib/rustlib/*/bin' bin lib
+          cat > "$RUNNER_TEMP/t5-deps/Cargo.toml" <<'CARGO'
+          [package]
+          name = "t5-local-deps"
+          version = "0.0.1"
+          edition = "2021"
+          [dependencies]
+          flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+          zip = { version = "2.4", default-features = false, features = ["deflate"] }
+          serde = { version = "1", features = ["derive"] }
+          serde_json = "1"
+          CARGO
+          echo 'fn main() {}' > "$RUNNER_TEMP/t5-deps/src/main.rs"
+          cd "$RUNNER_TEMP/t5-deps"
+          cargo fetch
+          cargo vendor --versioned-dirs "$RUNNER_TEMP/out/deps/vendor" > "$RUNNER_TEMP/out/deps/cargo-config.txt"
+          cp Cargo.lock "$RUNNER_TEMP/out/deps/Cargo.lock"
+          du -sh "$RUNNER_TEMP/out/rust" "$RUNNER_TEMP/out/deps"
+          echo "RUST_TOOLCHAIN_PACKAGE_READY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bo1-rust-local-build-toolchain
+          path: |
+            ${{ runner.temp }}/out/rust/
+            ${{ runner.temp }}/out/deps/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+      - name: Download supplied BO1 ZIP and extract real working-set files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/t5-working/source"
+          echo START_ORIGINAL_BO1_DOWNLOAD
+          curl -fLsS --retry 3 --retry-delay 4 --connect-timeout 40 --max-time 1000 \
+            'https://r2.houseofkublai.com/downloads/games/pluto_t5_full_game.zip' \
+            -o "$RUNNER_TEMP/t5-original.zip"
+          echo "GAME_ARCHIVE_DOWNLOADED=$(stat -c %s "$RUNNER_TEMP/t5-original.zip")"
+          python3 - <<'PY'
+          import os,zipfile,pathlib,json,hashlib
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])
+          out=root/'t5-working'/'source'
+          wanted=['zone/Common/mp_nuked.ff','zone/Common/mp_firingrange.ff','zone/Common/common_mp.ff','zone/English/en_common.ff','main/iw_00.iwd']
+          inventory=[]
+          with zipfile.ZipFile(root/'t5-original.zip') as z:
+              names=z.namelist()
+              for short in wanted:
+                  hits=[n for n in names if n.replace('\\','/').lower().endswith('/'+short.lower())]
+                  if len(hits)!=1:raise ValueError(f"{short}: expected one source entry, got {len(hits)}")
+                  target=out/short
+                  target.parent.mkdir(parents=True,exist_ok=True)
+                  h=hashlib.sha256()
+                  with z.open(hits[0]) as inp,open(target,'wb') as dest:
+                      while True:
+                          part=inp.read(4*1024*1024)
+                          if not part:break
+                          dest.write(part)
+                          h.update(part)
+                  record={'path':short,'bytes':target.stat().st_size,'sha256':h.hexdigest()}
+                  inventory.append(record)
+                  print('SOURCE_EXTRACTED '+json.dumps(record),flush=True)
+          (out/'SOURCE_INVENTORY.json').write_text(json.dumps(inventory,indent=2))
+          print('BO1_REAL_SOURCE_FILES_READY',flush=True)
+          PY
+          rm -f "$RUNNER_TEMP/t5-original.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bo1-real-source-working-set
+          path: ${{ runner.temp }}/t5-working/source/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
