@@ -1,0 +1,17 @@
+{
+  "call_edges_to_indexed_functions": 7,
+  "call_edges_to_nonexecutable": 195,
+  "end_original_index_exclusive": 109410,
+  "original_pdata_function_count": 291757,
+  "reachable_direct_call_edges": 448,
+  "reachable_instructions": 88552,
+  "reachable_machine_bytes": 247273,
+  "record_file": "recursive_calls_091175_109410.jsonl.gz",
+  "schema_version": 1,
+  "source_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "start_original_index": 91175,
+  "unique_nonpdata_call_targets_in_shard": 0,
+  "unsupported_direct_call_encoding": 246,
+  "verified_e8_rel32_edges": 202,
+  "visited_original_functions": 18235
+}
