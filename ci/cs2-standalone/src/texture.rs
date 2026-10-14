@@ -217,8 +217,8 @@ pub fn decode_hdr_cube_faces(
     file:&[u8],name:&str,source_exposure_bias:f32
 )->Result<[NeutralTexture;6],String>{
     let h=inspect(file)?;
-    if h.format!=19 || h.depth!=1 || h.flags&SOURCE_CUBE_FLAG==0 {
-        return Err(format!("Source2 sky requires a cubemap BC6H VTEX: format={}, depth={}, flags=0x{:04x}",
+    if !matches!(h.format,1|19) || h.depth!=1 || h.flags&SOURCE_CUBE_FLAG==0 {
+        return Err(format!("Source2 sky requires a cubemap BC1 or BC6H VTEX: format={}, depth={}, flags=0x{:04x}",
             h.format,h.depth,h.flags));
     }
     let faces=6usize;
@@ -226,14 +226,14 @@ pub fn decode_hdr_cube_faces(
     for level in (1..h.mips as usize).rev(){
         let width=(h.width as usize>>level).max(1);
         let height=(h.height as usize>>level).max(1);
-        let expected=mip_size(width,height,19)?.checked_mul(faces)
+        let expected=mip_size(width,height,h.format)?.checked_mul(faces)
             .ok_or("Source2 cube mip size overflow")?;
         let stored=h.mip_disk_sizes.get(level).copied().map(|n|n as usize).unwrap_or(expected);
         if stored>expected{return Err("Source2 cubemap mip stored size exceeds source BC6H extent".into());}
         pos=pos.checked_add(stored).ok_or("Source2 cubemap mip offset overflow")?;
     }
     let width=h.width as usize;let height=h.height as usize;
-    let face_bytes=mip_size(width,height,19)?;
+    let face_bytes=mip_size(width,height,h.format)?;
     let expected=face_bytes.checked_mul(faces).ok_or("Source2 cube face count overflow")?;
     let stored=h.mip_disk_sizes.first().copied().map(|n|n as usize).unwrap_or(expected);
     if stored>expected {return Err("Source2 cube largest mip exceeds expected BC6H size".into());}
@@ -255,30 +255,37 @@ pub fn decode_hdr_cube_faces(
         for by in 0..height.div_ceil(4){
             for bx in 0..width.div_ceil(4){
                 let index=by*width.div_ceil(4)+bx;
-                let block=&data[index*16..index*16+16];
-                let mut hdr=[0f32;4*4*3];
-                bcdec_rs::bc6h_float(block,&mut hdr,4*3,false);
-                for y in 0..4{
-                    let py=by*4+y;if py>=height{continue;}
-                    for x in 0..4{
-                        let px=bx*4+x;if px>=width{continue;}
-                        let i=(y*4+x)*3;
-                        let target=(py*width+px)*4;
+                let mut pixels=[0u8;4*4*4];
+                if h.format==1 {
+                    // Winter uses original BC1 sky pixels, without HDR fit.
+                    bcdec_rs::bc1(&data[index*8..index*8+8],&mut pixels,4*4);
+                } else {
+                    let block=&data[index*16..index*16+16];
+                    let mut hdr=[0f32;4*4*3];
+                    bcdec_rs::bc6h_float(block,&mut hdr,4*3,false);
+                    for pixel in 0..16 {
                         for channel in 0..3 {
-                            let value=hdr[i+channel];
+                            let value=hdr[pixel*3+channel];
                             if !value.is_finite(){return Err("non-finite original Source2 BC6H sky texel".into());}
                             let radiance=value.max(0.)*exposure;
-                            // Generic sky expects display-referred sRGB8 faces.
-                            // ACES-like fit is an explicitly approximate
-                            // display transform, NOT a claim of sky.vfx parity.
+                            // Generic sRGB8 sky display approximation.
                             let mapped=((radiance*(2.51*radiance+0.03))/
                                 (radiance*(2.43*radiance+0.59)+0.14)).clamp(0.,1.);
                             let srgb=if mapped<=0.0031308{12.92*mapped}else{
                                 1.055*mapped.powf(1./2.4)-0.055
                             };
-                            rgba[target+channel]=(srgb*255.).round().clamp(0.,255.) as u8;
+                            pixels[pixel*4+channel]=(srgb*255.).round().clamp(0.,255.) as u8;
                         }
-                        rgba[target+3]=255;
+                        pixels[pixel*4+3]=255;
+                    }
+                }
+                for y in 0..4{
+                    let py=by*4+y;if py>=height{continue;}
+                    for x in 0..4{
+                        let px=bx*4+x;if px>=width{continue;}
+                        let src=(y*4+x)*4;
+                        let target=(py*width+px)*4;
+                        rgba[target..target+4].copy_from_slice(&pixels[src..src+4]);
                     }
                 }
             }
@@ -296,6 +303,7 @@ mod tests{
     fn source_bc6h_cube_has_six_full_source_face_payloads(){
         assert_eq!(mip_size(512,512,19).unwrap(),262144);
         assert_eq!(mip_size(512,512,19).unwrap()*6,1572864);
+        assert_eq!(mip_size(1024,1024,1).unwrap()*6,3_145_728);
     }
 
     #[test]
