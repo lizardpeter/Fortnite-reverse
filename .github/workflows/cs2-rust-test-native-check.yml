@@ -1,0 +1,29 @@
+name: Rust-test CS2 native integration check
+on:
+  push:
+    branches:
+      - probe/steamcmd-anonymous-3620630831
+    paths:
+      - ".github/workflows/cs2-rust-test-native-check.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cs2-native-windows:
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: lizardpeter/Rust-test
+          ref: fix/cs2-source-spawns-materials-20261014
+          persist-credentials: false
+          lfs: false
+      - name: Cargo-check actual Windows Vulkan game with CS2 importer
+        shell: pwsh
+        run: |
+          cargo check --locked --no-default-features --features import-cs2 --bin fps_game
+      - name: Unit tests for original CS2 importer with real NeutralScene
+        shell: pwsh
+        run: |
+          cargo test --manifest-path asset_import/importers/cs2/Cargo.toml --lib
