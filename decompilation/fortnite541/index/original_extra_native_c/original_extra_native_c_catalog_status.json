@@ -1,0 +1,12 @@
+{
+  "all_ghidra_names_and_pseudocode_signatures_heuristic": true,
+  "genuine_native_ghidra_c_bodies": 60,
+  "native_original_call_target_entries": 61,
+  "no_ghidra_c": 1,
+  "original_initial_nonpdata_C": 57,
+  "original_pdata_291701_c_bodies_counted_separately": true,
+  "original_pe_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "original_recursive_extra_C": 3,
+  "recompilable_cpp_verified": false,
+  "targeted_retry_additional_C": 0
+}
