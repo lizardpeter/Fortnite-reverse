@@ -1,0 +1,161 @@
+name: Fortnite 5.41 recover final original nonpdata CALL function
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-last-nonpdata.yml"
+      - "crates/fortnite_541/tools/prepare_missing_nonpdata_recovery.py"
+      - "crates/fortnite_541/ghidra/Fortnite541RecoverMissingDirectCall.java"
+  pull_request:
+    paths:
+      - ".github/workflows/fortnite541-last-nonpdata.yml"
+      - "crates/fortnite_541/tools/prepare_missing_nonpdata_recovery.py"
+      - "crates/fortnite_541/ghidra/Fortnite541RecoverMissingDirectCall.java"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fortnite541-one-missing-original-call-function
+  cancel-in-progress: false
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm exact-source recovery queue refuses already recovered C
+        run: |
+          python3 -m py_compile crates/fortnite_541/tools/prepare_missing_nonpdata_recovery.py
+          python3 crates/fortnite_541/tools/prepare_missing_nonpdata_recovery.py --self-test
+
+  reconstruct-last-original-nonpdata:
+    needs: source-contract
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      ORIGINAL_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      ORIGINAL_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      DATA_BRANCH: re/fortnite541-ghidra-full
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Stage exact original Ghidra C recovery code and one-failure queue planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/scripts" "$RUNNER_TEMP/input" "$RUNNER_TEMP/source" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/project" "$RUNNER_TEMP/out"
+          cp crates/fortnite_541/ghidra/Fortnite541RecoverMissingDirectCall.java "$RUNNER_TEMP/scripts/"
+          cp crates/fortnite_541/tools/prepare_missing_nonpdata_recovery.py "$RUNNER_TEMP/"
+          git fetch origin "$DATA_BRANCH"
+          git checkout --detach "origin/$DATA_BRANCH"
+          python3 "$RUNNER_TEMP/prepare_missing_nonpdata_recovery.py" \
+            --root decompilation/fortnite541 \
+            --out "$RUNNER_TEMP/input/one_missing.tsv"
+          test "$(wc -l < "$RUNNER_TEMP/input/one_missing.tsv")" -eq 1
+      - name: Authenticate exact original retail executable and pinned Ghidra
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$ORIGINAL_URL" \
+            -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$ORIGINAL_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 "$GHIDRA_URL" \
+            -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          executable="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$executable"
+          chmod +x "$executable"
+          echo "GHIDRA_EXEC=$executable" >> "$GITHUB_ENV"
+      - name: Analyze original executable and recover only missing native function
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GHIDRA_EXEC" "$RUNNER_TEMP/project" Fortnite541OneMissing \
+            -import "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" \
+            -analysisTimeoutPerFile 600 \
+            -scriptPath "$RUNNER_TEMP/scripts" \
+            -postScript Fortnite541RecoverMissingDirectCall.java "$RUNNER_TEMP/out" "$RUNNER_TEMP/input/one_missing.tsv" 90 \
+            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_LAST_NONPDATA_RECOVERY_COMPLETE "$RUNNER_TEMP/ghidra.log"
+      - name: Independently verify exact source CALL identity and nonempty original C if recovered
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import gzip,glob,json,os,pathlib,struct
+          tmp=pathlib.Path(os.environ["RUNNER_TEMP"])
+          i,rva,callsite,count=(tmp/"input/one_missing.tsv").read_text().strip().split("\t")
+          source=json.loads((tmp/"input/targeted_retry_source_status.json").read_text())
+          assert int(i)==source["retry_source_ordinal"]
+          assert rva==source["retry_original_rva"]
+          assert callsite==source["retry_original_callsite"]
+          files=glob.glob(str(tmp/"out/records/direct_calls_*.jsonl.gz"))
+          assert len(files)==1
+          with gzip.open(files[0],"rt") as f:
+              rows=[json.loads(s) for s in f if s.strip()]
+          assert len(rows)==1
+          row=rows[0]
+          assert (row["index"],row["rva"],row["callsite_rva"],row["original_direct_calls"]) == \
+                 (int(i),rva,callsite,int(count))
+          assert row["witness_valid"]
+          assert row["status"] in ("decompiled","decompiler_failed","missing_function")
+          if row["status"]=="decompiled":
+              assert isinstance(row["c"],str) and row["c"].strip()
+          else:
+              assert not row.get("c")
+          summary=json.loads((tmp/"out/source_directcall_recovery_summary.json").read_text())
+          assert summary["attempted"]==1 and summary["decompiled"]==int(row["status"]=="decompiled")
+          status={**source,"additional_real_original_c_bodies":int(row["status"]=="decompiled"),
+                  "total_58_original_direct_call_targets_with_c":57+int(row["status"]=="decompiled"),
+                  "latest_genuine_ghidra_status":row["status"],
+                  "original_pdata_coverage_unchanged":True,
+                  "original_source_sha256":os.environ["ORIGINAL_SHA256"]}
+          (tmp/"out/targeted_retry_outcome.json").write_text(json.dumps(status,indent=2,sort_keys=True)+"\n")
+          print("FORTNITE541_MISSING_SOURCE_CALL_C_AUDITED",status)
+          PY
+      - name: Commit only the new source-authenticated retry, never replace 57 successes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite 5.41 missing native function recovery"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DATA_BRANCH"
+          git checkout -B "$DATA_BRANCH" "origin/$DATA_BRANCH"
+          folder=decompilation/fortnite541/discovery/nonpdata_recovery/targeted_retry
+          mkdir -p "$folder/records"
+          cp "$RUNNER_TEMP"/out/records/direct_calls_*.jsonl.gz "$folder/records/"
+          cp "$RUNNER_TEMP/out/targeted_retry_outcome.json" "$folder/"
+          git add "$folder"
+          if ! git diff --cached --quiet; then
+            git commit -m "Fortnite: source-verified isolated Ghidra repair for missing original direct-call function"
+            for attempt in 1 2 3 4 5; do
+              if git push origin "HEAD:refs/heads/$DATA_BRANCH"; then exit 0; fi
+              git fetch origin "$DATA_BRANCH"
+              git rebase "origin/$DATA_BRANCH"
+              if [ "$attempt" -eq 5 ]; then exit 1; fi
+              sleep "$attempt"
+            done
+          fi
+      - name: Retain original Ghidra logs, not original retail executable
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-last-nonpdata-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/out/targeted_retry_outcome.json
+            ${{ runner.temp }}/ghidra.log
+            ${{ runner.temp }}/input/one_missing.tsv
+          retention-days: 30
+          if-no-files-found: warn
