@@ -4,7 +4,7 @@
 //! author-compressed BC1/BC3/BC7, BC5 normals and raw RGBA/BGRA/R8 images.
 //! No fallback noise, generated textures, or alternate game-specific shader.
 use crate::resource::ResourceHeader;
-use neutral_scene::NeutralTexture;
+use neutral_scene::{NeutralTexture,NeutralBlockFormat,NeutralCompressedTexture,NeutralCompressedLevel};
 const MAX_PIXELS:usize = 4096 * 4096;
 const MAX_MIPS:usize = 16;
 
@@ -186,9 +186,25 @@ pub fn decode(file:&[u8],name:&str)->Result<NeutralTexture,String>{
         4|28|3|33=>decode_raw(&bytes,width,height,h.format)?,
         other=>return Err(format!("VTEX pixel type {other} not supported")),
     };
+    // Keep EXACT original BCn data for Vulkan block upload. This avoids
+    // re-encoding BC1/3/7 and preserves the original encoded texels. RGBA
+    // remains available for the existing universal material layer compositor
+    // when a source shader needs multiple sampled texture channels.
+    let compressed=match h.format {
+        1=>Some(NeutralBlockFormat::Bc1),
+        2=>Some(NeutralBlockFormat::Bc3),
+        20=>Some(NeutralBlockFormat::Bc7),
+        21=>Some(NeutralBlockFormat::Bc5),
+        _=>None
+    }.map(|format|NeutralCompressedTexture{
+        format,
+        levels:vec![NeutralCompressedLevel{
+            width:h.width as u32,height:h.height as u32,blocks:bytes,
+        }],
+    });
     Ok(NeutralTexture{
         name:name.to_owned(),width:width as u32,height:height as u32,rgba,
-        mips:Vec::new(),compressed:None,
+        mips:Vec::new(),compressed,
     })
 }
 #[cfg(test)]
