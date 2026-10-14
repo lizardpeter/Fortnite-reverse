@@ -4,7 +4,7 @@
 //! This is geometry-only admission: original VMAT shader graph, VTEX maps,
 //! lightmaps, visibility and authored physics are *not* silently inferred.
 use std::{collections::{BTreeMap,BTreeSet},path::Path};
-use neutral_scene::{NeutralAlpha,NeutralInstance,NeutralMaterial,NeutralMesh,NeutralScene,NeutralVertex};
+use neutral_scene::{NeutralAlpha,NeutralInstance,NeutralMaterial,NeutralMesh,NeutralScene,NeutralVertex,NeutralSky};
 use crate::{draw,world,vpk::VpkArchive,surface,material,entity,lighting,bindings};
 
 const SOURCE_UNITS_TO_METRES:f32=0.0254; // Source 2 world unit convention (inch)
@@ -92,7 +92,8 @@ fn append_source_model(
                 position:engine_position(src.position),
                 normal,tangent:[tangent[0],tangent[1],tangent[2],src.tangent[3]],
                 uv:src.uv,lightmap_uv:src.secondary_uv.unwrap_or(src.uv),
-                color:[color[0],color[1],color[2],lower.alpha.unwrap_or(1.)],
+                color:[color[0]*src.color[0],color[1]*src.color[1],
+                    color[2]*src.color[2],lower.alpha.unwrap_or(1.)*src.color[3]],
                 ..Default::default()
             });
         }
@@ -268,6 +269,44 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let packages=material::SourcePacks {
         workshop_outer:&outer,workshop_map:&inner,base_game:retail_game.as_ref(),
     };
+    // Read the actual sky.vfx material and original BC6H HDR cubemap,
+    // rather than painting an arbitrary blue procedural background.
+    if let Some(path)=sky_material.as_deref() {
+        match packages.describe(path) {
+            Ok(sky_source) if sky_source.shader=="sky.vfx"=>{
+                if let Some(texture_path)=sky_source.textures.get("g_tSkyTexture") {
+                    let path=if texture_path.ends_with("_c"){texture_path.clone()}else{
+                        format!("{texture_path}_c")
+                    };
+                    match packages.read(&path).and_then(|bytes|{
+                        crate::texture::decode_hdr_cube_faces(
+                            &bytes,&path,
+                            sky_source.scalars.get("g_flBrightnessExposureBias").copied().unwrap_or(0.)
+                        )
+                    }){
+                        Ok(faces)=>{
+                            // Source cube face ordinal (+X,-X,+Y,-Y,+Z,-Z)
+                            // converted from source Z-up to engine Y-up.
+                            let order=[0,1,4,5,3,2];
+                            scene.sky=Some(NeutralSky{
+                                faces:std::array::from_fn(|i|faces[order[i]].clone()),
+                                intensity:1.,cycle:None
+                            });
+                            scene.report.lines.push(format!(
+                                "CS2 ORIGINAL SKY: source-authored BC6H HDR cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure/face orientation parity pending).",
+                                path
+                            ));
+                        },
+                        Err(e)=>scene.report.lines.push(format!(
+                            "CS2 ORIGINAL SKY UNSUPPORTED: source sky={} texture={}: {}",path,texture_path,e
+                        )),
+                    }
+                }
+            },
+            Ok(m)=>scene.report.lines.push(format!("CS2 SKY SHADER PENDING: source {}",m.shader)),
+            Err(e)=>scene.report.lines.push(format!("CS2 SKY SOURCE MISSING: {e}")),
+        }
+    }
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
