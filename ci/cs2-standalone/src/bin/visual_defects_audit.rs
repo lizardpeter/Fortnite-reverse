@@ -32,6 +32,20 @@ fn run()->Result<(),String>{
     let m=&scene.meshes[*idx];
     println!("CS2_SKYLINE_GEOMETRY map={map} height={h:.2} edge={edge:.2} material={} name={}",scene.materials[m.material].name,m.name);
   }
+  let outer=cs2_importer::vpk::VpkArchive::open_directory(Path::new(&input))?;
+  let inner=outer.open_nested(map)?;
+  let packs=cs2_importer::material::SourcePacks{
+     workshop_outer:&outer,workshop_map:&inner,base_game:None
+  };
+  for path in ["materials/effects/smoke/steam_001.vmat",
+      "materials/ground/snow01_expensive.vmat",
+      "materials/de_dust/hr_dust/hr_dust_blend_plaster01b_rough01.vmat"] {
+    match packs.describe(path) {
+      Ok(m)=>println!("CS2_SKYLINE_VMATERIAL map={map} path={path} shader={} textures={:?} scalars={:?} switches={:?}",
+         m.shader,m.textures,m.scalars,m.switches),
+      Err(e)=>println!("CS2_SKYLINE_VMATERIAL_MISSING map={map} path={path} error={e}")
+    }
+  }
   if let Some(sky)=scene.sky{
     for (i,face) in sky.faces.iter().enumerate() {
       let n=face.rgba.chunks_exact(4).len();
