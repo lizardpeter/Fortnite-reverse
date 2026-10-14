@@ -1,0 +1,119 @@
+name: Fortnite 5.41 new original recursive CALL C reconstruction
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - ".github/workflows/fortnite541-recursive-call-recovery.yml"
+      - "crates/fortnite_541/ghidra/Fortnite541RecoverRecursiveCalls.java"
+      - "crates/fortnite_541/tools/prepare_recursive_call_candidates.py"
+      - "crates/fortnite_541/tools/audit_new_recursive_call_C.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover-three-new-original-leaf-functions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      DUMP_BRANCH: re/fortnite541-ghidra-full
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Test and stage exact original-source CALL witness queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/prepare_recursive_call_candidates.py --self-test
+          python3 crates/fortnite_541/tools/audit_new_recursive_call_C.py --self-test
+          mkdir -p "$RUNNER_TEMP/source" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/project" "$RUNNER_TEMP/recovered"
+          git fetch origin "$DUMP_BRANCH"
+          git show "origin/$DUMP_BRANCH:decompilation/fortnite541/discovery/recursive_calls/recursive_call_targets.jsonl.gz" > "$RUNNER_TEMP/source/recursive_call_targets.jsonl.gz"
+          python3 crates/fortnite_541/tools/prepare_recursive_call_candidates.py \
+            --source "$RUNNER_TEMP/source/recursive_call_targets.jsonl.gz" \
+            --out "$RUNNER_TEMP/source/targets.tsv"
+      - name: Authenticate original retail Fortnite Win64 PE and original Ghidra release
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 "$GHIDRA_URL" -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          executable="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$executable"
+          chmod +x "$executable"
+          echo "GHIDRA_EXEC=$executable" >> "$GITHUB_ENV"
+      - name: Decompile three genuinely new executable native functions at source CALL destinations
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GHIDRA_EXEC" "$RUNNER_TEMP/project" Fortnite541RecursiveCalls \
+            -import "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" \
+            -noanalysis \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541RecoverRecursiveCalls.java "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/source/targets.tsv" 30 \
+            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_NONPDATA_RECOVERY_COMPLETE "$RUNNER_TEMP/ghidra.log"
+      - name: Independently audit true original source RVA and nonempty Ghidra C bodies
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/testroot"
+          mkdir -p "$root/new_original_C/records" "$root/new_original_C/reports"
+          cp "$RUNNER_TEMP/source/recursive_call_targets.jsonl.gz" "$root/"
+          cp "$RUNNER_TEMP/recovered/records/recursive_calls_000_002.jsonl.gz" "$root/new_original_C/records/"
+          cp "$RUNNER_TEMP/recovered/source_directcall_recovery_summary.json" "$root/new_original_C/reports/recursive_calls_000_002.json"
+          python3 crates/fortnite_541/tools/audit_new_recursive_call_C.py --root "$root"
+          python3 - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"testroot/new_original_C/new_original_C_status.json"
+          r=json.loads(p.read_text())
+          assert r["actually_attempted"]==3
+          assert r["genuine_additional_C_pseudocode"]+r["missing_function"]+r["decompiler_failed"]+r["invalid_source_call_witness"]==3
+          print("AUTHENTICATED_NEW_RECURSIVE_NATIVE_C_VERIFIED",r)
+          PY
+      - name: Preserve actual original function C and failure diagnostics permanently
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite 5.41 source recursive CALL C"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          target=decompilation/fortnite541/discovery/recursive_calls/new_original_C
+          mkdir -p "$target"
+          cp -r "$RUNNER_TEMP/testroot/new_original_C/." "$target/"
+          git add "$target"
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Fortnite: actual Ghidra C reconstruction at three new retail native CALL targets"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
+            git fetch origin "$DUMP_BRANCH"
+            git rebase "origin/$DUMP_BRANCH"
+            if [[ "$attempt" == 5 ]]; then exit 1; fi
+            sleep "$attempt"
+          done
+      - name: Preserve real source-backed C and diagnostic records
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-three-original-recursive-call-native-C-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/testroot/new_original_C/
+            ${{ runner.temp }}/ghidra.log
+          retention-days: 30
+          if-no-files-found: warn
