@@ -6,6 +6,7 @@
 //! resource and material semantics acquire source-backed decoding.
 pub mod kv3;
 pub mod entity;
+pub mod material;
 pub mod vbib;
 pub mod world;
 pub mod draw;

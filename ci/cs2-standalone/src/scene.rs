@@ -5,7 +5,7 @@
 //! lightmaps, visibility and authored physics are *not* silently inferred.
 use std::{collections::{BTreeMap,BTreeSet},path::Path};
 use neutral_scene::{NeutralAlpha,NeutralInstance,NeutralMaterial,NeutralMesh,NeutralScene,NeutralVertex};
-use crate::{draw,world,vpk::VpkArchive,surface};
+use crate::{draw,world,vpk::VpkArchive,surface,material};
 
 const SOURCE_UNITS_TO_METRES:f32=0.0254; // Source 2 world unit convention (inch)
 const MAX_SCENE_MESHES:usize=250_000;
@@ -233,6 +233,25 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         "CS2 source original geometry preview: map={map_package}; source models={}; triangle mesh draws={}; placement instances={}; original indexed triangles={triangles}.",
         cache.len(),scene.meshes.len(),scene.instances.len()
     ));
+    let retail_game=material::base_game_archive()?;
+    let packages=material::SourcePacks {
+        workshop_outer:&outer,workshop_map:&inner,base_game:retail_game.as_ref(),
+    };
+    let census=packages.audit(untextured.iter().map(String::as_str));
+    scene.report.lines.push(format!(
+        "CS2 ORIGINAL VMAT COVERAGE: {}/{} compiled material resources resolved, {} material shader variants identified, {} authored texture slots discovered ({} VTEX resources present). Base CS2 archive configured: {}. Missing original material samples: {}",
+        census.material_resolved,census.referenced,census.shaders.len(),
+        census.authored_texture_slots,census.texture_resolved,
+        retail_game.is_some(),
+        census.material_unresolved.iter().take(10).cloned().collect::<Vec<_>>().join("; ")
+    ));
+    if !census.texture_unresolved.is_empty() {
+        scene.report.lines.push(format!(
+            "CS2 missing compiled source textures: {} unique paths; first samples: {}",
+            census.texture_unresolved.len(),
+            census.texture_unresolved.iter().take(8).cloned().collect::<Vec<_>>().join("; ")
+        ));
+    }
     scene.report.lines.push(format!(
         "Unresolved original Source 2 shading: {} distinct VMAT programs are referenced by decoded triangles; VTEX and shader programs not admitted. \
          Original source tints and UVs retained, but shared neutral materials remain DIAGNOSTIC and cannot be claimed retail-correct.",
