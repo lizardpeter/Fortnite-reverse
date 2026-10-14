@@ -1,0 +1,84 @@
+name: Fortnite 5.41 source C material shader reverse index
+on:
+  push:
+    branches: [main, "feature/**"]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-code-index.yml"
+      - "crates/fortnite_541/tools/index_ghidra_pseudocode.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: fortnite541-ghidra-c-search-index-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  index-authentic-ghidra-function-c:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test source-only shader keyword matcher
+        run: python3 crates/fortnite_541/tools/index_ghidra_pseudocode.py --self-test
+      - name: Index real source-verified C functions including authenticated recoveries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/index_ghidra_pseudocode.py "$RUNNER_TEMP/index_original_c.py"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout --detach FETCH_HEAD
+          python3 "$RUNNER_TEMP/index_original_c.py" --root decompilation/fortnite541 \
+            --output "$RUNNER_TEMP/original-c-index" | tee "$RUNNER_TEMP/index.log"
+          test -s "$RUNNER_TEMP/original-c-index/original_function_lookup.jsonl.gz"
+          test -s "$RUNNER_TEMP/original-c-index/material_shader_candidates.json"
+          python3 - <<'PY'
+          import gzip,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"original-c-index"
+          summary=json.loads((root/"material_shader_candidates.json").read_text())
+          with gzip.open(root/"original_function_lookup.jsonl.gz","rt") as src:
+              count=0
+              for line in src:
+                  row=json.loads(line)
+                  assert row["index"]==count
+                  assert row["rva"].startswith("0x")
+                  count+=1
+          assert count==291757
+          assert summary["original_pdata_functions"]==count
+          assert summary["real_decompiled_c"]+summary["unresolved"]==count
+          print("GHIDRA_ORIGINAL_C_INDEX_AUDITED",json.dumps({
+              "total":count,"real_c":summary["real_decompiled_c"],
+              "unresolved":summary["unresolved"],
+              "keyword_candidates":summary["source_keyword_candidate_count"],
+              "keyword_counts":summary["keyword_counts"]}))
+          PY
+      - name: Commit full source-addressed C search index to public dump branch
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite original Ghidra C index"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout -B re/fortnite541-ghidra-full origin/re/fortnite541-ghidra-full
+          mkdir -p decompilation/fortnite541/index
+          cp -r "$RUNNER_TEMP/original-c-index/." decompilation/fortnite541/index/
+          git add decompilation/fortnite541/index
+          git diff --cached --quiet || git commit -m "Index original Ghidra C and authenticated material shader candidates"
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:refs/heads/re/fortnite541-ghidra-full; then break; fi
+            git fetch origin re/fortnite541-ghidra-full
+            git rebase origin/re/fortnite541-ghidra-full
+            if [ "$attempt" -eq 5 ]; then exit 1; fi
+            sleep "$attempt"
+          done
+      - name: Preserve source-backed keyword index for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-c-material-shader-index-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/index.log
+            ${{ runner.temp }}/original-c-index/material_shader_candidates.json
+          retention-days: 14
+          if-no-files-found: warn
