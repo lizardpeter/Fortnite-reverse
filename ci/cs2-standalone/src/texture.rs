@@ -73,14 +73,20 @@ pub fn inspect(file:&[u8])->Result<Metadata,String>{
             if kind==4 {
                 if block.len()<12{return Err("short VTEX compressed mip table".into());}
                 mip_compression=u32_at(block,0)?;
-                let table_start=4usize.checked_add(u32_at(block,4)? as usize)
+                // COMPRESSED_MIP_SIZE's 12-byte extra-data record contains
+                // an offset to its array OUTSIDE that record. The offset word
+                // is relative to its own address in the full VTEX DATA block,
+                // not to the 12-byte metadata slice. Retail BC7 textures use
+                // this layout; restricting to block[..12] rejected them.
+                let table_start=start.checked_add(4)
+                    .and_then(|i|i.checked_add(u32_at(block,4).ok()? as usize))
                     .ok_or("VTEX mip table offset overflow")?;
                 let count=u32_at(block,8)? as usize;
                 if count!=mips as usize{return Err("VTEX compressed mip count mismatch".into());}
                 for i in 0..count{
                     let at=table_start.checked_add(i.checked_mul(4).ok_or("VTEX mip size overflow")?)
                         .ok_or("VTEX mip size overflow")?;
-                    mip_disk_sizes.push(u32_at(block,at)?);
+                    mip_disk_sizes.push(u32_at(h,at)?);
                 }
             }
         }
