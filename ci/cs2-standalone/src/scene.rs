@@ -293,7 +293,7 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
                                 intensity:1.,cycle:None
                             });
                             scene.report.lines.push(format!(
-                                "CS2 ORIGINAL SKY: source-authored BC6H HDR cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure/face orientation parity pending).",
+                                "CS2 ORIGINAL SKY: source-authored original BC1/BC6H cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure/face orientation parity pending).",
                                 path
                             ));
                         },
