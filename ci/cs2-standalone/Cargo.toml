@@ -20,3 +20,11 @@ path = "src/bin/audit.rs"
 [[bin]]
 name = "cs2_source_extract"
 path = "src/bin/extract.rs"
+
+[[bin]]
+name = "cs2_preview_validation"
+path = "src/bin/preview_validation.rs"
+
+[[bin]]
+name = "texture_audit"
+path = "src/bin/texture_audit.rs"
