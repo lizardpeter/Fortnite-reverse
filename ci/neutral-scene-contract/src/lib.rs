@@ -9,6 +9,8 @@ pub struct NeutralScene{
     pub materials:Vec<NeutralMaterial>,
     pub instances:Vec<NeutralInstance>,
     pub report:NeutralReport,
+    pub sun:Option<NeutralSun>,
+    pub local_lights:Vec<NeutralLocalLight>,
 }
 #[derive(Clone,Copy,Debug,Default)]
 pub struct NeutralVertex{
@@ -70,4 +72,25 @@ pub struct NeutralInstance{
     pub program_data:[[f32;4];8],
     pub program_data_valid_rows:u8,
     pub vertex_data_override:Option<u32>,
+}
+
+#[derive(Clone,Copy,Debug)]
+pub struct NeutralSun{
+    pub direction_to_light:[f32;3],
+    pub color:[f32;3],
+    pub intensity:f32,
+}
+#[derive(Clone,Copy,Debug)]
+pub enum NeutralLocalLightKind{Point,Spot}
+#[derive(Clone,Copy,Debug)]
+pub struct NeutralLocalLight{
+    pub kind:NeutralLocalLightKind,
+    pub position:[f32;3],
+    pub direction:[f32;3],
+    pub color:[f32;3],
+    pub intensity:f32,
+    pub radius:f32,
+    pub inner_angle_degrees:f32,
+    pub outer_angle_degrees:f32,
+    pub specular_strength:f32,
 }
