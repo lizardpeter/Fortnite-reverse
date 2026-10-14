@@ -164,6 +164,14 @@ impl VpkArchive {
     }
 
     pub fn entries(&self) -> &BTreeMap<String,VpkEntry> { &self.entries }
+    /// True only if a source entry's referenced physical archive is present
+    /// and includes its exact byte range, not merely listed in pak01_dir.vpk.
+    /// Supports intentional partial anonymous depot downloads.
+    pub fn available(&self,path:&str)->bool{
+        let Some(entry)=self.entries.get(path) else {return false};
+        let Ok((segment,offset))=self.locate(entry) else{return false};
+        offset.checked_add(entry.length as u64).is_some_and(|end|end<=segment.length)
+    }
 
     fn locate(&self, entry: &VpkEntry) -> Result<(Segment,u64),String> {
         if entry.archive_index==DIR_ARCHIVE {
