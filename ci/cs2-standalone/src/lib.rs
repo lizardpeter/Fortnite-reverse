@@ -9,6 +9,7 @@ pub mod entity;
 pub mod lighting;
 pub mod material;
 pub mod texture;
+pub mod cubemap_axis;
 pub mod bindings;
 pub mod vbib;
 pub mod world;
