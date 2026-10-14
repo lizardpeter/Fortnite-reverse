@@ -54,7 +54,7 @@ class XrefTests(unittest.TestCase):
         text_section = {"name": ".text", "va": 0x1000, "rawptr": 0,
                         "rawsize": len(code), "flags": 0x60000020}
         anchors = {0x2000: {"byte_length": 20, "score": 10}}
-        refs, hits, incoming, outgoing, visited, skipped = module.discover(
+        refs, hits, incoming, outgoing, visited, skipped, calls = module.discover(
             code, image, [text_section], [(0x1000, 0x1008)], anchors
         )
         self.assertEqual((visited, skipped), (1, 0))
@@ -75,13 +75,34 @@ class XrefTests(unittest.TestCase):
         code = b"\x48\x8d\x05\xf9\x1f\x00\x00\xc3"
         text = {"name": ".text", "va": 0x1000, "rawptr": 0,
                 "rawsize": len(code), "flags": 0x60000020}
-        refs, hits, _in, _out, visited, skipped = module.discover(
+        refs, hits, _in, _out, visited, skipped, calls = module.discover(
             code, image, [text], [(0x1000, 0x1008)], anchors, pointers
         )
         self.assertEqual((visited, skipped), (1, 0))
         self.assertEqual(refs[0x2000][0]["reference_kind"],
                          "indirect_original_va_pointer_slot")
         self.assertIn(0x1000, hits)
+
+
+    def test_original_linear_direct_call_is_preserved(self):
+        import io
+        image = 0x140000000
+        # CALL 0x1008, RET, padding, RET. The second retail extent
+        # starts exactly at 0x1008.
+        code = b"\xe8\x03\x00\x00\x00\xc3\x90\x90\xc3"
+        text = {"name": ".text", "va": 0x1000, "rawptr": 0,
+                "rawsize": len(code), "flags": 0x60000020}
+        out = io.StringIO()
+        *_, counters = module.discover(
+            code, image, [text], [(0x1000, 0x1008), (0x1008, 0x1009)],
+            {}, edges_sink=out
+        )
+        rows = [__import__("json").loads(line) for line in out.getvalue().splitlines()]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["callsite_rva"], "0x00001000")
+        self.assertEqual(rows[0]["target_original_pdata_start"], "0x00001008")
+        self.assertTrue(rows[0]["target_is_exact_original_entry"])
+        self.assertEqual(counters["linear_direct_calls_to_exact_entries"], 1)
 
 
 if __name__ == "__main__":
