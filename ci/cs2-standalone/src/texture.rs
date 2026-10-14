@@ -58,7 +58,7 @@ pub fn inspect(file:&[u8])->Result<Metadata,String>{
     let extra_count=u32_at(h,36)? as usize;
     if extra_count>1024 {return Err("VTEX has too many extra metadata blocks".into());}
     if extra_count>0{
-        let entries_base=40usize.checked_add(extra_rel).ok_or("VTEX metadata overflow")?;
+        let entries_base=32usize.checked_add(extra_rel).ok_or("VTEX metadata overflow")?;
         for i in 0..extra_count{
             let at=entries_base.checked_add(i.checked_mul(12).ok_or("VTEX descriptor overflow")?)
                 .ok_or("VTEX descriptor overflow")?;
