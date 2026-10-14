@@ -1,0 +1,19 @@
+name: CS2 compact overlay Rust tests
+on:
+  push:
+    branches: [assets/cs2-dust2-complete-vpk-20261014]
+    paths: ['.github/workflows/cs2-compact-rust-tests.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Compile and test original compiled resource overlay reader
+        run: cargo test --manifest-path ci/cs2-standalone/Cargo.toml --lib
