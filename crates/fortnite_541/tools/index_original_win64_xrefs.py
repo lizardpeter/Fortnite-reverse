@@ -116,6 +116,29 @@ def scan_anchors(b, sections):
     return anchors
 
 
+def original_string_pointer_slots(b, imagebase, sections, anchors):
+    """Find source PE 64-bit VA pointer slots referencing exact string ranges.
+
+    An indirect code reference to a verified original data pointer is stronger
+    evidence than a coincidental keyword, but does not identify a UE4 class.
+    """
+    keys = sorted(anchors)
+    slots = {}
+    for sec in sections:
+        if sec["flags"] & 0x20000000 or not (sec["flags"] & 0x40000000):
+            continue
+        raw = contents(b, sec)
+        for off in range(0, len(raw) - 7, 8):
+            target = struct.unpack_from("<Q", raw, off)[0] - imagebase
+            j = bisect.bisect_right(keys, target) - 1
+            if j < 0:
+                continue
+            original = keys[j]
+            if target < original + anchors[original]["byte_length"]:
+                slots[sec["va"] + off] = original
+    return slots
+
+
 def function_code(b, sections, start, end):
     for sec in sections:
         if not (sec["flags"] & 0x20000000):
@@ -133,12 +156,13 @@ def direct_calls(code, rva, imagebase, decoder):
             yield ins.address - imagebase, ins.operands[0].imm - imagebase
 
 
-def discover(b, imagebase, sections, pdata, anchors):
+def discover(b, imagebase, sections, pdata, anchors, pointers=None):
     from capstone import Cs, CS_ARCH_X86, CS_MODE_64
     from capstone.x86_const import X86_OP_MEM, X86_REG_RIP
     decoder = Cs(CS_ARCH_X86, CS_MODE_64)
     decoder.detail = True
     keys = sorted(anchors)
+    pointers = pointers or {}
     source_refs = defaultdict(list)
     fn_hits = defaultdict(list)
     visited = skipped = 0
@@ -156,14 +180,17 @@ def discover(b, imagebase, sections, pdata, anchors):
                     continue
                 target = ins.address + ins.size + op.mem.disp - imagebase
                 j = bisect.bisect_right(keys, target) - 1
-                if j < 0:
-                    continue
-                key = keys[j]
-                if target >= key + anchors[key]["byte_length"]:
-                    continue
+                key = keys[j] if j >= 0 else None
+                direct = key is not None and target < key + anchors[key]["byte_length"]
+                if not direct:
+                    key = pointers.get(target)
+                    if key is None:
+                        continue
                 evidence = {
                     "function_rva": hx(start), "instruction_rva": hx(ins.address - imagebase),
                     "target_rva": hx(target), "mnemonic": ins.mnemonic,
+                    "reference_kind": ("direct_string_range" if direct
+                                       else "indirect_original_va_pointer_slot"),
                 }
                 source_refs[key].append(evidence)
                 fn_hits[start].append((key, evidence))
@@ -213,8 +240,9 @@ def main():
     if len(pdata) != EXPECTED_PDATA:
         raise SystemExit(f"wrong original .pdata count: {len(pdata)}")
     anchors = scan_anchors(b, sections)
+    pointers = original_string_pointer_slots(b, imagebase, sections, anchors)
     refs, hits, incoming, outgoing, visited, skipped = discover(
-        b, imagebase, sections, pdata, anchors
+        b, imagebase, sections, pdata, anchors, pointers
     )
     args.out.mkdir(parents=True, exist_ok=True)
     write_gzip(
@@ -241,12 +269,21 @@ def main():
         "schema_version": 1, "source_sha256": digest,
         "original_pdata_count": len(pdata), "scanned_pdata_functions": visited,
         "unmapped_pdata_functions": skipped, "anchor_strings": len(anchors),
-        "direct_string_references": sum(map(len, refs.values())),
+        "retail_va_string_pointer_slots": len(pointers),
+        "string_or_pointer_references": sum(map(len, refs.values())),
+        "direct_string_references": sum(
+            sum(e["reference_kind"] == "direct_string_range" for e in items)
+            for items in refs.values()
+        ),
+        "indirect_string_pointer_references": sum(
+            sum(e["reference_kind"] == "indirect_original_va_pointer_slot" for e in items)
+            for items in refs.values()
+        ),
         "candidate_functions": len(hits),
         "candidate_incoming_calls": sum(map(len, incoming.values())),
         "candidate_outgoing_calls": sum(map(len, outgoing.values())),
         "control_flow_verified": False, "function_identity_verified": False,
-        "notes": "Original x64 RIP-relative references from function-bounded linear disassembly; candidates are not UE4 symbols or proven live branches.",
+        "notes": "Original x64 RIP-relative string addresses or original retail absolute-VA string pointer slots in function-bounded linear disassembly; candidates are not confirmed UE4 symbols or proven live branches.",
     }
     (args.out / "summary.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps(report, sort_keys=True))
