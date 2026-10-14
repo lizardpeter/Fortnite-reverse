@@ -23,7 +23,7 @@ fn mip_size(width:usize,height:usize,format:u8)->Result<usize,String>{
         .ok_or("VTEX block count overflow")?;
     match format {
         1=>block_count.checked_mul(8), // DXT1 (BC1)
-        2|20|21=>block_count.checked_mul(16), // DXT5, BC7, ATI2N
+        2|19|20|21=>block_count.checked_mul(16), // DXT5, BC6H, BC7, ATI2N
         4|28=>px.checked_mul(4), // RGBA8 / BGRA8
         3|33=>Some(px), // I8 / R8
         _=>return Err(format!("unsupported original Source 2 texture pixel format {format}")),
@@ -207,9 +207,97 @@ pub fn decode(file:&[u8],name:&str)->Result<NeutralTexture,String>{
         mips:Vec::new(),compressed,
     })
 }
+/// Source 2 cubemap flag in original compiled VTEX metadata.
+/// BC6H stores six HDR faces per mip, with all six image planes together in
+/// one LZ4/Zstd-compressed mip record. Do not treat mip_disk_sizes as 1 face.
+pub const SOURCE_CUBE_FLAG:u16=0x0010;
+/// Decode the original cube faces in source-native face ordinal order.
+/// The universal scene chooses the renderer's cube-face basis separately.
+pub fn decode_hdr_cube_faces(
+    file:&[u8],name:&str,source_exposure_bias:f32
+)->Result<[NeutralTexture;6],String>{
+    let h=inspect(file)?;
+    if h.format!=19 || h.depth!=1 || h.flags&SOURCE_CUBE_FLAG==0 {
+        return Err(format!("Source2 sky requires a cubemap BC6H VTEX: format={}, depth={}, flags=0x{:04x}",
+            h.format,h.depth,h.flags));
+    }
+    let faces=6usize;
+    let mut pos=h.data_offset;
+    for level in (1..h.mips as usize).rev(){
+        let width=(h.width as usize>>level).max(1);
+        let height=(h.height as usize>>level).max(1);
+        let expected=mip_size(width,height,19)?.checked_mul(faces)
+            .ok_or("Source2 cube mip size overflow")?;
+        let stored=h.mip_disk_sizes.get(level).copied().map(|n|n as usize).unwrap_or(expected);
+        if stored>expected{return Err("Source2 cubemap mip stored size exceeds source BC6H extent".into());}
+        pos=pos.checked_add(stored).ok_or("Source2 cubemap mip offset overflow")?;
+    }
+    let width=h.width as usize;let height=h.height as usize;
+    let face_bytes=mip_size(width,height,19)?;
+    let expected=face_bytes.checked_mul(faces).ok_or("Source2 cube face count overflow")?;
+    let stored=h.mip_disk_sizes.first().copied().map(|n|n as usize).unwrap_or(expected);
+    if stored>expected {return Err("Source2 cube largest mip exceeds expected BC6H size".into());}
+    let payload=file.get(pos..pos.checked_add(stored).ok_or("Source2 cubemap data overflow")?)
+        .ok_or("Source2 cubemap largest mip truncated")?;
+    let unpacked=if stored==expected{payload.to_vec()}else{
+        match h.mip_compression{
+            1=>lz4_flex::block::decompress(payload,expected).map_err(|e|format!("Source2 BC6H cube LZ4: {e}"))?,
+            2=>zstd::bulk::decompress(payload,expected).map_err(|e|format!("Source2 BC6H cube zstd: {e}"))?,
+            other=>return Err(format!("unsupported Source2 cubemap mip compression {other}")),
+        }
+    };
+    if unpacked.len()!=expected{return Err("Source2 BC6H cube image extent mismatch".into());}
+    let exposure=2f32.powf(source_exposure_bias.clamp(-16.,16.));
+    let mut out=Vec::with_capacity(6);
+    for face in 0..faces {
+        let data=unpacked.get(face*face_bytes..(face+1)*face_bytes).unwrap();
+        let mut rgba=vec![0u8;width*height*4];
+        for by in 0..height.div_ceil(4){
+            for bx in 0..width.div_ceil(4){
+                let index=by*width.div_ceil(4)+bx;
+                let block=&data[index*16..index*16+16];
+                let mut hdr=[0f32;4*4*3];
+                bcdec_rs::bc6h_float(block,&mut hdr,4*3,false);
+                for y in 0..4{
+                    let py=by*4+y;if py>=height{continue;}
+                    for x in 0..4{
+                        let px=bx*4+x;if px>=width{continue;}
+                        let i=(y*4+x)*3;
+                        let target=(py*width+px)*4;
+                        for channel in 0..3 {
+                            let value=hdr[i+channel];
+                            if !value.is_finite(){return Err("non-finite original Source2 BC6H sky texel".into());}
+                            let radiance=value.max(0.)*exposure;
+                            // Generic sky expects display-referred sRGB8 faces.
+                            // ACES-like fit is an explicitly approximate
+                            // display transform, NOT a claim of sky.vfx parity.
+                            let mapped=((radiance*(2.51*radiance+0.03))/
+                                (radiance*(2.43*radiance+0.59)+0.14)).clamp(0.,1.);
+                            let srgb=if mapped<=0.0031308{12.92*mapped}else{
+                                1.055*mapped.powf(1./2.4)-0.055
+                            };
+                            rgba[target+channel]=(srgb*255.).round().clamp(0.,255.) as u8;
+                        }
+                        rgba[target+3]=255;
+                    }
+                }
+            }
+        }
+        out.push(NeutralTexture{name:format!("{name}#source_cube_face_{face}"),
+            width:h.width as u32,height:h.height as u32,rgba,mips:Vec::new(),compressed:None});
+    }
+    out.try_into().map_err(|_|"Source2 cube has incorrect number of faces".into())
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn source_bc6h_cube_has_six_full_source_face_payloads(){
+        assert_eq!(mip_size(512,512,19).unwrap(),262144);
+        assert_eq!(mip_size(512,512,19).unwrap()*6,1572864);
+    }
+
     #[test]
     fn bc1_constant_block_is_opaque(){
         let bytes=[0xff,0xff,0xff,0xff,0,0,0,0];
