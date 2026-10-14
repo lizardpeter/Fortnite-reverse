@@ -149,7 +149,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          pattern: source-pdata-bounded-*
+          pattern: source-pdata-bounded-??????
           merge-multiple: true
           path: ${{ runner.temp }}/results
       - name: Audit original decompiled C and commit only verified results
