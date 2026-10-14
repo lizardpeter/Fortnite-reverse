@@ -195,7 +195,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin texture_audit -- \\
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin texture_audit -- \
             "$HOME/Steam/steamapps/workshop/content/730/3620630831/3620630831_dir.vpk" \\
             "$RUST_TEST_CS2_GAME_VPK_DIR/pak01_dir.vpk"
       - name: Verify source geometry reaches NeutralScene without proprietary assets in Git
