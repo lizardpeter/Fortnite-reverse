@@ -224,6 +224,39 @@ mod tests{
         assert!(source_color(&raw,0,999).unwrap().is_none());
     }
     #[test]
+    fn original_texcoord3_is_lightmap_even_if_it_precedes_texcoord0(){
+        use crate::vbib::MeshBuffers;
+        let mut bytes=Vec::new();
+        for v in [1.0f32,2.0,3.0,0.0,0.0,1.0] {
+            bytes.extend_from_slice(&v.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0,128,0,64]); // uv3: 0.5,0.25 R16G16_UNORM
+        bytes.extend_from_slice(&[255,127,0,0]); // uv0: 1,0 R16G16_SNORM
+        assert_eq!(bytes.len(),32);
+        let attr=|semantic:&str,semantic_index,dxgi_format,offset|Attribute{
+            semantic:semantic.into(),semantic_index,dxgi_format,offset,
+            slot:0,slot_type:0,instance_step:0
+        };
+        let mesh=SourceModel{name:"authored.vmdl_c".into(),draws:Vec::new(),buffers:MeshBuffers{
+            vertices:vec![Buffer{count:1,stride:32,bytes,meshopt_compressed:false,zstd_compressed:false,
+                attributes:vec![
+                    attr("POSITION",0,6,0),attr("NORMAL",0,6,12),
+                    attr("TEXCOORD",3,35,24),attr("TEXCOORD",0,37,28),
+                ]}],
+            indices:Vec::new(),
+        }};
+        let draw=SourceDraw{
+            material:"materials/test.vmat".into(),vertex_buffers:vec![0],
+            index_buffer:0,start_index:0,index_count:0,base_vertex:0,
+            tint:None,alpha:None,lightmapped:true
+        };
+        let vertex=vertex_attributes(&mesh,&draw,0).unwrap();
+        assert!((vertex.uv[0]-1.).abs()<0.001);
+        let lm=vertex.lightmap_uv.expect("authored atlas uv");
+        assert!((lm[0]-0.5).abs()<0.001 && (lm[1]-0.25).abs()<0.001);
+        assert!(vertex.secondary_uv.is_none());
+    }
+    #[test]
     fn source_lightmap_uv_is_a_separate_authored_attribute(){
         let source=SurfaceVertex::default();
         assert_eq!(source.uv,[0.;2]);
