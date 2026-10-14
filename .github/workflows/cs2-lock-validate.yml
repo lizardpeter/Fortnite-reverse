@@ -1,0 +1,26 @@
+name: CS2 dependency lock verification
+on:
+  push:
+    branches:
+      - probe/steamcmd-anonymous-3620630831
+    paths:
+      - ".github/workflows/cs2-lock-validate.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  resolve-lock:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Compile original CS2 decoder and emit exact new registry dependency
+        run: |
+          cargo test --manifest-path ci/cs2-standalone/Cargo.toml --lib
+          echo 'CS2_CARGO_DEPENDENCY_LOCK_SNIPPET_START'
+          sed -n '/^name = "bcdec_rs"$/,/^$/p' ci/cs2-standalone/Cargo.lock
+          sed -n '/^name = "cs2-importer"$/,/^$/p' ci/cs2-standalone/Cargo.lock
+          echo 'CS2_CARGO_DEPENDENCY_LOCK_SNIPPET_END'
