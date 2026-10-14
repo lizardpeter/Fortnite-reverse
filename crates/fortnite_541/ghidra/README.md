@@ -281,6 +281,34 @@ control-flow pass identified **90 explicit branch edges**. This improvement
 is in original instruction recovery, not 91 additional C pseudocode bodies,
 and the still-unreached 6,130 bytes are not treated as executable code.
 
+## Full original-function recursive CALL census
+
+`discover_recursive_nonpdata_calls.py` broadens direct-call discovery beyond
+the original Ghidra auto-analysis inventory. For every SHA256-authenticated
+original `.pdata` function, it starts at the real entrypoint, uses Capstone
+recursive descent within the original unwind interval, and records **only
+source-verified E8 rel32 direct CALL instructions** whose destination is in
+original executable memory but outside *all* original `.pdata` intervals.
+
+This does not read arbitrary `E8` bytes as instructions, does not count
+indirect call destinations, and does not treat unknown code as decoded.
+Known call targets are compared with the initial 58 Ghidra-discovered direct
+CALL candidates. Every additional target remains an **unverified candidate**,
+not source-equivalent C++ or a successfully decompiled native function.
+
+[The 2,000-function pilot](../../.github/workflows/fortnite541-recursive-calls.yml)
+successfully inspected 15,823 reachable original instructions, identified
+61 verified source call edges to 25 targets outside `.pdata`, and found
+no new candidates beyond the original known 58 in that pilot slice.
+
+On `main`, 16 source-authenticated independent GitHub runners cover all
+291,757 original unwind functions. Each worker independently verifies the
+retail PE SHA256 and `.pdata` inventory, then saves exact CALL instruction
+byte witnesses and original caller ordinals. The aggregation audit requires
+contiguous nonoverlapping coverage of the entire original `.pdata` table
+before committing results under `discovery/recursive_calls`.
+The existing C pseudocode and verified `.pdata` coverage are unchanged.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry
