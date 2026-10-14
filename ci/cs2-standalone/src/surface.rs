@@ -4,13 +4,22 @@
 use std::collections::HashMap;
 use crate::{draw::{SourceDraw,SourceModel},vbib::{Attribute,Buffer}};
 
-#[derive(Clone,Copy,Debug,Default,PartialEq)]
+#[derive(Clone,Copy,Debug,PartialEq)]
 pub struct SurfaceVertex {
     pub position:[f32;3],
     pub normal:[f32;3],
     pub tangent:[f32;4],
     pub uv:[f32;2],
     pub secondary_uv:Option<[f32;2]>,
+    /// Authored Source 2 vertex colour. Defaults to white when no COLOR
+    /// attribute exists; never synthesize paint/blend-layer weights.
+    pub color:[f32;4],
+}
+impl Default for SurfaceVertex {
+    fn default()->Self {
+        Self {position:[0.;3],normal:[0.;3],tangent:[0.;4],uv:[0.;2],
+            secondary_uv:None,color:[1.;4]}
+    }
 }
 #[derive(Clone,Debug)]
 pub struct SourceSurface{
@@ -78,6 +87,21 @@ fn vector2(v:&[u8],at:usize,format:u32)->Result<[f32;2],String>{
         _=>Err(format!("unimplemented Source 2 TEXCOORD DXGI format {format}")),
     }
 }
+fn source_color(v:&[u8],at:usize,format:u32)->Result<Option<[f32;4]>,String>{
+    match format {
+        28=> {
+            let raw=v.get(at..at.checked_add(4).ok_or("Source2 COLOR offset overflow")?)
+                .ok_or("truncated source RGBA8 vertex color")?;
+            Ok(Some([raw[0] as f32/255.,raw[1] as f32/255.,
+                raw[2] as f32/255.,raw[3] as f32/255.]))
+        },
+        2=>Ok(Some([f32_component(v,at)?,f32_component(v,at+4)?,
+                    f32_component(v,at+8)?,f32_component(v,at+12)?])),
+        // Other authored formats require exact VDATA format translation. Do
+        // not reinterpret these as blend-mask weights or drop the geometry.
+        _=>Ok(None),
+    }
+}
 fn base_vertex<'a>(stream:&'a Buffer,idx:usize)->Result<&'a [u8],String>{
     let start=idx.checked_mul(stream.stride).ok_or("vertex stride overflow")?;
     stream.bytes.get(start..start.checked_add(stream.stride).ok_or("vertex slice overflow")?)
@@ -106,6 +130,13 @@ fn vertex_attributes(model:&SourceModel,draw:&SourceDraw,index:usize)->Result<Su
                 "NORMAL" if attr.dxgi_format==6 => {
                     result.normal=normalize([f32_component(bytes,at)?,f32_component(bytes,at+4)?,f32_component(bytes,at+8)?]);
                     normal=true;normal_attr=Some((buffer,attr));
+                },
+                "COLOR"=>{
+                    if let Some(color)=source_color(bytes,at,attr.dxgi_format)? {
+                        if color.iter().all(|f|f.is_finite()){
+                            result.color=color;
+                        }
+                    }
                 },
                 "TEXCOORD"=>{
                     let uv=vector2(bytes,at,attr.dxgi_format)?;
@@ -172,6 +203,16 @@ mod tests{
             assert!(t.iter().all(|x|x.is_finite()));
             assert!((n[0]*t[0]+n[1]*t[1]+n[2]*t[2]).abs()<1e-3);
         }
+    }
+    #[test]
+    fn original_rgba8_vertex_tint_not_replaced_with_white(){
+        let raw=[128,64,255,192];
+        let c=source_color(&raw,0,28).unwrap().unwrap();
+        assert!((c[0]-128./255.).abs()<1e-5);
+        assert_eq!(c[2],1.);
+        assert!((c[3]-192./255.).abs()<1e-5);
+        assert_eq!(SurfaceVertex::default().color,[1.;4]);
+        assert!(source_color(&raw,0,999).unwrap().is_none());
     }
     #[test]
     fn signed_uvs_decode_negative_source_values(){
