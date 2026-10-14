@@ -5,7 +5,7 @@
 //! lightmaps, visibility and authored physics are *not* silently inferred.
 use std::{collections::{BTreeMap,BTreeSet},path::Path};
 use neutral_scene::{NeutralAlpha,NeutralInstance,NeutralMaterial,NeutralMesh,NeutralScene,NeutralVertex};
-use crate::{draw,world,vpk::VpkArchive,surface,material};
+use crate::{draw,world,vpk::VpkArchive,surface,material,entity,lighting};
 
 const SOURCE_UNITS_TO_METRES:f32=0.0254; // Source 2 world unit convention (inch)
 const MAX_SCENE_MESHES:usize=250_000;
@@ -229,6 +229,19 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         }
     }
     if scene.meshes.is_empty(){return Err("Source 2 world contains no decodable original direct geometry".into());}
+    let authored_lumps=entity::from_nested_map(&inner)?;
+    let authored_lighting=lighting::decode(&authored_lumps);
+    let light_count=authored_lighting.local.len();
+    let sun_present=authored_lighting.sun.is_some();
+    let sky_material=authored_lighting.source_sky_material.clone();
+    let source_lights_unsupported=authored_lighting.omitted;
+    scene.sun=authored_lighting.sun;
+    scene.local_lights=authored_lighting.local;
+    scene.report.lines.push(format!(
+        "CS2 ORIGINAL LIGHTING: {} author-positioned point lights using lumens/candelas, source sun={}, remaining Source2 area/disabled lights={}, authored sky material={:?} (sky texture shader pending). Shared Forward+ approximation, NOT baked Source2 parity.",
+        light_count,sun_present,source_lights_unsupported,sky_material,
+    ));
+
     scene.report.lines.push(format!(
         "CS2 source original geometry preview: map={map_package}; source models={}; triangle mesh draws={}; placement instances={}; original indexed triangles={triangles}.",
         cache.len(),scene.meshes.len(),scene.instances.len()
