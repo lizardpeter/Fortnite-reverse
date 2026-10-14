@@ -271,10 +271,13 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
-        "CS2 ACTUAL VTEX GPU MATERIAL INPUTS: {} original textures decoded ({} RGBA MiB / {} MiB budget in RAM), {}/{} original geometry materials with a source-backed base-color texture, {} source-backed normal bindings, {} unavailable/unsupported texture requests. Shader graph translation remains incomplete. Texture failure samples: {}",
-        bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),bound.budget_bytes/(1024*1024),
+        "CS2 ACTUAL VTEX MATERIAL INPUTS: {} original textures decoded ({} MiB decoded RGBA; limit {}), {}/{} original geometry materials with a source-backed base-color texture, {} direct normal bindings, {} unavailable/unsupported texture requests. Original metalness scalar mapped on {} materials. Additional original shader semantics pending: Layer2 blend={} materials, packed normal/roughness={} materials, self-illumination={} materials. Source shader graph translation, map lightmaps and skybox remain incomplete. Failure samples: {}",
+        bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),
+        bound.budget_bytes.map(|bytes|format!("{} MiB",bytes/(1024*1024))).unwrap_or_else(||"disabled".into()),
         bound.materials_with_albedo,scene.materials.len(),bound.materials_with_normal,
-        bound.vtex_failed,bound.missing.iter().take(8).cloned().collect::<Vec<_>>().join("; ")
+        bound.vtex_failed,bound.mapped_metalness,bound.authored_layer2,
+        bound.authored_normal_roughness,bound.authored_self_illum,
+        bound.missing.iter().take(8).cloned().collect::<Vec<_>>().join("; ")
     ));
     scene.report.lines.push(format!(
         "CS2 ORIGINAL VMAT COVERAGE: {}/{} compiled material resources resolved, {} material shader variants identified, {} authored texture slots discovered ({} VTEX resources present). Base CS2 archive configured: {}. Missing original material samples: {}",
