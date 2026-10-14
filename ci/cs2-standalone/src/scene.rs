@@ -331,6 +331,10 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
+        "CS2 ORIGINAL EFFECT SHADING: {} authored additive csgo_effects.vfx material(s); {} have original g_tColor alpha * three source VTEX masks and source opacity scale compiled to universal ADDITIVE transparency. Source camera Fresnel/fade/depth-feather remains pending.",
+        bound.additive_effect_materials,bound.original_effect_masks_combined
+    ));
+    scene.report.lines.push(format!(
         "CS2 ACTUAL VTEX MATERIAL INPUTS: {} original textures decoded ({} MiB decoded RGBA; limit {}), {}/{} original geometry materials with a source-backed base-color texture, {} direct normal bindings, {} unavailable/unsupported texture requests. Original metalness scalar mapped on {} materials. Additional original shader semantics pending: Layer2 blend={} materials, packed normal/roughness={} materials, self-illumination={} materials. Source shader graph translation, map lightmaps and skybox remain incomplete. Failure samples: {}",
         bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),
         bound.budget_bytes.map(|bytes|format!("{} MiB",bytes/(1024*1024))).unwrap_or_else(||"disabled".into()),
