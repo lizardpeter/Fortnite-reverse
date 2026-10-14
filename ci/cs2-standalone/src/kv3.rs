@@ -248,8 +248,11 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     if types_count>MAX_VALUES || objects2>MAX_VALUES || blocks>MAX_VALUES {
         return Err("KV3 advertised value counts exceed limits".into());
     }
-    if blocks!=0 {
-        return Err(format!("KV3 external binary blobs ({blocks} blocks, {binary_blob_bytes} bytes) not yet supported"));
+    // Compiled CS2 entity lumps often contain hundreds of *zero-length*
+    // binary attributes. Their lengths still occupy the KV3 trailer lane.
+    // Preserve these authored binary slots rather than rejecting the lump.
+    if blocks!=0 && binary_blob_bytes!=0 {
+        return Err(format!("KV3 nonempty external binary blobs ({blocks} blocks, {binary_blob_bytes} bytes) not yet supported"));
     }
     let consumed1=if compression==0 {u1}else{c1};
     let consumed2=if compression==0 {u2}else{c2};
@@ -306,12 +309,20 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     cursor2+=size8b;
     let type_end=cursor2.checked_add(types_count).ok_or("KV3 type byte overflow")?;
     let type_bytes=bytes2.get(cursor2..type_end).ok_or("KV3 type byte lane overrun")?;
-    let marker=uint(&bytes2,type_end)?;
+    let lengths_end=type_end.checked_add(blocks.checked_mul(4).ok_or("KV3 binary length lane overflow")?)
+        .ok_or("KV3 length lane overflow")?;
+    let lengths=bytes2.get(type_end..lengths_end).ok_or("truncated KV3 external blob lengths")?;
+    if blocks>0 {
+        if lengths.chunks_exact(4).any(|b|u32::from_le_bytes(b.try_into().unwrap())!=0) {
+            return Err("KV3 blob lengths declare nonzero values but no blob bytes exist".into());
+        }
+    }
+    let marker=uint(&bytes2,lengths_end)?;
     if marker!=TRAILER{return Err(format!("invalid KV3 trailer 0x{marker:08x}"));}
     let mut reader=Reader{
         types:Lane{bytes:type_bytes,at:0},names,
         main:second,auxiliary:first,objects,
-        blobs:Lane{bytes:&[],at:0}, lengths:Lane{bytes:&[],at:0},
+        blobs:Lane{bytes:&[],at:0}, lengths:Lane{bytes:lengths,at:0},
         visited:0,legacy_object_lengths:false,
     };
     let (kind,flag)=read_type(&mut reader)?;
@@ -348,7 +359,9 @@ fn decode_v4(bytes:&[u8])->Result<Document,String>{
     let binary_blob_bytes=checked(signed(bytes,60)?,"v4 blob bytes")?;
     let n2=checked(signed(bytes,64)?,"v4 byte2")?;
     let _block_sizes=checked(signed(bytes,68)?,"v4 block compressed sizes")?;
-    if blocks!=0 {return Err(format!("KV3 v4 binary blob support pending ({blocks} blocks)"));}
+    if blocks!=0 && binary_blob_bytes!=0 {
+        return Err(format!("KV3 v4 nonempty external binary blobs unsupported ({blocks} blocks, {binary_blob_bytes} bytes)"));
+    }
     let take=if compression==0 {uncompressed}else{compressed};
     let end=72usize.checked_add(take).ok_or("KV3 v4 byte offset overflow")?;
     if end>bytes.len(){return Err("truncated KV3 v4 payload".into());}
@@ -384,11 +397,17 @@ fn decode_v4(bytes:&[u8])->Result<Document,String>{
     let type_end=strings_start.checked_add(types_total).ok_or("KV3 v4 type range overflow")?;
     if type_end<cursor {return Err("KV3 v4 types overlap strings".into());}
     let types=decompressed.get(cursor..type_end).ok_or("truncated KV3 v4 types")?;
-    let trailer=uint(&decompressed,type_end)?;
+    let lengths_end=type_end.checked_add(blocks.checked_mul(4).ok_or("v4 blob lengths overflow")?)
+        .ok_or("v4 blob address overflow")?;
+    let lengths=decompressed.get(type_end..lengths_end).ok_or("truncated KV3 v4 blob lengths")?;
+    if lengths.chunks_exact(4).any(|b|u32::from_le_bytes(b.try_into().unwrap())!=0) {
+        return Err("KV3 v4 blob lengths declare nonzero values but blob payload unavailable".into());
+    }
+    let trailer=uint(&decompressed,lengths_end)?;
     if trailer!=TRAILER{return Err(format!("invalid KV3 v4 trailer 0x{trailer:08x}"));}
     let mut reader=Reader{
         types:Lane{bytes:types,at:0},names,main:lanes.clone(),auxiliary:lanes,
-        objects:Lane{bytes:&[],at:0},blobs:Lane{bytes:&[],at:0},lengths:Lane{bytes:&[],at:0},
+        objects:Lane{bytes:&[],at:0},blobs:Lane{bytes:&[],at:0},lengths:Lane{bytes:lengths,at:0},
         visited:0,legacy_object_lengths:true,
     };
     let (kind,flag)=read_type(&mut reader)?;
