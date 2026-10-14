@@ -43,7 +43,7 @@ jobs:
           echo "COMPACT_ONLY_BYTES $(du -sh "$root/cs2-base-resources")"
           test "$(find "$root" -maxdepth 1 -name 'pak01_*.vpk' | wc -l)" -eq 0
       - name: Verify shader source inventory, sky texture and original lighting resource formats
-        run: cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin sky_light_audit -- "$RUNNER_TEMP/compact"
+        run: cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin sky_light_audit -- "$CS2_WORKSHOP"
       - name: Verify expanded source material admission and both world conversions
         shell: bash
         run: |
