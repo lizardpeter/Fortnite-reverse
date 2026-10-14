@@ -8,6 +8,7 @@ pub mod kv3;
 pub mod entity;
 pub mod lighting;
 pub mod material;
+pub mod texture;
 pub mod vbib;
 pub mod world;
 pub mod draw;

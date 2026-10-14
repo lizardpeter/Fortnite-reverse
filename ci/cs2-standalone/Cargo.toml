@@ -5,12 +5,13 @@ edition = "2021"
 publish = false
 
 [dependencies]
-neutral-scene = { path = "../neutral-scene-contract" }
 crc32fast = "1"
 lz4_flex = { version = "0.11", default-features = false, features = ["std"] }
 zstd = { version = "0.13", default-features = false }
 meshopt = "0.6.2"
+bcdec_rs = "0.2"
 half = "2"
+neutral-scene = { path = "../neutral-scene-contract" }
 
 [[bin]]
 name = "cs2_source_audit"
@@ -19,7 +20,3 @@ path = "src/bin/audit.rs"
 [[bin]]
 name = "cs2_source_extract"
 path = "src/bin/extract.rs"
-
-[[bin]]
-name = "cs2_preview_validation"
-path = "src/bin/preview_validation.rs"
