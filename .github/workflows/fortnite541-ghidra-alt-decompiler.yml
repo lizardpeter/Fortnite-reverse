@@ -1,0 +1,100 @@
+name: Fortnite 5.41 alternate Ghidra decompiler recovery
+on:
+  push:
+    branches: ["feature/**", main]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-alt-decompiler.yml"
+      - "crates/fortnite_541/ghidra/Fortnite541BoundedRecover.java"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  authenticated-alt-decompiler:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "11.4.2"
+            tag: Ghidra_11.4.2_build
+            archive: ghidra_11.4.2_PUBLIC_20250826.zip
+            sha256: 795a02076af16257bd6f3f4736c4fc152ce9ff1f95df35cd47e2adc086e037a6
+          - version: "12.0.4"
+            tag: Ghidra_12.0.4_build
+            archive: ghidra_12.0.4_PUBLIC_20260303.zip
+            sha256: c3b458661d69e26e203d739c0c82d143cc8a4a29d9e571f099c2cf4bda62a120
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      VERSION: ${{ matrix.version }}
+      TAG: ${{ matrix.tag }}
+      ARCHIVE: ${{ matrix.archive }}
+      GHIDRA_SHA: ${{ matrix.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Verify authentic original failure-queue and executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/source" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/project" "$RUNNER_TEMP/recovered"
+          git fetch origin re/fortnite541-ghidra-full
+          git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_remaining.jsonl.gz > "$RUNNER_TEMP/source/remaining.gz"
+          python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py \
+            --unresolved "$RUNNER_TEMP/source/remaining.gz" \
+            --start 0 --count 8 --out "$RUNNER_TEMP/source/targets.tsv"
+          curl -fL --retry 3 --connect-timeout 25 --max-time 300 "$SOURCE_URL" -o "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA  $RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+      - name: Verify and install official alternate Ghidra version
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --connect-timeout 25 --max-time 350 \
+            "https://github.com/NationalSecurityAgency/ghidra/releases/download/$TAG/$ARCHIVE" \
+            -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          exe="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$exe"
+          chmod +x "$exe"
+          echo "GHIDRA_BIN=$exe" >> "$GITHUB_ENV"
+      - name: Decompile exact original bounded entries with independent Ghidra engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GHIDRA_BIN" "$RUNNER_TEMP/project" Fortnite541Alternative \
+            -import "$RUNNER_TEMP/source/FortniteClient-Win64-Shipping.exe" -noanalysis \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541BoundedRecover.java "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/source/targets.tsv" 40 \
+            -max-cpu 2 2>&1 | tee "$RUNNER_TEMP/ghidra.log"
+          grep -q FORTNITE541_GHIDRA_BOUNDED_COMPLETE "$RUNNER_TEMP/ghidra.log"
+          python3 - <<'PY'
+          import gzip,json,os,pathlib
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          meta=json.loads((base/"recovered/recovery_summary.json").read_text())
+          files=list((base/"recovered/records").glob("retry_*.jsonl.gz"))
+          assert len(files)==1
+          with gzip.open(files[0],"rt") as stream:
+              rows=[json.loads(x) for x in stream if x.strip()]
+          assert len(rows)==8==meta["retry_count"]
+          assert meta["recovered"]==sum(r["status"]=="decompiled" for r in rows)
+          assert all(r["original_pdata_body_bounded"] and r["c"] and r["c"].strip()
+                     for r in rows if r["status"]=="decompiled")
+          print("FORTNITE541_ALTERNATE_GHIDRA_SOURCE_CODE",os.environ["VERSION"],meta)
+          PY
+      - name: Archive original source-backed alternate Ghidra C and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-ghidra-alternate-${{ matrix.version }}
+          path: |
+            ${{ runner.temp }}/recovered
+            ${{ runner.temp }}/ghidra.log
+          retention-days: 14
+          if-no-files-found: warn
