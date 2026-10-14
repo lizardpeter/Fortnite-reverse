@@ -1,0 +1,53 @@
+name: CS2 compact original Dust2 scene validation
+on:
+  push:
+    branches: [assets/cs2-dust2-complete-vpk-20261014]
+    paths: ['.github/workflows/cs2-compact-original-verify.yml']
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Fetch exact compiled original resources
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-dust2-compact-source-bundle
+          run-id: 38591298007
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/compact
+      - name: Download retail Workshop source anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lib32gcc-s1 ca-certificates curl unzip
+          mkdir -p "$RUNNER_TEMP/steamcmd"
+          curl -fL --retry 3 https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz -o "$RUNNER_TEMP/steamcmd.tgz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tgz" -C "$RUNNER_TEMP/steamcmd"
+          cd "$RUNNER_TEMP/steamcmd"
+          timeout 900 ./steamcmd.sh +login anonymous +workshop_download_item 730 3620630831 +quit
+          root="$HOME/Steam/steamapps/workshop/content/730/3620630831"
+          test -s "$root/3620630831_dir.vpk"
+          test -s "$RUNNER_TEMP/compact/cs2-base-resources/SOURCE_SHA256SUMS.txt"
+          mv "$RUNNER_TEMP/compact/cs2-base-resources" "$root/cs2-base-resources"
+          echo "CS2_WORKSHOP=$root" >> "$GITHUB_ENV"
+          echo "COMPACT_ONLY_BYTES $(du -sh "$root/cs2-base-resources")"
+          test "$(find "$root" -maxdepth 1 -name 'pak01_*.vpk' | wc -l)" -eq 0
+      - name: Verify Rust tests and both complete original worlds using compact only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_preview_validation -- "$CS2_WORKSHOP/3620630831_dir.vpk" | tee "$RUNNER_TEMP/scene.log"
+          grep 'CS2 ACTUAL VTEX GPU MATERIAL INPUTS' "$RUNNER_TEMP/scene.log"
+          grep 'SOURCE_GEOMETRY_SCENE maps/de_dust2_christmas.vpk' "$RUNNER_TEMP/scene.log"
+          grep 'SOURCE_GEOMETRY_SCENE maps/de_dust2_winter.vpk' "$RUNNER_TEMP/scene.log"
