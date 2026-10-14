@@ -253,8 +253,8 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let census=packages.audit(untextured.iter().map(String::as_str));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
-        "CS2 ACTUAL VTEX GPU MATERIAL INPUTS: {} original textures decoded ({} RGBA MiB in RAM), {}/{} original geometry materials with a source-backed base-color texture, {} source-backed normal bindings, {} unavailable/unsupported texture requests. Shader graph translation remains incomplete. Texture failure samples: {}",
-        bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),
+        "CS2 ACTUAL VTEX GPU MATERIAL INPUTS: {} original textures decoded ({} RGBA MiB / {} MiB budget in RAM), {}/{} original geometry materials with a source-backed base-color texture, {} source-backed normal bindings, {} unavailable/unsupported texture requests. Shader graph translation remains incomplete. Texture failure samples: {}",
+        bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),bound.budget_bytes/(1024*1024),
         bound.materials_with_albedo,scene.materials.len(),bound.materials_with_normal,
         bound.vtex_failed,bound.missing.iter().take(8).cloned().collect::<Vec<_>>().join("; ")
     ));
@@ -273,7 +273,7 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
         ));
     }
     scene.report.lines.push(format!(
-        "Unresolved original Source 2 shading: {} distinct VMAT programs are referenced by decoded triangles; VTEX and shader programs not admitted. \
+        "Incomplete original Source 2 shading: {} distinct VMAT identities referenced by decoded triangles; authored VTEX colour/normal channels admitted where available, but original Source 2 shader programs are not translated. \
          Original source tints and UVs retained, but shared neutral materials remain DIAGNOSTIC and cannot be claimed retail-correct.",
         untextured.len()
     ));

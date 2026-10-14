@@ -24,6 +24,14 @@ fn run()->Result<(),String>{
         }
     }
 
+    for mat_name in ["materials/skybox/sky_de_dust2vmat.vmat_c","materials/skybox/sky_csgo_cloudy01.vmat_c"] {
+        if let Ok(bytes)=cs2.read_entry(mat_name){
+            match cs2_importer::material::material_bytes(&bytes,mat_name){
+                Ok(mat)=>println!("CS2 SKY MATERIAL {} shader={} exact textures={:?} parameters={:?}",mat_name,mat.shader,mat.textures,mat.scalars),
+                Err(e)=>println!("CS2 SKY MATERIAL NOT PARSED {}: {e}",mat_name),
+            }
+        }
+    }
     let mut sample_texture_count=0;
     for path in outer.entries().keys().filter(|p|p.ends_with(".vtex_c")).take(30){
         match outer.read_entry(path).and_then(|b|texture::decode(&b,path)){

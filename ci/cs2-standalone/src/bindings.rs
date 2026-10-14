@@ -5,7 +5,13 @@
 use std::collections::{BTreeMap,BTreeSet};
 use neutral_scene::NeutralScene;
 use crate::{material::SourcePacks,texture};
-const MAX_RGBA_TEXTURE_BYTES:usize=256*1024*1024;
+/// Default is enough for retail BC7 colour maps while bounding combined
+/// CPU decode / renderer upload size. Scene RAM is released when map unloads.
+fn texture_budget()->usize {
+    let mb=std::env::var("RUST_TEST_CS2_TEXTURE_BUDGET_MB").ok()
+        .and_then(|x|x.parse::<usize>().ok()).unwrap_or(512);
+    mb.clamp(64,1536)*1024*1024
+}
 
 #[derive(Default,Debug)]
 pub struct BindingReport{
@@ -15,6 +21,7 @@ pub struct BindingReport{
     pub vtex_loaded:usize,
     pub vtex_failed:usize,
     pub total_rgba_bytes:usize,
+    pub budget_bytes:usize,
     pub missing:Vec<String>,
     pub shaders:BTreeMap<String,usize>,
 }
@@ -23,6 +30,7 @@ fn param<'a>(source:&'a BTreeMap<String,String>,names:&[&str])->Option<&'a str>{
 }
 pub fn bind(scene:&mut NeutralScene,packs:&SourcePacks<'_>)->BindingReport{
     let mut report=BindingReport::default();
+    report.budget_bytes=texture_budget();
     let mut decoded=BTreeMap::<String,Option<usize>>::new();
     let mut unresolved=BTreeSet::new();
     for mat in &mut scene.materials{
@@ -42,7 +50,7 @@ pub fn bind(scene:&mut NeutralScene,packs:&SourcePacks<'_>)->BindingReport{
             match result{
                 Ok(source_image)=>{
                     let bytes=source_image.rgba.len();
-                    if report.total_rgba_bytes.saturating_add(bytes)>MAX_RGBA_TEXTURE_BYTES{
+                    if report.total_rgba_bytes.saturating_add(bytes)>report.budget_bytes{
                         if unresolved.len()<150{unresolved.insert(format!("texture memory budget reached: {compiled}"));}
                         decoded.insert(raw.to_owned(),None);
                         return None;

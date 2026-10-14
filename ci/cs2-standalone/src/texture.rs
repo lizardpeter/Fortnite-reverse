@@ -201,6 +201,38 @@ mod tests{
         assert_eq!(img.len(),64);assert!(img.chunks_exact(4).all(|x|x[3]==255));
     }
     #[test]
+    fn compressed_mip_lengths_extend_beyond_metadata_record(){
+        // Source 2 BC7 source extra-data record is 12 bytes long, but the
+        // authored mip-size array is reached by a relative pointer beyond it.
+        let mut file=vec![0u8; 256];
+        let set32=|v:&mut Vec<u8>,at:usize,x:u32|{
+            v[at..at+4].copy_from_slice(&x.to_le_bytes());
+        };
+        file[4..6].copy_from_slice(&12u16.to_le_bytes());
+        file[6..8].copy_from_slice(&1u16.to_le_bytes());
+        set32(&mut file,8,8);set32(&mut file,12,1);
+        file[16..20].copy_from_slice(b"DATA");
+        set32(&mut file,20,44);set32(&mut file,24,120);
+        let start=64;
+        file[start..start+2].copy_from_slice(&1u16.to_le_bytes());
+        file[start+20..start+22].copy_from_slice(&4u16.to_le_bytes());
+        file[start+22..start+24].copy_from_slice(&4u16.to_le_bytes());
+        file[start+24..start+26].copy_from_slice(&1u16.to_le_bytes());
+        file[start+26]=20;file[start+27]=1; // BC7, one mip
+        set32(&mut file,start+32,8);set32(&mut file,start+36,1);
+        set32(&mut file,start+40,4); // compressed mip extra
+        set32(&mut file,start+44,20); // +20 from descriptor offset word
+        set32(&mut file,start+48,12);
+        set32(&mut file,start+64,1); // LZ4
+        set32(&mut file,start+68,8); // table relative offset
+        set32(&mut file,start+72,1);
+        set32(&mut file,start+76,16); // physically outside the 12-byte record
+        let meta=inspect(&file).unwrap();
+        assert_eq!(meta.mip_compression,1);
+        assert_eq!(meta.mip_disk_sizes,vec![16]);
+        assert_eq!(meta.data_offset,184);
+    }
+    #[test]
     fn malformed_payload_is_rejected(){
         assert!(inspect(&[0u8;16]).is_err());
         assert!(decode_blocks(&[],4,4,20).is_err());
