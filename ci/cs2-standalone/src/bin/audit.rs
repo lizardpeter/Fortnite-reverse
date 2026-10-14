@@ -64,6 +64,13 @@ fn run() -> Result<(),String> {
                     println!("CS2 ENTITY CLASS {name} = {count}");
                 }
             }
+            for entity in lumps.iter().flat_map(|l|l.entities.iter())
+                .filter(|e|matches!(e.classname.as_str(),"light_environment"|"light_omni2"|"env_sky"|"light_rect"|"light_barn"))
+                .take(4) {
+                println!("CS2 ENTITY LIGHT/SKY {} = {}",
+                    entity.classname,
+                    format!("{:?}",entity.properties).chars().take(3400).collect::<String>());
+            }
             for spawn in spawns.iter().take(5){
                 println!("CS2 AUTHORED SPAWN {} origin={:?} angles={:?}",
                     spawn.classname,spawn.source_origin,spawn.source_angles);
