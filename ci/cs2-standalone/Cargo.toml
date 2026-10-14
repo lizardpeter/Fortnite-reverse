@@ -40,3 +40,7 @@ path = "src/bin/sky_light_audit.rs"
 [[bin]]
 name = "visual_defects_audit"
 path = "src/bin/visual_defects_audit.rs"
+
+[[bin]]
+name = "lightmap_layout_audit"
+path = "src/bin/lightmap_layout_audit.rs"
