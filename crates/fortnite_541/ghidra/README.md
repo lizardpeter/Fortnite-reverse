@@ -260,6 +260,27 @@ original RVA, callsite witness, CALL count, actual nonempty C, every shard
 report and unique original index. Coverage of the original 291,757 `.pdata`
 functions remains unchanged by these extra functions.
 
+## Source-backed reachable control-flow recovery
+
+After finding 56 original `.pdata` entries that resist normal Ghidra C
+decompilation, the SHA256-authenticated PE fallback now exports a **second,
+independent Capstone recursive-control-flow dataset**:
+`remaining_original_x64/original_unresolved_cfg.jsonl.gz`.
+
+The decoder starts at each original unwind function's actual entrypoint,
+follows decoded in-range direct branches, records direct edges, and halts at
+terminal transfers. It refuses overlapping instruction interpretations and
+does **not** silently claim bytes reachable through indirect jumps, switch
+tables, exception edges or undecodable instructions. Unknown regions remain
+unknown, with source bytes independently SHA256-verified.
+
+Actual [GitHub tests](../../.github/workflows/fortnite541-original-x64-fallback.yml)
+on the retail source recovered **560 instruction records / 1,511 original
+bytes**, compared with the previous linear pass's **469 / 1,234**. The
+control-flow pass identified **90 explicit branch edges**. This improvement
+is in original instruction recovery, not 91 additional C pseudocode bodies,
+and the still-unreached 6,130 bytes are not treated as executable code.
+
 ## What “complete” means
 
 - **Inventory complete:** Every unique `.pdata` function-boundary entry

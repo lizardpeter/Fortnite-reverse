@@ -70,6 +70,25 @@ jobs:
           assert all(len(r["source_body_sha256"])==64 for r in rows)
           assert all(r["source_body_bytes"]==r["linear_decoded_bytes"]+r["undecoded_remaining_bytes"]
                      for r in rows)
+          with gzip.open(base/"original_unresolved_cfg.jsonl.gz","rt") as src:
+              cfg=[json.loads(line) for line in src if line.strip()]
+          assert len(cfg)==len(rows)==report["original_functions"]
+          original={r["index"]:r for r in rows}
+          for f in cfg:
+              source=original[f["index"]]
+              assert f["rva"]==source["rva"] and f["end_rva"]==source["end_rva"]
+              assert f["original_source_sha256"]==source["source_body_sha256"]
+              assert f["method"]=="capstone_x86_64_reachable_cfg_conservative"
+              assert f["instruction_bytes"]+f["unreached_or_undecodable_bytes"]==source["source_body_bytes"]
+              assert len(f["instructions"])==f["instruction_count"]
+              assert len({x["rva"] for x in f["instructions"]})==len(f["instructions"])
+              assert sum(x["length"] for x in f["instructions"])==f["instruction_bytes"]
+              assert all(len(bytes.fromhex(x["bytes"]))==x["length"] for x in f["instructions"])
+          assert sum(f["instruction_count"] for f in cfg)==report["cfg_instruction_count"]
+          assert sum(f["instruction_bytes"] for f in cfg)==report["cfg_instruction_bytes"]
+          assert sum(f["unreached_or_undecodable_bytes"] for f in cfg)==report["cfg_unreached_or_undecodable_bytes"]
+          assert sum(len(f["branch_edges"]) for f in cfg)==report["cfg_branch_edges"]
+          print("ORIGINAL_RETAIL_X64_REACHABLE_CONTROL_FLOW_VERIFIED",report)
           print("ORIGINAL_RETAIL_X64_EXACT_FUNCTION_BYTES_VERIFIED",report)
           PY
       - name: Commit immutable original x64 evidence to public RE dump
