@@ -71,6 +71,10 @@ fn run()->Result<(),String>{
             let segment=segments.entry(e.archive_index).or_default();
             segment.0+=1;
             segment.1+=e.length as u64;
+            // Exact original VPK resource index, including its preload prefix.
+            let preload_hex=e.preload.iter().map(|b|format!("{b:02x}")).collect::<String>();
+            println!("ASSET_PLAN_RESOURCE|{}|{:03}|{}|{}|{}|{}|{}",
+                args[1],e.archive_index,path,e.crc32,e.offset,e.length,preload_hex);
         }else{
             missing.push(path.to_owned());
         }
