@@ -46,3 +46,5 @@ jobs:
 # Assert exact Christmas sky tint/brightness and gradient fog source values in Rust
 
 # Compile only matching isolated source-neutral scene contracts for authored fog/sky regression
+
+# Validate shared universal NeutralFog ABI against original source2 v72 environment entities
