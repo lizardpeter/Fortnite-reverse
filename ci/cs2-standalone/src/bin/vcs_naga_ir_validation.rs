@@ -138,6 +138,34 @@ fn source_sampling_dependencies(code:&[u8])->String{
     outputs.join("; ")
 }
 
+/// DIAGNOSTIC ONLY. Source compiler declared image Depth=2 (Unknown).
+/// Try explicit depth classes solely to locate Naga's implicit image-type
+/// conflict; never use these variants for image binding or renderer output.
+fn diagnostic_explicit_image_depth(code:&[u8],depth:u32)->String{
+    let mut words=code.chunks_exact(4).map(|s|
+        u32::from_le_bytes(s.try_into().unwrap())).collect::<Vec<_>>();
+    if words.len()<5||!matches!(depth,0|1){return "invalid".into();}
+    let mut changed=0;
+    let mut at=5;
+    while at<words.len(){
+        let length=(words[at]>>16) as usize;
+        let op=words[at]&0xffff;
+        if length==0||at+length>words.len(){return "truncated".into();}
+        if op==25&&length>=8&&words[at+4]==2{
+            // OpTypeImage: result,sampled_type,Dim,Depth,Arrayed,MS,Sampled,Format
+            words[at+4]=depth; changed+=1;
+        }
+        at+=length;
+    }
+    let bytes=words.iter().flat_map(|x|x.to_le_bytes()).collect::<Vec<_>>();
+    match cs2_importer::universal_spirv_ir::
+        translate_source_spirv_with_ubo_rebase(&bytes){
+        Ok(sh)=>format!("image_types_changed={changed} universal_spirv_words={} (probe only; NOT fidelity proof)",
+            sh.shader.generated_spirv.len()),
+        Err(e)=>format!("image_types_changed={changed} compiler_rejected={e}"),
+    }
+}
+
 fn physical_sample_instruction_evidence(code:&[u8])->String{
     if code.len()%4!=0||code.len()<20{return "invalid bytes".into();}
     let words=code.chunks_exact(4).map(|s|u32::from_le_bytes(s.try_into().unwrap())).collect::<Vec<_>>();
@@ -193,6 +221,10 @@ fn main()->Result<(),String>{
                     physical_sample_instruction_evidence(code));
                 println!("ORIGINAL_SOURCE2_MIXED_DREF_RESOURCE_CHAIN {}",
                     source_sampling_dependencies(code));
+                for depth in [0u32,1u32]{
+                    println!("SOURCE2_SOURCE_IMAGE_DEPTH_CLASS_PROBE depth={depth} {}",
+                        diagnostic_explicit_image_depth(code,depth));
+                }
             }
             if family=="csgo_lightmappedgeneric" && stage=="ps"{
                 let words=spirv_webgpu_transform::u8_slice_to_u32_vec(code);
