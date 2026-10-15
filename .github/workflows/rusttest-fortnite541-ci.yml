@@ -1,0 +1,52 @@
+name: Rust-test Fortnite 5.41 source compile from working runners
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rusttest-fortnite541-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-real-fortnite-importer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out public Rust-test main (source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --single-branch --branch main --filter=blob:none \
+            https://github.com/lizardpeter/Rust-test.git "$RUNNER_TEMP/Rust-test"
+          git -C "$RUNNER_TEMP/Rust-test" show -s --format='RUSTTEST_ACTUAL_SOURCE_SHA=%H'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify Fortnite original shader/parser and asset importer code builds
+        shell: bash
+        run: |
+          set -o pipefail
+          cd "$RUNNER_TEMP/Rust-test"
+          cargo test --manifest-path asset_import/importers/fortnite_541/Cargo.toml --all-targets \
+            2>&1 | tee "$RUNNER_TEMP/fortnite-isolated-test.log"
+      - name: Compile full game's Fortnite source importer bridge
+        if: always()
+        shell: bash
+        env:
+          CARGO_PROFILE_DEV_OPT_LEVEL: "0"
+          CARGO_PROFILE_DEV_DEBUG: "0"
+        run: |
+          set -o pipefail
+          cd "$RUNNER_TEMP/Rust-test"
+          cargo check --no-default-features --features import-fortnite-541 --bin fps_game \
+            2>&1 | tee "$RUNNER_TEMP/fortnite-host-check.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fortnite-541-cross-repository-actual-cargo-output
+          if-no-files-found: warn
+          retention-days: 21
+          path: |
+            ${{ runner.temp }}/fortnite-isolated-test.log
+            ${{ runner.temp }}/fortnite-host-check.log
