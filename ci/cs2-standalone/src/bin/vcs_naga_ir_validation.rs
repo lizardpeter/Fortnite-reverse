@@ -98,6 +98,26 @@ fn main()->Result<(),String>{
         let original=prepare_source_vulkan_pipeline(
             &v,&p,Path::new(&dict),(0,0),(0,0))?;
         for (stage,code) in [("vs",&original.vertex_spirv[..]),("ps",&original.pixel_spirv[..])]{
+            match cs2_importer::universal_spirv_ir::
+                translate_source_spirv_with_ubo_rebase(code){
+                Ok(ir)=>{
+                    let changed=ir.uniform_layouts.iter()
+                        .filter(|plan|plan.requires_repack()).count();
+                    println!(
+                        "CERTIFIED_ORIGINAL_UNIVERSAL_NAGA_REBASED {family} {stage} compiled_spirv_words={} original_ubo_layout_closed={} source_uniform_buffers={} requiring_repack={} offset_examples={:?} (not source UBO upload admission)",
+                        ir.shader.generated_spirv.len(),ir.original_abi_closed,
+                        ir.uniform_layouts.len(),changed,
+                        ir.uniform_layouts.iter().filter(|x|x.requires_repack())
+                            .take(3).map(|x|format!(
+                                "{}:{} original={:?} canonical={:?}",
+                                x.group,x.binding,x.original_offsets,x.canonical_offsets
+                            )).collect::<Vec<_>>()
+                    );
+                }
+                Err(error)=>println!(
+                    "SOURCE2_ORIGINAL_NAGA_REBASE_BLOCKER {family} {stage}: {error}"
+                ),
+            }
             match translate(stage,code){
                 Ok((functions,globals,entries,wgsl_bytes))=>{
                     match cs2_importer::universal_spirv_ir::translate_source_spirv(code){
