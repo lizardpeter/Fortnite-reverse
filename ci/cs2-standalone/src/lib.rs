@@ -11,6 +11,7 @@ pub mod vcs_descriptor_contract;
 pub mod vcs_variable_contract;
 pub mod vcs_resource_provision;
 pub mod vcs_descriptor_types;
+pub mod vcs_spirv_usage;
 pub mod lightmap;
 pub mod entity;
 pub mod lighting;
