@@ -7,7 +7,7 @@
 //! 64-KiB original Valve shader Zstd dictionaries are external source assets,
 //! never checked into the Git repository or embedded in engine source.
 use std::{fs::File,io::{Read,Seek,SeekFrom},path::Path};
-use crate::{kv3::{self,Value},resource::ResourceHeader};
+use crate::{kv3::{self,Value},resource::ResourceHeader,vcs_variable_contract::{self,CompilerSourceVariable}};
 
 const MAX_NATIVE_FRAME:usize=32*1024*1024;
 const MAX_NATIVE_DECOMPRESSED:usize=64*1024*1024;
@@ -60,6 +60,8 @@ pub struct NativeVcsIndex {
     pub dynamic_parameters:Vec<NativeComboParameter>,
     pub compiler_dynamic_definitions:usize,
     pub compiler_variable_descriptions:usize,
+    /// Source-authored shader variable names, provider and register metadata.
+    pub variables:Vec<CompilerSourceVariable>,
     pub blocks:Vec<NativeByteCodeBlock>,
     pub static_combos:Vec<NativeStaticCombo>,
 }
@@ -189,6 +191,7 @@ impl NativeVcsIndex {
         let root=if let Some(program)=document.root.field("m_programData") {
             program
         }else{&document.root};
+        let variables=vcs_variable_contract::compiler_source_variables(root)?;
         let static_parameters=compiler_parameters(root,"m_staticComboArray")?;
         let dynamic_parameters=compiler_parameters(root,"m_dynamicComboArray")?;
         let combos=source_array(root,"m_staticComboData")?;
@@ -268,8 +271,8 @@ impl NativeVcsIndex {
             compiler_static_ids:static_combos.len(),
             static_parameters,dynamic_parameters,
             compiler_dynamic_definitions:source_array(root,"m_dynamicComboArray")?.len(),
-            compiler_variable_descriptions:source_array(root,"m_variableDescriptionArray")?.len(),
-            blocks,static_combos,
+            compiler_variable_descriptions:variables.len(),
+            variables,blocks,static_combos,
         })
     }
     pub fn source_selection(&self,static_id:i64,dynamic_id:i64)
@@ -447,6 +450,7 @@ mod tests{
             compiler_static_ids:1,
             compiler_dynamic_definitions:1,
             compiler_variable_descriptions:0,
+            variables:vec![],
             static_parameters:vec![NativeComboParameter{
                 name:"S_SOURCE".into(),min:0,max:1,stride:1
             }],
