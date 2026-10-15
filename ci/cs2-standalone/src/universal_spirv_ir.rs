@@ -88,6 +88,58 @@ pub struct UniformLayoutRebase{
     /// copied automatically. Matrix, nested struct or array strides must
     /// be source-certified before their runtime providers are enabled.
     pub field_widths:Vec<Option<u32>>,
+    /// Original Vulkan shader MatrixStride and RowMajor/ColMajor metadata,
+    /// combined with typed canonical WGSL matrix layout. Never inferred from
+    /// raw material names or guessed from a screenshot.
+    pub matrix_fields:Vec<OriginalMatrixFieldRebase>,
+}
+#[derive(Clone,Debug)]
+pub struct OriginalMatrixFieldRebase{
+    pub member_index:usize,
+    pub columns:u32,
+    pub rows:u32,
+    pub scalar_bytes:u32,
+    pub original_stride:u32,
+    pub original_row_major:bool,
+    pub canonical_stride:u32,
+}
+impl OriginalMatrixFieldRebase {
+    fn repack(&self, original:&[u8],source_at:usize,
+        target:&mut[u8],target_at:usize)->Result<(),String>{
+        if !(2..=4).contains(&self.columns) ||
+            !(2..=4).contains(&self.rows) ||
+            !matches!(self.scalar_bytes,2|4|8){
+            return Err("source matrix has unsupported dimensions or scalar size".into());
+        }
+        let original_major=if self.original_row_major{self.rows}else{self.columns};
+        let original_minor=if self.original_row_major{self.columns}else{self.rows};
+        if self.original_stride<original_minor*self.scalar_bytes ||
+            self.canonical_stride<self.rows*self.scalar_bytes{
+            return Err("original shader matrix stride overlaps active elements".into());
+        }
+        for column in 0..self.columns{
+            for row in 0..self.rows{
+                let source_slot=if self.original_row_major{
+                    row*self.original_stride+column*self.scalar_bytes
+                }else{
+                    column*self.original_stride+row*self.scalar_bytes
+                } as usize;
+                let target_slot=(column*self.canonical_stride+row*self.scalar_bytes) as usize;
+                let start=source_at.checked_add(source_slot)
+                    .ok_or("source matrix address overflow")?;
+                let dst=target_at.checked_add(target_slot)
+                    .ok_or("canonical matrix address overflow")?;
+                let size=self.scalar_bytes as usize;
+                let input=original.get(start..start+size)
+                    .ok_or("source Vulkan matrix field extent unavailable")?;
+                let output=target.get_mut(dst..dst+size)
+                    .ok_or("canonical matrix field extent unavailable")?;
+                output.copy_from_slice(input);
+            }
+        }
+        if original_major==0{return Err("original matrix dimension empty".into());}
+        Ok(())
+    }
 }
 impl UniformLayoutRebase{
     pub fn requires_repack(&self)->bool{
@@ -109,6 +161,13 @@ impl UniformLayoutRebase{
         let mut output=vec![0u8;self.canonical_bytes as usize];
         for (i,((&from,&to),width)) in self.original_offsets.iter()
             .zip(&self.canonical_offsets).zip(&self.field_widths).enumerate(){
+            if let Some(matrix)=self.matrix_fields.iter().find(|m|m.member_index==i){
+                if width.is_some(){
+                    return Err("scalar/vector field conflicts with original matrix type".into());
+                }
+                matrix.repack(source,from as usize,&mut output,to as usize)?;
+                continue;
+            }
             let bytes=width.ok_or_else(||format!(
                 "source uniform member {i} uses an unresolved array/matrix/struct stride"
             ))? as usize;
@@ -356,6 +415,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
             canonical_offsets:target_offsets.clone(),
             original_bytes:source_bytes,canonical_bytes:*target_bytes,
             field_widths:source_widths,
+            matrix_fields:Vec::new(), // admitted only with exact SPIR-V member decorations
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
@@ -394,6 +454,7 @@ mod tests{
             canonical_offsets:vec![0,16,20],
             original_bytes:12,canonical_bytes:32,
             field_widths:vec![Some(4),Some(4),Some(4)],
+            matrix_fields:Vec::new(),
         };
         let source=(0u8..12).collect::<Vec<_>>();
         let target=layout.repack_original_bytes(&source).unwrap();
@@ -406,6 +467,54 @@ mod tests{
             field_widths:vec![None,Some(4),Some(4)],..layout
         };
         assert!(unknown.repack_original_bytes(&source).is_err());
+    }
+    #[test]
+    fn source_rowmajor_mat4x3_upload_retains_every_authored_element(){
+        // Source uses row-major 3 rows of 4 floats. Canonical WGSL uses
+        // mat4x3 as four padded columns, stride 16 bytes per column.
+        let mut input=Vec::new();
+        for row in 0..3u32{
+            for column in 0..4u32 {
+                input.extend_from_slice(&(row*10+column+1).to_le_bytes());
+            }
+        }
+        let spec=OriginalMatrixFieldRebase{
+            member_index:0,columns:4,rows:3,scalar_bytes:4,
+            original_stride:16,original_row_major:true,canonical_stride:16,
+        };
+        let plan=UniformLayoutRebase{
+            group:0,binding:3,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:48,canonical_bytes:64,
+            field_widths:vec![None],matrix_fields:vec![spec],
+        };
+        let data=plan.repack_original_bytes(&input).unwrap();
+        for row in 0..3usize {
+            for column in 0..4usize {
+                let actual=u32::from_le_bytes(data[column*16+row*4..column*16+row*4+4]
+                    .try_into().unwrap());
+                assert_eq!(actual,row as u32*10+column as u32+1);
+            }
+        }
+        assert_eq!(data.len(),64);
+        assert_eq!(&data[12..16],&[0,0,0,0]);
+        assert!(plan.repack_original_bytes(&input[..47]).is_err());
+    }
+    #[test]
+    fn source_matrix_stride_is_never_invented(){
+        let plan=UniformLayoutRebase{
+            group:0,binding:0,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:32,canonical_bytes:64,
+            field_widths:vec![None],matrix_fields:vec![],
+        };
+        assert!(plan.repack_original_bytes(&[0u8;32]).is_err());
+        let bad=OriginalMatrixFieldRebase{
+            member_index:0,columns:4,rows:3,scalar_bytes:4,
+            original_stride:8,original_row_major:true,canonical_stride:16,
+        };
+        let incorrect=UniformLayoutRebase{matrix_fields:vec![bad],..plan};
+        assert!(incorrect.repack_original_bytes(&[0u8;32]).is_err());
     }
     #[test]
     fn input_bounds_reject_truncated_source_shader(){
