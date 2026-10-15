@@ -100,3 +100,5 @@ jobs:
 # Retry original stage-pair compiler ABI validation after execution-model variable shadow fix
 
 # Verify complete original compiler-program hash arrays instead of fictitious unique program hash
+
+# Rerun using original Source2 VPK overlay parser mirror, not stale importer version.
