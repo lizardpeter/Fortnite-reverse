@@ -1,0 +1,55 @@
+name: Validate real CS2 VCS static dynamic GPU decode
+on:
+  push:
+    branches: [probe/cs2-vcs-native-ci-20261015]
+    paths: ['.github/workflows/cs2-vcs-native-validation.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  native-vcs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Compile and unit-test current isolated Rust Source 2 importer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib
+      - name: Obtain original compiled PC Source 2 shader stages
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-original-vcs-pc
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/pc
+      - name: Obtain original compiled Vulkan Source 2 shader stages
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-original-vcs-vulkan
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/vulkan
+      - name: Obtain the two exact Source 2 shader compression dictionaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-source2-zstd-vcs-dictionaries
+          run-id: 38678860607
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/dictionaries
+      - name: Execute authentic source compiler static and dynamic GPU program recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/source-vcs"
+          cp "$RUNNER_TEMP"/pc/cs2-base-resources/shaders/vfx/*.vcs "$RUNNER_TEMP/source-vcs/"
+          cp "$RUNNER_TEMP"/vulkan/cs2-base-resources/shaders/vfx/*.vcs "$RUNNER_TEMP/source-vcs/"
+          export CS2_NATIVE_CORPUS="$RUNNER_TEMP/source-vcs"
+          export CS2_NATIVE_DICTIONARIES="$RUNNER_TEMP/dictionaries"
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin vcs_native_validation
