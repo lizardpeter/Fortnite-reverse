@@ -83,7 +83,10 @@ pub struct NativeProvisionPlan {
 impl NativeProvisionPlan {
     pub fn native_admission_blocked(&self)->bool {
         !self.missing_source_files.is_empty() ||
+        !self.missing_shader_input_names.is_empty() ||
         !self.ambiguous_source_variable_names.is_empty() ||
+        (self.lighting_mode.is_some_and(OriginalLightingPolicy::baked_enabled) &&
+            self.provisioned_baked_channels!=self.expected_baked_channels) ||
         self.native_descriptors_needing_runtime_mapping>0 ||
         self.unresolved_native_aliases>0
     }
@@ -192,6 +195,12 @@ pub fn plan_original_inputs(
                 .filter(|p|matches!(p.input,NativeInput::BakedTextureArray{..})).count();
             if !atlas.complete{
                 plan.missing_source_files.extend(atlas.errors.iter().cloned());
+            }
+            if plan.provisioned_baked_channels!=plan.expected_baked_channels{
+                plan.missing_source_files.push(format!(
+                    "original lightmap shader requires {} distinct Source2 array channels, only {} can be attached by compiler name",
+                    plan.expected_baked_channels,plan.provisioned_baked_channels
+                ));
             }
         }else{
             plan.missing_source_files.push(
