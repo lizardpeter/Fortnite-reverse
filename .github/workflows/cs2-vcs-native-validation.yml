@@ -121,3 +121,5 @@ jobs:
 # Original CS2 Vulkan SPIR-V -> Naga universal IR -> WGSL -> executable Vulkan SPIR-V shader translation
 
 # Strictly revalidate Naga translated original CS2 scalar-block source shaders after canonical WGSL rewrite
+
+# Original source Vulkan relaxed uniform layout normalized into executable universal IR with explicit member-offset ABI mapping
