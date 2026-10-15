@@ -92,6 +92,54 @@ pub struct UniformLayoutRebase{
     /// combined with typed canonical WGSL matrix layout. Never inferred from
     /// raw material names or guessed from a screenshot.
     pub matrix_fields:Vec<OriginalMatrixFieldRebase>,
+    /// Single-member wrapper structs containing a source-typed array of
+    /// scalars/vectors with explicit source and canonical element stride.
+    /// Matrix and nested aggregate arrays remain fail-closed separately.
+    pub nested_vector_arrays:Vec<NestedVectorArrayRebase>,
+}
+#[derive(Clone,Debug)]
+pub struct NestedVectorArrayRebase{
+    pub member_index:usize,
+    pub element_count:u32,
+    pub element_bytes:u32,
+    pub original_stride:u32,
+    pub canonical_stride:u32,
+    pub original_inner_offset:u32,
+    pub canonical_inner_offset:u32,
+}
+impl NestedVectorArrayRebase{
+    fn repack(&self,source:&[u8],source_at:usize,output:&mut[u8],target_at:usize)
+        ->Result<(),String>{
+        if self.element_count==0 || self.element_count>4096 ||
+            self.element_bytes==0 || self.element_bytes>32 ||
+            self.original_stride<self.element_bytes ||
+            self.canonical_stride<self.element_bytes {
+            return Err("unverified source vector-array shape or element stride".into());
+        }
+        let base=source_at.checked_add(self.original_inner_offset as usize)
+            .ok_or("nested source array base overflow")?;
+        let dest=target_at.checked_add(self.canonical_inner_offset as usize)
+            .ok_or("nested canonical array base overflow")?;
+        for i in 0..self.element_count as usize{
+            let src_start=base.checked_add(i.checked_mul(self.original_stride as usize)
+                .ok_or("source vector array stride overflow")?)
+                .ok_or("source vector array member overflow")?;
+            let dst_start=dest.checked_add(i.checked_mul(self.canonical_stride as usize)
+                .ok_or("canonical vector array stride overflow")?)
+                .ok_or("canonical vector array member overflow")?;
+            let width=self.element_bytes as usize;
+            let src_end=src_start.checked_add(width)
+                .ok_or("source array element width overflow")?;
+            let dst_end=dst_start.checked_add(width)
+                .ok_or("canonical array element width overflow")?;
+            let bytes=source.get(src_start..src_end)
+                .ok_or("source-authored vector array payload incomplete")?;
+            output.get_mut(dst_start..dst_end)
+                .ok_or("universal vector array target payload incomplete")?
+                .copy_from_slice(bytes);
+        }
+        Ok(())
+    }
 }
 #[derive(Clone,Debug)]
 pub struct OriginalMatrixFieldRebase{
@@ -167,11 +215,16 @@ impl UniformLayoutRebase{
         self.matrix_fields.iter().any(|m|
             m.original_row_major || m.original_stride!=m.canonical_stride
         ) ||
+        self.nested_vector_arrays.iter().any(|a|
+            a.original_stride!=a.canonical_stride ||
+            a.original_inner_offset!=a.canonical_inner_offset
+        ) ||
         // An unrecognized aggregate or array is never ABI-certified just
         // because its original and canonical struct spans happen to match.
         self.field_widths.iter().enumerate().any(|(index,width)|
             width.is_none() &&
-            !self.matrix_fields.iter().any(|m|m.member_index==index)
+            !self.matrix_fields.iter().any(|m|m.member_index==index) &&
+            !self.nested_vector_arrays.iter().any(|m|m.member_index==index)
         )
     }
     /// Copy proven byte-level fields from original source UBO packing into
@@ -189,6 +242,14 @@ impl UniformLayoutRebase{
         let mut output=vec![0u8;self.canonical_bytes as usize];
         for (i,((&from,&to),width)) in self.original_offsets.iter()
             .zip(&self.canonical_offsets).zip(&self.field_widths).enumerate(){
+            if let Some(array)=self.nested_vector_arrays.iter()
+                .find(|m|m.member_index==i){
+                if width.is_some(){
+                    return Err("source array conflicts with scalar/vector field".into());
+                }
+                array.repack(source,from as usize,&mut output,to as usize)?;
+                continue;
+            }
             if let Some(matrix)=self.matrix_fields.iter().find(|m|m.member_index==i){
                 if width.is_some(){
                     return Err("scalar/vector field conflicts with original matrix type".into());
@@ -569,6 +630,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
             original_bytes:source_bytes,canonical_bytes:*target_bytes,
             field_widths:source_widths,
             matrix_fields, // only compiled SPIR-V-authored MatrixStride + major order
+            nested_vector_arrays:Vec::new(), // source and canonical verified below
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
@@ -608,6 +670,7 @@ mod tests{
             original_bytes:12,canonical_bytes:32,
             field_widths:vec![Some(4),Some(4),Some(4)],
             matrix_fields:Vec::new(),
+            nested_vector_arrays:Vec::new(),
         };
         let source=(0u8..12).collect::<Vec<_>>();
         let target=layout.repack_original_bytes(&source).unwrap();
@@ -640,6 +703,7 @@ mod tests{
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:48,canonical_bytes:64,
             field_widths:vec![None],matrix_fields:vec![spec],
+            nested_vector_arrays:Vec::new(),
         };
         let data=plan.repack_original_bytes(&input).unwrap();
         for row in 0..3usize {
@@ -660,6 +724,7 @@ mod tests{
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:64,canonical_bytes:64,
             field_widths:vec![None],
+            nested_vector_arrays:Vec::new(),
             matrix_fields:vec![OriginalMatrixFieldRebase{
                 member_index:0,columns:4,rows:4,scalar_bytes:4,
                 original_stride:16,original_row_major:true,canonical_stride:16,
@@ -672,6 +737,7 @@ mod tests{
         assert_eq!(&fixed[16..20],&bytes[4..8]);
         assert_eq!(&fixed[4..8],&bytes[16..20]);
         let canonical=UniformLayoutRebase{
+            nested_vector_arrays:Vec::new(),
             matrix_fields:vec![OriginalMatrixFieldRebase{
                 original_row_major:false,..plan.matrix_fields[0].clone()
             }],..plan
@@ -684,7 +750,7 @@ mod tests{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:64,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![],
+            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],
         };
         assert!(plan.requires_repack());
         assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
@@ -700,9 +766,36 @@ mod tests{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:64,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![matrix],
+            field_widths:vec![None],matrix_fields:vec![matrix],nested_vector_arrays:vec![],
         };
         assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
+    }
+    #[test]
+    fn original_wrapped_vector_array_repack_preserves_each_compiled_element(){
+        let mut original=vec![0u8;48];
+        for n in 0..3u32{
+            for lane in 0..4u32{
+                let position=n as usize*16+lane as usize*4;
+                original[position..position+4].copy_from_slice(&(n*10+lane).to_le_bytes());
+            }
+        }
+        let plan=UniformLayoutRebase{
+            group:3,binding:0,original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:48,canonical_bytes:96,field_widths:vec![None],
+            matrix_fields:vec![],
+            nested_vector_arrays:vec![NestedVectorArrayRebase{
+                member_index:0,element_count:3,element_bytes:16,
+                original_stride:16,canonical_stride:32,
+                original_inner_offset:0,canonical_inner_offset:0
+            }],
+        };
+        let translated=plan.repack_original_bytes(&original).unwrap();
+        assert_eq!(&translated[0..16],&original[0..16]);
+        assert_eq!(&translated[32..48],&original[16..32]);
+        assert_eq!(&translated[64..80],&original[32..48]);
+        assert!(translated[16..32].iter().all(|&x|x==0));
+        assert!(plan.requires_repack());
+        assert!(plan.repack_original_bytes(&original[..47]).is_err());
     }
     #[test]
     fn source_matrix_stride_is_never_invented(){
@@ -710,7 +803,7 @@ mod tests{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:32,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![],
+            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],
         };
         assert!(plan.repack_original_bytes(&[0u8;32]).is_err());
         let bad=OriginalMatrixFieldRebase{
