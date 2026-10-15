@@ -60,6 +60,13 @@ jobs:
           cp "$RUNNER_TEMP"/vulkan/cs2-base-resources/shaders/vfx/*.vcs "$RUNNER_TEMP/original-source2-vcs/"
           export CS2_NATIVE_CORPUS="$RUNNER_TEMP/original-source2-vcs"
           export CS2_NATIVE_DICTIONARIES="$RUNNER_TEMP/dictionaries"
+          export SOURCE2_TRANSLATED_VULKAN_SHADERS="$RUNNER_TEMP/translated-source-shaders"
           cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib
           cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin vcs_naga_ir_validation
+          echo 'Independent original CS2 Vulkan shader binary validation:'
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq spirv-tools
+          spirv-val --target-env vulkan1.3 "$SOURCE2_TRANSLATED_VULKAN_SHADERS/csgo_lightmappedgeneric_ps.spv"
+          spirv-dis "$SOURCE2_TRANSLATED_VULKAN_SHADERS/csgo_lightmappedgeneric_ps.spv" -o "$SOURCE2_TRANSLATED_VULKAN_SHADERS/csgo_lightmappedgeneric_ps.spvasm"
+          printf 'SPIRV_VAL_ORIGINAL_LIGHTMAPPED_PIXEL_PASSED bytes=%s\n' "$(wc -c < "$SOURCE2_TRANSLATED_VULKAN_SHADERS/csgo_lightmappedgeneric_ps.spv")"
           cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin hdr_environment_shader_validation
