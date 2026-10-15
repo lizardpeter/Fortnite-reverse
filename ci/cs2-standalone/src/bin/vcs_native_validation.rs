@@ -5,6 +5,7 @@ use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_
 use cs2_importer::vcs_spirv::reflect_original_spirv;
 use cs2_importer::vcs_spirv_usage::trace_original_entrypoint;
 use cs2_importer::vcs_spirv_relocate::legalize_native_descriptor_types;
+use cs2_importer::vcs_gpu_pair::prepare_source_vulkan_pipeline;
 use cs2_importer::vcs_descriptor_types::{reflect_original_types,native_array_binding_candidates,NativeResourceShape};
 use cs2_importer::vcs_descriptor_contract::audit_original_vs_ps;
 use std::{collections::BTreeMap,fs::File,io::Read};
@@ -144,6 +145,29 @@ fn main()->Result<(),String>{
             contract.alias_coordinates,contract.incompatible_or_ambiguous_coordinates,
             contract.original_sets
         );
+    }
+    for (family,expected_descriptors,expected_relocations) in [
+        ("sky",6usize,0usize),
+        ("csgo_lightmappedgeneric",15usize,2usize)
+    ]{
+        let vs=Path::new(&physical).join(format!("{family}_vulkan_50_vs.vcs"));
+        let ps=Path::new(&physical).join(format!("{family}_vulkan_50_ps.vcs"));
+        let original=prepare_source_vulkan_pipeline(
+            &vs,&ps,Path::new(&dictionaries),(0,0),(0,0))?;
+        if original.descriptor_bindings.len()!=expected_descriptors ||
+            original.pixel_relocations.len()!=expected_relocations ||
+            original.source_contract.has_source_ambiguity(){
+            return Err(format!("real native original pair ABI did not close for {family}: {} slots {} moves",
+                original.descriptor_bindings.len(),original.pixel_relocations.len()));
+        }
+        if original.supports_direct_universal_admission(){
+            return Err("original Source2 GPU program admitted without source input providers".into());
+        }
+        println!("CERTIFIED_ORIGINAL_NATIVE_STAGE_PAIR {family} slots={} vertex_bytes={} pixel_bytes={} ps_moves={} anonymous={} ABI={:02x?}",
+            original.descriptor_bindings.len(),
+            original.vertex_spirv.len(),original.pixel_spirv.len(),
+            original.pixel_relocations.len(),original.anonymous_source_bindings(),
+            original.original_variable_abi_hash);
     }
     Ok(())
 }
