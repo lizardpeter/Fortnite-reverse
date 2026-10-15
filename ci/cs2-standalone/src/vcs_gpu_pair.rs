@@ -123,6 +123,123 @@ fn prepare(
         relocations:rewritten.relocations,
     })
 }
+/// Source shaders are first legalized *within* each stage. Original Vulkan
+/// stages may nevertheless disagree on a descriptor type at the SAME
+/// (set,binding). A Vulkan graphics pipeline cannot expose two incompatible
+/// types at one coordinate, even if the declarations are in different stages.
+///
+/// Preserve the vertex coordinate and move the pixel declaration(s) to the
+/// next unused binding within that same set. Only OpDecorate Binding words
+/// change; executable operations, types, stage IO and source file bytes are
+/// left intact. Actual resource identities/providers remain unresolved.
+fn reconcile_interstage_descriptor_types(
+    vertex:&[u8],pixel:&[u8]
+)->Result<(Vec<u8>,Vec<SourceDescriptorRelocation>),String>{
+    let v_ref=reflect_original_spirv(vertex)?;
+    let p_ref=reflect_original_spirv(pixel)?;
+    if !v_ref.incomplete_descriptors.is_empty() ||
+        !p_ref.incomplete_descriptors.is_empty() {
+        return Err("cannot reconcile incomplete native stage descriptors".into());
+    }
+    let vertex_types=vcs_descriptor_types::reflect_original_types(vertex,&v_ref)?;
+    let pixel_types=vcs_descriptor_types::reflect_original_types(pixel,&p_ref)?;
+    let mut taken=BTreeMap::<u32,std::collections::BTreeSet<u32>>::new();
+    let mut vertex_shapes=BTreeMap::<(u32,u32),NativeResourceShape>::new();
+    let mut pixel_shapes=BTreeMap::<(u32,u32),NativeResourceShape>::new();
+    for d in &vertex_types {
+        if d.shape==NativeResourceShape::Unknown {
+            return Err("unknown original vertex descriptor type".into());
+        }
+        taken.entry(d.set).or_default().insert(d.binding);
+        if vertex_shapes.insert((d.set,d.binding),d.shape.clone())
+            .is_some_and(|old|old!=d.shape) {
+            return Err("vertex stage still has conflicting descriptor types".into());
+        }
+    }
+    for d in &pixel_types {
+        if d.shape==NativeResourceShape::Unknown {
+            return Err("unknown original pixel descriptor type".into());
+        }
+        taken.entry(d.set).or_default().insert(d.binding);
+        if pixel_shapes.insert((d.set,d.binding),d.shape.clone())
+            .is_some_and(|old|old!=d.shape) {
+            return Err("pixel stage still has conflicting descriptor types".into());
+        }
+    }
+    let mut moved_coordinates=BTreeMap::<(u32,u32),u32>::new();
+    for ((set,binding),pixel_shape) in &pixel_shapes {
+        if vertex_shapes.get(&(*set,*binding))
+            .is_none_or(|vertex_shape|vertex_shape==pixel_shape) { continue; }
+        let occupied=taken.get_mut(set).expect("source descriptor set exists");
+        let next=occupied.iter().next_back().copied().unwrap_or(0)
+            .checked_add(1).filter(|next|*next<=65_535)
+            .ok_or("interstage native descriptor relocation exhausted binding range")?;
+        occupied.insert(next);
+        moved_coordinates.insert((*set,*binding),next);
+    }
+    if moved_coordinates.is_empty() { return Ok((pixel.to_vec(),Vec::new())); }
+    let changes=pixel_types.iter().filter_map(|d|
+        moved_coordinates.get(&(d.set,d.binding)).map(|new_binding|
+            SourceDescriptorRelocation{
+                variable_id:d.variable_id,set:d.set,
+                source_binding:d.binding,relocated_binding:*new_binding,
+                shape:d.shape.clone()
+            })
+    ).collect::<Vec<_>>();
+    let lookup=changes.iter().map(|d|(d.variable_id,(d.source_binding,d.relocated_binding)))
+        .collect::<BTreeMap<_,_>>();
+    if lookup.len()!=changes.len(){
+        return Err("interstage native descriptor variable ID repeated".into());
+    }
+    let mut words=pixel.chunks_exact(4).map(|w|
+        u32::from_le_bytes(w.try_into().expect("original SPIR-V word"))
+    ).collect::<Vec<_>>();
+    let mut count=BTreeMap::<u32,usize>::new();
+    let mut cursor=5usize;
+    while cursor<words.len(){
+        let instruction=words[cursor];
+        let size=(instruction>>16) as usize;
+        let end=cursor.checked_add(size)
+            .filter(|end|size>0&&*end<=words.len())
+            .ok_or("source SPIR-V instruction truncated during interstage legalization")?;
+        if instruction&0xffff==71 && size>=4 && words[cursor+2]==33 {
+            let id=words[cursor+1];
+            if let Some(&(source,target))=lookup.get(&id){
+                if words[cursor+3]!=source {
+                    return Err("source binding changed during interstage legalization".into());
+                }
+                words[cursor+3]=target;
+                *count.entry(id).or_default()+=1;
+            }
+        }
+        cursor=end;
+    }
+    if changes.iter().any(|d|count.get(&d.variable_id)!=Some(&1)){
+        return Err("source descriptor Binding decoration absent or duplicated".into());
+    }
+    let rewritten=words.into_iter().flat_map(u32::to_le_bytes).collect::<Vec<_>>();
+    let new_ref=reflect_original_spirv(&rewritten)?;
+    let new_types=vcs_descriptor_types::reflect_original_types(&rewritten,&new_ref)?;
+    if rewritten.len()!=pixel.len() || new_types.len()!=pixel_types.len() {
+        return Err("interstage relocation changed native shader extent or resources".into());
+    }
+    for old in &pixel_types {
+        let new=new_types.iter().find(|d|d.variable_id==old.variable_id)
+            .ok_or("interstage relocation removed original source descriptor")?;
+        let expected=moved_coordinates.get(&(old.set,old.binding))
+            .copied().unwrap_or(old.binding);
+        if new.set!=old.set || new.binding!=expected ||
+            new.shape!=old.shape || new.storage_class!=old.storage_class {
+            return Err("interstage relocation altered original source type or storage".into());
+        }
+        if vertex_shapes.get(&(new.set,new.binding))
+            .is_some_and(|shape|*shape!=new.shape) {
+            return Err("interstage Vulkan descriptor conflict was not resolved".into());
+        }
+    }
+    Ok((rewritten,changes))
+}
+
 /// Recover a physically source-selected vertex + pixel shader pair, adjust
 /// only incompatible source Binding decorations, and create a typed common
 /// coordinate table. Resource *values* are not yet assigned by this function.
@@ -133,11 +250,29 @@ pub fn prepare_source_vulkan_pipeline(
 )->Result<PreparedSourceGpuPipeline,String>{
     let vs=prepare(vertex_source,dictionaries,
         vertex_ids.0,vertex_ids.1,SourceGpuStage::Vertex)?;
-    let ps=prepare(pixel_source,dictionaries,
+    let mut ps=prepare(pixel_source,dictionaries,
         pixel_ids.0,pixel_ids.1,SourceGpuStage::Pixel)?;
     if vs.family!=ps.family || vs.model!=ps.model ||
         vs.original_variable_abi_hash!=ps.original_variable_abi_hash {
         return Err("selected original native VS and PS are not a compiler-ABI-compatible stage pair".into());
+    }
+    // Reconcile stage-crossing type aliases before constructing one Vulkan
+    // layout; never conflate this with source material/UBO provisioning.
+    let (pixel_code,cross_stage_moves)=
+        reconcile_interstage_descriptor_types(&vs.code,&ps.code)?;
+    ps.code=pixel_code;
+    for moved in cross_stage_moves {
+        if let Some(previous)=ps.relocations.iter_mut()
+            .find(|r|r.variable_id==moved.variable_id) {
+            if previous.set!=moved.set ||
+                previous.relocated_binding!=moved.source_binding ||
+                previous.shape!=moved.shape {
+                return Err("native interstage relocation provenance mismatch".into());
+            }
+            previous.relocated_binding=moved.relocated_binding;
+        }else{
+            ps.relocations.push(moved);
+        }
     }
     let vs_ref=reflect_original_spirv(&vs.code)?;
     let ps_ref=reflect_original_spirv(&ps.code)?;
@@ -198,6 +333,58 @@ pub fn prepare_source_vulkan_pipeline(
 #[cfg(test)]
 mod tests{
     use super::*;
+    fn fixture_spirv(execution:u32,dimension:u32,binding:u32)->Vec<u8>{
+        fn op(words:&mut Vec<u32>,opcode:u32,args:&[u32]){
+            words.push((((args.len()+1) as u32)<<16)|opcode);
+            words.extend_from_slice(args);
+        }
+        let mut words=vec![0x0723_0203,0x0001_0500,0,100,0];
+        op(&mut words,15,&[execution,21,0x6e69_614d,0x0000_7350]);
+        op(&mut words,25,&[5,3,dimension,0,0,0,1,0]);
+        op(&mut words,32,&[10,0,5]);
+        op(&mut words,59,&[10,31,0]);
+        op(&mut words,71,&[31,34,4]);
+        op(&mut words,71,&[31,33,binding]);
+        op(&mut words,54,&[1,21,0,2]);
+        op(&mut words,56,&[]);
+        words.into_iter().flat_map(u32::to_le_bytes).collect()
+    }
+    #[test]
+    fn cross_stage_2d_vs_3d_descriptor_conflict_is_relocated_without_rewriting_math(){
+        let vs=fixture_spirv(0,1,46);
+        let ps=fixture_spirv(4,2,46);
+        let (rewritten,moves)=reconcile_interstage_descriptor_types(&vs,&ps).unwrap();
+        assert_eq!(moves.len(),1);
+        assert_eq!((moves[0].set,moves[0].source_binding,moves[0].relocated_binding),(4,46,47));
+        let before=ps.chunks_exact(4).map(|w|u32::from_le_bytes(w.try_into().unwrap())).collect::<Vec<_>>();
+        let after=rewritten.chunks_exact(4).map(|w|u32::from_le_bytes(w.try_into().unwrap())).collect::<Vec<_>>();
+        let changed=before.iter().zip(&after).enumerate()
+            .filter_map(|(i,(a,b))|(a!=b).then_some(i)).collect::<Vec<_>>();
+        assert_eq!(changed.len(),1);
+        assert_eq!((before[changed[0]],after[changed[0]]),(46,47));
+        let v=reflect_original_spirv(&vs).unwrap();
+        let p=reflect_original_spirv(&rewritten).unwrap();
+        assert_eq!(v.descriptors[0].binding,46);
+        assert_eq!(p.descriptors[0].binding,47);
+    }
+    #[test]
+    fn identical_cross_stage_types_keep_the_source_binding(){
+        let vs=fixture_spirv(0,1,46);
+        let ps=fixture_spirv(4,1,46);
+        let (same,moves)=reconcile_interstage_descriptor_types(&vs,&ps).unwrap();
+        assert!(moves.is_empty());
+        assert_eq!(same,ps);
+    }
+    #[test]
+    fn interstage_remapping_cannot_collide_with_existing_native_bindings(){
+        let vs=fixture_spirv(0,1,47);
+        let ps=fixture_spirv(4,2,47);
+        let (modified,moves)=reconcile_interstage_descriptor_types(&vs,&ps).unwrap();
+        assert_eq!(moves[0].relocated_binding,48);
+        let reflect=reflect_original_spirv(&modified).unwrap();
+        assert_eq!(reflect.descriptors[0].binding,48);
+    }
+
     #[test]
     fn invalid_gpu_source_files_cannot_produce_synthetic_native_pipeline(){
         let dir=std::env::temp_dir();
