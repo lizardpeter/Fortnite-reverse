@@ -70,3 +70,5 @@ jobs:
 # Verify source shader UBO SSBO image2DArray and sampler GPU resource shapes
 
 # Measure original Source2 SPIR-V entrypoint reachable descriptor aliases, no synthetic default shaders
+
+# Verify original native Shader SPIR-V 2D/3D/cube conflict legalization by only rewriting Binding decorations
