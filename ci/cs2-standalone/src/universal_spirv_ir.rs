@@ -237,9 +237,23 @@ pub fn translate_source_spirv_with_ubo_rebase(
     // for THIS import. The canonical WGSL is strictly revalidated below.
     let relaxed=valid::ValidationFlags::all() &
         !valid::ValidationFlags::STRUCT_LAYOUTS;
-    let info=valid::Validator::new(relaxed,valid::Capabilities::all())
-        .validate(&source)
-        .map_err(|e|format!("source shader invalid outside source UBO layout: {e:?}"))?;
+    let info=match valid::Validator::new(relaxed,valid::Capabilities::all())
+        .validate(&source){
+        Ok(info)=>info,
+        Err(e)=>{
+            let mut context=Vec::new();
+            for (_,function) in source.functions.iter(){
+                for (id,op) in function.expressions.iter(){
+                    if (740..=750).contains(&id.index()){
+                        context.push(format!("expr{}={op:?}",id.index()));
+                    }
+                }
+            }
+            return Err(format!(
+                "source shader invalid outside source UBO layout: {e:?}; nearby original IR={context:?}"
+            ));
+        }
+    };
     let wgsl=back::wgsl::write_string(
         &source,&info,back::wgsl::WriterFlags::empty()
     ).map_err(|e|format!("source shader IR canonicalization failed: {e:?}"))?;
