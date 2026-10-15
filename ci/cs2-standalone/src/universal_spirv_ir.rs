@@ -168,6 +168,49 @@ fn uniform_structs(module:&naga::Module)
     }
     Ok(out)
 }
+/// Some source compilers deliberately overlay multiple uniform fields
+/// in one address span. Naga's WGSL type system cannot represent those
+/// overlapping members directly. Expand their *IR* offsets into disjoint
+/// regions while the source-byte offsets remain recorded in UniformLayoutRebase.
+/// Shader operations keep their original field indices, never flattened to
+/// guessed constants. Host providers must still explicitly rebase the data.
+fn normalize_overlapping_source_structs(module:&mut naga::Module)
+    ->Result<usize,String>
+{
+    let originals=module.types.iter().map(|(h,t)|(h,t.clone()))
+        .collect::<Vec<_>>();
+    let mut corrected=0usize;
+    for (handle,mut type_copy) in originals{
+        let naga::TypeInner::Struct{ref mut members,ref mut span}=
+            type_copy.inner else{continue;};
+        let mut end=0u32;
+        let mut changed=false;
+        for member in members{
+            let size=module.types[member.ty].inner.try_size(naga::proc::GlobalCtx{
+                types:&module.types,
+                constants:&module.constants,
+                overrides:&module.overrides,
+                global_expressions:&module.global_expressions,
+            }).ok_or("source struct member exceeds universal compiler size limit")?;
+            if member.offset<end{
+                member.offset=end;
+                corrected+=1;
+                changed=true;
+            }
+            end=member.offset.checked_add(size)
+                .ok_or("source compiler struct rebase size overflow")?;
+        }
+        if end>*span {*span=end;changed=true;}
+        if changed{
+            if module.types.get(&type_copy).is_some_and(|existing|existing!=handle){
+                return Err("source struct rebase collides with existing Naga type identity".into());
+            }
+            module.types.replace(handle,type_copy);
+        }
+    }
+    Ok(corrected)
+}
+
 /// IMPORTS the original shader operations into the common Naga IR and uses
 /// the ordinary WGSL writer to canonicalize layout. Unlike the strict path,
 /// this returns the *original and translated* UBO member offsets, so the
@@ -181,13 +224,14 @@ pub fn translate_source_spirv_with_ubo_rebase(
     if input.len()<20 || input.len()>MAX_SOURCE_SPV || input.len()%4!=0{
         return Err("source shader outside universal bounded SPIR-V range".into());
     }
-    let source=front::spv::parse_u8_slice(
+    let mut source=front::spv::parse_u8_slice(
         input,&front::spv::Options::default()
     ).map_err(|e|format!("source SPIR-V instruction import failed: {e:?}"))?;
     if source.entry_points.len()!=1 {
         return Err("ambiguous source-native shader entrypoint".into());
     }
     let layouts=uniform_structs(&source)?;
+    let _rewritten_overlapping_members=normalize_overlapping_source_structs(&mut source)?;
     // Naga cannot validate some author-approved Vulkan scalar-block
     // packing as WebGPU Uniform. Relax ONLY host-shareable struct layout
     // for THIS import. The canonical WGSL is strictly revalidated below.
