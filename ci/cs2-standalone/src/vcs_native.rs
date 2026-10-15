@@ -43,10 +43,21 @@ pub struct NativeStaticCombo {
     /// Original dynamic ID -> bytecode index. None = source uncompiled.
     pub dynamic:Vec<(i64,Option<usize>)>,
 }
+/// Original compiler-authoritative mixed-radix feature definition.
+/// The nComboIndexValue comes from the actual VCS, not from a VMAT guess.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct NativeComboParameter {
+    pub name:String,
+    pub min:i64,
+    pub max:i64,
+    pub stride:i64,
+}
 #[derive(Clone,Debug)]
 pub struct NativeVcsIndex {
     pub declared_metadata_bytes:usize,
     pub compiler_static_ids:usize,
+    pub static_parameters:Vec<NativeComboParameter>,
+    pub dynamic_parameters:Vec<NativeComboParameter>,
     pub compiler_dynamic_definitions:usize,
     pub compiler_variable_descriptions:usize,
     pub blocks:Vec<NativeByteCodeBlock>,
@@ -90,7 +101,78 @@ fn nonnegative(v:&Value,label:&str)->Result<usize,String>{
 fn relative(v:i64)->Result<usize,String>{
     usize::try_from(v).map_err(|_|"negative physical VCS bytecode offset".into())
 }
+/// Recover *only* the compiler's actual mixed-radix encoding. The caller
+/// must supply every non-singleton feature value, including runtime lighting
+/// choices. Unknown VMAT defaults are never implicitly set to zero.
+fn compiler_parameters(root:&Value,name:&str)->Result<Vec<NativeComboParameter>,String>{
+    let authored=source_array(root,name)?;
+    if authored.len()>128 {return Err("VCS combo definitions exceed bounded count".into());}
+    let mut parameters=Vec::with_capacity(authored.len());
+    let mut expected_stride=1i64;
+    let mut used=std::collections::BTreeSet::new();
+    for combo in authored {
+        let param=combo.field("m_szName").and_then(Value::as_text)
+            .ok_or("VCS authored combo has no compiler name")?;
+        if param.is_empty() || param.len()>128 || !used.insert(param) {
+            return Err("duplicate/invalid original VCS feature name".into());
+        }
+        let min=field_int(combo,"m_nMin")?;
+        let max=field_int(combo,"m_nMax")?;
+        let stride=field_int(combo,"m_nComboIndexValue")?;
+        let width=max.checked_sub(min).and_then(|n|n.checked_add(1))
+            .ok_or("VCS feature range overflow")?;
+        if width>8193 || stride!=expected_stride || stride<1 {
+            return Err(format!("VCS {param} original mixed-radix stride/range inconsistent"));
+        }
+        parameters.push(NativeComboParameter{
+            name:param.to_owned(),min,max,stride
+        });
+        expected_stride=expected_stride.checked_mul(width)
+            .ok_or("VCS native shader combo space exceeds i64")?;
+    }
+    Ok(parameters)
+}
+/// Calculate a *compiler-indexed* combo ID. None means the author/runtime
+/// has not supplied enough values, NOT that zero is a usable default.
+pub fn compiler_combo_id(
+    parameters:&[NativeComboParameter],
+    supplied:&std::collections::BTreeMap<String,i64>,
+)->Result<Option<i64>,String>{
+    let mut id=0i64;
+    for feature in parameters{
+        let value=if let Some(value)=supplied.get(&feature.name){
+            *value
+        }else if feature.min==feature.max{
+            feature.min
+        }else{return Ok(None)};
+        if value<feature.min || value>feature.max{
+            return Err(format!("Source2 {}={} outside compiler range {}..{}",
+                feature.name,value,feature.min,feature.max));
+        }
+        let digit=value.checked_sub(feature.min)
+            .ok_or("Source2 native shader combo value overflow")?;
+        id=id.checked_add(digit.checked_mul(feature.stride)
+            .ok_or("Source2 native combo stride overflow")?)
+            .ok_or("Source2 shader combo ID overflow")?;
+    }
+    Ok(Some(id))
+}
 impl NativeVcsIndex {
+    /// Resolve source-authored static and dynamic features to the exact
+    /// IDs that exist in the physical compiled stage. A disallowed/uncompiled
+    /// combination fails, even if mixed-radix arithmetic yields an ID.
+    pub fn resolve_compiler_values(
+        &self,
+        static_features:&std::collections::BTreeMap<String,i64>,
+        dynamic_features:&std::collections::BTreeMap<String,i64>,
+    )->Result<Option<(i64,i64)>,String>{
+        let Some(static_id)=compiler_combo_id(&self.static_parameters,static_features)?
+            else{return Ok(None)};
+        let Some(dynamic_id)=compiler_combo_id(&self.dynamic_parameters,dynamic_features)?
+            else{return Ok(None)};
+        self.source_selection(static_id,dynamic_id)?;
+        Ok(Some((static_id,dynamic_id)))
+    }
     /// Parse exact compiler-authored static IDs and bytecode frame offsets.
     /// source_len is the actual file's length, not its Resource header length.
     pub fn parse(metadata:&[u8],source_len:u64)->Result<Self,String>{
@@ -107,6 +189,8 @@ impl NativeVcsIndex {
         let root=if let Some(program)=document.root.field("m_programData") {
             program
         }else{&document.root};
+        let static_parameters=compiler_parameters(root,"m_staticComboArray")?;
+        let dynamic_parameters=compiler_parameters(root,"m_dynamicComboArray")?;
         let combos=source_array(root,"m_staticComboData")?;
         let ids=source_array(root,"m_staticComboIDs")?;
         let descriptors=source_array(root,"m_byteCodeData")?;
@@ -182,6 +266,7 @@ impl NativeVcsIndex {
         Ok(Self{
             declared_metadata_bytes:physical_metadata,
             compiler_static_ids:static_combos.len(),
+            static_parameters,dynamic_parameters,
             compiler_dynamic_definitions:source_array(root,"m_dynamicComboArray")?.len(),
             compiler_variable_descriptions:source_array(root,"m_variableDescriptionArray")?.len(),
             blocks,static_combos,
@@ -339,6 +424,54 @@ pub fn recover_original_gpu_program(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn source_compiler_stride_and_unprovided_lighting_modes_do_not_default(){
+        use std::collections::BTreeMap;
+        let definitions=vec![
+            NativeComboParameter{name:"D_FROM_VERTEX".into(),min:0,max:1,stride:1},
+            NativeComboParameter{name:"D_FROM_LIGHTMAP".into(),min:0,max:1,stride:2},
+        ];
+        let mut supplied=BTreeMap::new();
+        assert_eq!(compiler_combo_id(&definitions,&supplied).unwrap(),None);
+        supplied.insert("D_FROM_VERTEX".into(),0);
+        supplied.insert("D_FROM_LIGHTMAP".into(),1);
+        assert_eq!(compiler_combo_id(&definitions,&supplied).unwrap(),Some(2));
+        supplied.insert("D_FROM_LIGHTMAP".into(),8);
+        assert!(compiler_combo_id(&definitions,&supplied).is_err());
+    }
+    #[test]
+    fn exact_native_combo_id_must_exist_and_have_compiled_bytecode(){
+        use std::collections::BTreeMap;
+        let index=NativeVcsIndex{
+            declared_metadata_bytes:64,
+            compiler_static_ids:1,
+            compiler_dynamic_definitions:1,
+            compiler_variable_descriptions:0,
+            static_parameters:vec![NativeComboParameter{
+                name:"S_SOURCE".into(),min:0,max:1,stride:1
+            }],
+            dynamic_parameters:vec![NativeComboParameter{
+                name:"D_LIGHTMAP".into(),min:0,max:1,stride:1
+            }],
+            blocks:vec![NativeByteCodeBlock{
+                file_offset:64,compressed_size:16,
+                offsets:vec![0,32],original_hashes:vec![[1u8;16]],
+            }],
+            static_combos:vec![NativeStaticCombo{
+                static_id:1,block:Some(0),dynamic:vec![(1,Some(0))]
+            }],
+        };
+        let mut static_values=BTreeMap::new();
+        let mut dynamic_values=BTreeMap::new();
+        static_values.insert("S_SOURCE".into(),1);
+        dynamic_values.insert("D_LIGHTMAP".into(),1);
+        assert_eq!(index.resolve_compiler_values(&static_values,&dynamic_values).unwrap(),
+            Some((1,1)));
+        static_values.insert("S_SOURCE".into(),0);
+        assert!(index.resolve_compiler_values(&static_values,&dynamic_values).is_err());
+        static_values.clear();
+        assert_eq!(index.resolve_compiler_values(&static_values,&dynamic_values).unwrap(),None);
+    }
     #[test]
     fn native_zstd_source_frame_is_exact_without_dictionary(){
         let data=b"original source frame data";
