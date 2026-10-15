@@ -227,6 +227,103 @@ fn uniform_structs(module:&naga::Module)
     }
     Ok(out)
 }
+/// Decode the ORIGINAL compiled SPIR-V MatrixStride and RowMajor/ColMajor
+/// OpMemberDecorate declarations. Absent decorations stay absent: the shader
+/// compiler is not permitted to fill missing matrix ABI details from defaults.
+fn original_spirv_matrix_decorations(
+    code:&[u8]
+)->Result<std::collections::BTreeMap<(u32,u32,usize),(u32,bool)>,String>{
+    use std::collections::BTreeMap;
+    if code.len()<20||code.len()%4!=0||code.len()>MAX_SOURCE_SPV{
+        return Err("original SPIR-V matrix metadata input outside bound".into());
+    }
+    let words=code.chunks_exact(4).map(|w|
+        u32::from_le_bytes(w.try_into().unwrap())).collect::<Vec<_>>();
+    if words[0]!=0x0723_0203{return Err("source matrix decorations lack SPIR-V header".into());}
+    let mut groups=BTreeMap::new();
+    let mut bindings=BTreeMap::new();
+    let mut member_abi=BTreeMap::<(u32,u32),(Option<u32>,Option<bool>)>::new();
+    let mut structs=BTreeMap::<u32,Vec<u32>>::new();
+    let mut matrices=BTreeMap::<u32,()>::new();
+    let mut pointers=BTreeMap::<u32,(u32,u32)>::new();
+    let mut vars=Vec::<(u32,u32,u32)>::new();
+    let mut at=5;
+    while at<words.len(){
+        let op=words[at]&0xffff;
+        let size=(words[at]>>16) as usize;
+        if size==0||at.checked_add(size).is_none_or(|end|end>words.len()){
+            return Err("source matrix decorations contain truncated SPIR-V op".into());
+        }
+        let p=&words[at+1..at+size];
+        match op{
+            71 if p.len()>=3=>match p[1]{
+                33=>{bindings.insert(p[0],p[2]);},
+                34=>{groups.insert(p[0],p[2]);},
+                _=>{}
+            },
+            72 if p.len()>=3=>{
+                let slot=member_abi.entry((p[0],p[1])).or_default();
+                match p[2]{
+                    4=>slot.1=Some(true),  // RowMajor
+                    5=>slot.1=Some(false), // ColMajor
+                    7 if p.len()>=4=>slot.0=Some(p[3]), // MatrixStride
+                    _=>{}
+                }
+            },
+            24 if !p.is_empty()=>{matrices.insert(p[0],());},
+            30 if !p.is_empty()=>{structs.insert(p[0],p[1..].to_vec());},
+            32 if p.len()>=3=>{pointers.insert(p[0],(p[1],p[2]));},
+            59 if p.len()>=3=>vars.push((p[0],p[1],p[2])),
+            _=>{}
+        }
+        at+=size;
+    }
+    let mut result=BTreeMap::new();
+    for (ptr,var,storage) in vars{
+        if storage!=2{continue;} // Uniform only
+        let Some((ptr_storage,structure))=pointers.get(&ptr).copied() else{continue;};
+        if ptr_storage!=2{continue;}
+        let Some(members)=structs.get(&structure) else{continue;};
+        let (Some(&group),Some(&binding))=(groups.get(&var),bindings.get(&var))
+            else{continue;};
+        for (index,&ty) in members.iter().enumerate(){
+            if !matrices.contains_key(&ty){continue;}
+            let Some((Some(stride),Some(rowmajor)))=
+                member_abi.get(&(structure,index as u32)).copied()
+                else{continue;};
+            if stride==0{return Err("source matrix stride cannot be zero".into());}
+            if result.insert((group,binding,index),(stride,rowmajor)).is_some(){
+                return Err("ambiguous authored matrix stride for source descriptor".into());
+            }
+        }
+    }
+    Ok(result)
+}
+/// Extract only direct matrix members. Nested structs and matrix arrays are
+/// intentionally excluded pending recursive source ABI evidence.
+fn original_ir_matrix_shapes(module:&naga::Module)
+    ->Result<std::collections::BTreeMap<(u32,u32,usize),(u32,u32,u32)>,String>{
+    use naga::TypeInner;
+    let mut result=std::collections::BTreeMap::new();
+    let vecsize=|v:naga::VectorSize|->u32{
+        match v{naga::VectorSize::Bi=>2,naga::VectorSize::Tri=>3,naga::VectorSize::Quad=>4}
+    };
+    for (_,var) in module.global_variables.iter(){
+        if var.space!=naga::AddressSpace::Uniform{continue;}
+        let Some(location)=var.binding.as_ref() else{continue;};
+        let TypeInner::Struct{members,..}=&module.types[var.ty].inner else{continue;};
+        for (index,member) in members.iter().enumerate(){
+            if let TypeInner::Matrix{columns,rows,scalar}=&module.types[member.ty].inner{
+                result.insert(
+                    (location.group,location.binding,index),
+                    (vecsize(*columns),vecsize(*rows),scalar.width as u32)
+                );
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Some source compilers deliberately overlay multiple uniform fields
 /// in one address span. Naga's WGSL type system cannot represent those
 /// overlapping members directly. Expand their *IR* offsets into disjoint
@@ -356,6 +453,8 @@ pub fn translate_source_spirv_with_ubo_rebase(
         return Err("ambiguous source-native shader entrypoint".into());
     }
     let layouts=uniform_structs(&source)?;
+    let authored_matrix_abi=original_spirv_matrix_decorations(input)?;
+    let source_matrix_types=original_ir_matrix_shapes(&source)?;
     let _rewritten_overlapping_members=normalize_overlapping_source_structs(&mut source)?;
     let _repaired_row_major_multiplications=repair_source_row_major_matrix_multiply(&mut source)?;
     // Naga cannot validate some author-approved Vulkan scalar-block
@@ -395,6 +494,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     ).validate(&normalized)
         .map_err(|e|format!("canonical shader layout still invalid: {e:?}"))?;
     let normalized_layouts=uniform_structs(&normalized)?;
+    let canonical_matrix_types=original_ir_matrix_shapes(&normalized)?;
     if layouts.len()!=normalized_layouts.len() ||
         layouts.keys().any(|key|!normalized_layouts.contains_key(key)){
         return Err("canonical shader changed a source uniform descriptor identity".into());
@@ -409,13 +509,38 @@ pub fn translate_source_spirv_with_ubo_rebase(
             source_widths.iter().zip(target_widths).any(|(a,b)|a!=b){
             return Err("canonical shader changed source uniform field type/width identity".into());
         }
+        let mut matrix_fields=Vec::new();
+        for (&(set,slot,index),&(source_cols,source_rows,source_width)) in
+            source_matrix_types.iter()
+        {
+            if (set,slot)!=(group,binding){continue;}
+            let Some(&(stride,row_major))=authored_matrix_abi.get(&(set,slot,index))
+                else{continue;};
+            let Some(&(target_cols,target_rows,target_width))=
+                canonical_matrix_types.get(&(set,slot,index)) else{
+                    return Err("source Vulkan matrix member missing from canonical shader".into());
+                };
+            if (source_cols,source_rows,source_width)!=
+                (target_cols,target_rows,target_width){
+                return Err("canonical matrix type changed original shader dimensions".into());
+            }
+            let canonical_stride=if target_rows==2{
+                2*target_width
+            }else{4*target_width};
+            matrix_fields.push(OriginalMatrixFieldRebase{
+                member_index:index,
+                columns:source_cols,rows:source_rows,scalar_bytes:source_width,
+                original_stride:stride,original_row_major:row_major,
+                canonical_stride,
+            });
+        }
         let change=UniformLayoutRebase{
             group,binding,
             original_offsets:source_offsets,
             canonical_offsets:target_offsets.clone(),
             original_bytes:source_bytes,canonical_bytes:*target_bytes,
             field_widths:source_widths,
-            matrix_fields:Vec::new(), // admitted only with exact SPIR-V member decorations
+            matrix_fields, // only compiled SPIR-V-authored MatrixStride + major order
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
