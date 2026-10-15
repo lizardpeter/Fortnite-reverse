@@ -318,10 +318,29 @@ fn main()->Result<(),String>{
                                     reflect_original_spirv(&compiled_bytes)?;
                                 let descriptors=reflection.descriptors.iter().map(|r|
                                     (r.set,r.binding)).collect::<Vec<_>>();
+                                let authored_matrices=ir.uniform_layouts.iter()
+                                    .map(|ubo|ubo.matrix_fields.len()).sum::<usize>();
+                                let upload_ready=ir.uniform_layouts.iter().filter(|ubo|{
+                                    if ubo.original_bytes>16*1024*1024{return false;}
+                                    ubo.repack_original_bytes(
+                                        &vec![0;ubo.original_bytes as usize]
+                                    ).is_ok()
+                                }).count();
+                                let unknown_members=ir.uniform_layouts.iter()
+                                    .map(|ubo|{
+                                        ubo.field_widths.iter().enumerate().filter(
+                                            |(member,width)|width.is_none() &&
+                                                !ubo.matrix_fields.iter().any(
+                                                    |m|m.member_index==*member
+                                                )
+                                        ).count()
+                                    }).sum::<usize>();
                                 println!(
-                                    "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} ordinary_sampling_ops={} depth_compare_sampling_ops={} compiled_source_descriptor_slots={:?} original_ubo_layout_closed={} (not runtime uniform/image admission)",
+                                    "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} ordinary_sampling_ops={} depth_compare_sampling_ops={} compiled_source_descriptor_slots={:?} authored_matrix_strides={} structurally_repackable_uniform_buffers={}/{} unknown_field_layouts={} original_ubo_layout_closed={} (NOT actual runtime UBO provider admission)",
                                     ir.shader.generated_spirv.len(),lowered.aliases.len(),
-                                    ordinary,depth_compare,descriptors,ir.original_abi_closed
+                                    ordinary,depth_compare,descriptors,authored_matrices,
+                                    upload_ready,ir.uniform_layouts.len(),
+                                    unknown_members,ir.original_abi_closed
                                 );
                                 if ordinary==0 || depth_compare==0 {
                                     return Err("original Source2 lightmapped translation erased normal or shadow comparison sampling".into());
