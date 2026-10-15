@@ -117,6 +117,12 @@ fn source_sampling_dependencies(code:&[u8])->String{
         let ss=defs.get(&sampled).map(|(id,p)|format!("{id}:{:?}",p));
         let source_image=defs.get(&sampled)
             .filter(|(id,_)|*id==86).and_then(|(_,p)|p.get(2)).copied();
+        let source_sampler=defs.get(&sampled)
+            .filter(|(id,_)|*id==86).and_then(|(_,p)|p.get(3)).copied();
+        let sampler_load=source_sampler.and_then(|id|defs.get(&id));
+        let sampler_origin=sampler_load.and_then(|(op,p)|
+            if *op==61{p.get(2).copied()}else{None});
+        let sampler_binding=sampler_origin.and_then(|id|positions.get(&id));
         let image_load=source_image.and_then(|id|defs.get(&id));
         let origin=image_load.and_then(|(op,p)|if *op==61{p.get(2).copied()}else{None});
         let binding=origin.and_then(|id|positions.get(&id));
@@ -124,7 +130,9 @@ fn source_sampling_dependencies(code:&[u8])->String{
         let image_type=sampled_type.and_then(|id|defs.get(&id))
             .filter(|(op,_)|*op==27).and_then(|(_,p)|p.get(1)).copied();
         let type_def=image_type.and_then(|id|defs.get(&id));
-        outputs.push(format!("sample-op{op}:res{sampled} sampled={ss:?} image_load={:?} origin={origin:?} binding={binding:?} type={type_def:?}", image_load.map(|(o,p)|(*o,p.clone()))));
+        outputs.push(format!("sample-op{op}:res{sampled} sampled={ss:?} image_load={:?} image_origin={origin:?} image_binding={binding:?} sampler_load={:?} sampler_origin={sampler_origin:?} sampler_binding={sampler_binding:?} type={type_def:?}",
+            image_load.map(|(o,p)|(*o,p.clone())),
+            sampler_load.map(|(o,p)|(*o,p.clone()))));
     }
     outputs.sort();outputs.dedup();
     outputs.join("; ")
