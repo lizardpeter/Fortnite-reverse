@@ -104,3 +104,5 @@ jobs:
 # Rerun using original Source2 VPK overlay parser mirror, not stale importer version.
 
 # Verify authentic VCS v72 multi-hash originals, plus corrected suffix-only family identity test.
+
+# Cross-stage original Vulkan VS/PS descriptor legalization regression on PR #391
