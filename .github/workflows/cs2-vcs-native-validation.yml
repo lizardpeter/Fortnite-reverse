@@ -106,3 +106,5 @@ jobs:
 # Verify authentic VCS v72 multi-hash originals, plus corrected suffix-only family identity test.
 
 # Cross-stage original Vulkan VS/PS descriptor legalization regression on PR #391
+
+# Run exact physically compiled original GPU variant enumeration and compiler mixed-radix roundtrip
