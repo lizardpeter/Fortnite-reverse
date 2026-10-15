@@ -119,20 +119,37 @@ impl OriginalMatrixFieldRebase {
         }
         for column in 0..self.columns{
             for row in 0..self.rows{
-                let source_slot=if self.original_row_major{
-                    row*self.original_stride+column*self.scalar_bytes
+                let (major,minor)=if self.original_row_major{
+                    (row,column)
                 }else{
-                    column*self.original_stride+row*self.scalar_bytes
-                } as usize;
-                let target_slot=(column*self.canonical_stride+row*self.scalar_bytes) as usize;
+                    (column,row)
+                };
+                // The original SPIR-V MatrixStride is untrusted and may be
+                // close to u32::MAX. Check arithmetic before addressing bytes:
+                // release-mode wraparound must never silently copy the wrong
+                // source value into a light matrix.
+                let source_slot=(major as usize)
+                    .checked_mul(self.original_stride as usize)
+                    .and_then(|offset|offset.checked_add(
+                        minor as usize*self.scalar_bytes as usize))
+                    .ok_or("source Vulkan matrix stride address overflow")?;
+                let target_slot=(column as usize)
+                    .checked_mul(self.canonical_stride as usize)
+                    .and_then(|offset|offset.checked_add(
+                        row as usize*self.scalar_bytes as usize))
+                    .ok_or("universal matrix stride address overflow")?;
                 let start=source_at.checked_add(source_slot)
                     .ok_or("source matrix address overflow")?;
                 let dst=target_at.checked_add(target_slot)
                     .ok_or("canonical matrix address overflow")?;
                 let size=self.scalar_bytes as usize;
-                let input=original.get(start..start+size)
+                let input_end=start.checked_add(size)
+                    .ok_or("source matrix active scalar address overflow")?;
+                let target_end=dst.checked_add(size)
+                    .ok_or("canonical matrix active scalar address overflow")?;
+                let input=original.get(start..input_end)
                     .ok_or("source Vulkan matrix field extent unavailable")?;
-                let output=target.get_mut(dst..dst+size)
+                let output=target.get_mut(dst..target_end)
                     .ok_or("canonical matrix field extent unavailable")?;
                 output.copy_from_slice(input);
             }
@@ -144,7 +161,18 @@ impl OriginalMatrixFieldRebase {
 impl UniformLayoutRebase{
     pub fn requires_repack(&self)->bool{
         self.original_offsets!=self.canonical_offsets ||
-        self.original_bytes!=self.canonical_bytes
+        self.original_bytes!=self.canonical_bytes ||
+        // Identical buffer extents and field offsets do NOT mean identical
+        // bytes when Source2 authored RowMajor or noncanonical MatrixStride.
+        self.matrix_fields.iter().any(|m|
+            m.original_row_major || m.original_stride!=m.canonical_stride
+        ) ||
+        // An unrecognized aggregate or array is never ABI-certified just
+        // because its original and canonical struct spans happen to match.
+        self.field_widths.iter().enumerate().any(|(index,width)|
+            width.is_none() &&
+            !self.matrix_fields.iter().any(|m|m.member_index==index)
+        )
     }
     /// Copy proven byte-level fields from original source UBO packing into
     /// the generated universal shader's canonical buffer layout. Unknown
@@ -624,6 +652,57 @@ mod tests{
         assert_eq!(data.len(),64);
         assert_eq!(&data[12..16],&[0,0,0,0]);
         assert!(plan.repack_original_bytes(&input[..47]).is_err());
+    }
+    #[test]
+    fn row_major_matrix_requires_repack_even_when_byte_size_and_offsets_match(){
+        let plan=UniformLayoutRebase{
+            group:1,binding:7,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:64,canonical_bytes:64,
+            field_widths:vec![None],
+            matrix_fields:vec![OriginalMatrixFieldRebase{
+                member_index:0,columns:4,rows:4,scalar_bytes:4,
+                original_stride:16,original_row_major:true,canonical_stride:16,
+            }],
+        };
+        assert!(plan.requires_repack());
+        let bytes=(0u8..64).collect::<Vec<_>>();
+        let fixed=plan.repack_original_bytes(&bytes).unwrap();
+        assert_eq!(&fixed[..4],&bytes[..4]);
+        assert_eq!(&fixed[16..20],&bytes[4..8]);
+        assert_eq!(&fixed[4..8],&bytes[16..20]);
+        let canonical=UniformLayoutRebase{
+            matrix_fields:vec![OriginalMatrixFieldRebase{
+                original_row_major:false,..plan.matrix_fields[0].clone()
+            }],..plan
+        };
+        assert!(!canonical.requires_repack());
+    }
+    #[test]
+    fn unresolved_original_uniform_aggregate_must_not_be_certified(){
+        let plan=UniformLayoutRebase{
+            group:0,binding:0,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:64,canonical_bytes:64,
+            field_widths:vec![None],matrix_fields:vec![],
+        };
+        assert!(plan.requires_repack());
+        assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
+    }
+    #[test]
+    fn malicious_original_matrix_stride_never_wraps_into_valid_data(){
+        let matrix=OriginalMatrixFieldRebase{
+            member_index:0,columns:4,rows:4,scalar_bytes:4,
+            original_stride:u32::MAX,original_row_major:true,
+            canonical_stride:16,
+        };
+        let plan=UniformLayoutRebase{
+            group:0,binding:0,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:64,canonical_bytes:64,
+            field_widths:vec![None],matrix_fields:vec![matrix],
+        };
+        assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
     }
     #[test]
     fn source_matrix_stride_is_never_invented(){
