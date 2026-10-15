@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap,BTreeSet};
 use crate::{material::SourcePacks,texture::{self,Metadata}};
 use neutral_scene::NeutralTexture;
+use crate::vtex_native_array::{self,SourceNativeVtexArray};
 
 /// Names are source-defined renderer uniforms (v8.X). Not file substring
 /// heuristics; match the exact original source filename without extension.
@@ -122,6 +123,64 @@ pub fn audit(packs:&SourcePacks<'_>,names:&[String],version:[i64;2])->LightmapAu
     out.complete=out.errors.is_empty() && out.matching_atlas_layout
         && out.channels.len()==required.len();
     out
+}
+/// Three/five individually source-named typed GPU sampled 2D arrays. These
+/// are *not* generic lightmaps and are deliberately NOT RGBA8 lighting maps.
+/// The shared GPU backend may upload all source blocks without losing HDR or
+/// changing the original shadow-mask representation. Runtime shading still
+/// requires an original or source-equivalent complete Source2 lightmap program.
+#[derive(Clone,Debug)]
+pub struct SourceNativeLightmapAtlas{
+    pub version:[i64;2],
+    pub channels:BTreeMap<String,SourceNativeVtexArray>,
+    pub width:u32,
+    pub height:u32,
+    pub layers:u16,
+    pub total_native_gpu_bytes:usize,
+}
+/// Fully decode exact authored mip compression into original GPU compressed
+/// BCn bitstreams. No float->RGBM, BC6H->RGBA8, or synthetic shadows.
+/// All requested source slots are mandatory and failed decode fails closed.
+pub fn decode_native_atlas(
+    packs:&SourcePacks<'_>,audit:&LightmapAudit
+)->Result<SourceNativeLightmapAtlas,String>{
+    if !audit.complete {
+        return Err(format!(
+            "cannot provision incomplete Source2 lightmap v{}.{}: {}",
+            audit.version[0],audit.version[1],audit.errors.join("; ")
+        ));
+    }
+    let mut channels=BTreeMap::new();
+    let mut total_native_gpu_bytes=0usize;
+    let mut geometry=None;
+    for slot in &audit.expected_channels {
+        let input=audit.channels.get(*slot)
+            .ok_or_else(||format!("Source2 original required lightmap {slot} missing"))?;
+        let bytes=packs.read(&input.path)?;
+        let decoded=vtex_native_array::decode_source_native_vtex_array(
+            &bytes,&input.path)?;
+        let dims=(decoded.width,decoded.height,decoded.layers);
+        if dims!=(input.meta.width as u32,input.meta.height as u32,input.meta.depth){
+            return Err(format!("source-native lightmap VTEX changed after audit: {}",input.path));
+        }
+        if let Some(previous)=geometry{
+            if previous!=dims {
+                return Err("Source2 native baked-lighting array dimensions differ".into());
+            }
+        }else{geometry=Some(dims);}
+        total_native_gpu_bytes=total_native_gpu_bytes
+            .checked_add(decoded.original_gpu_bytes())
+            .ok_or("Source2 native atlas GPU bytes overflow")?;
+        if channels.insert((*slot).to_owned(),decoded).is_some(){
+            return Err(format!("duplicate native baked-lighting source slot {slot}"));
+        }
+    }
+    let (width,height,layers)=geometry.ok_or(
+        "original baked-lighting channel inventory is empty"
+    )?;
+    Ok(SourceNativeLightmapAtlas{
+        version:audit.version,channels,width,height,layers,total_native_gpu_bytes,
+    })
 }
 /// Recover original GPU-ready BC blocks and RGBA pixels, in source array layer
 /// order. A later Source 2 shader program must consume all required channels
