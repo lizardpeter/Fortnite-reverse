@@ -2,6 +2,7 @@
 //! outside Git and are retrieved from source-verified Actions artifacts.
 use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
+use cs2_importer::vcs_spirv::reflect_original_spirv;
 use std::{collections::BTreeMap,fs::File,io::Read};
 fn main()->Result<(),String>{
     let root=Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -46,6 +47,25 @@ fn main()->Result<(),String>{
         if result.format!=expected_format||result.bytecode.len()!=expected_len{
             return Err(format!("incorrect original source GPU decode {filename}: {:?} {}",
                 result.format,result.bytecode.len()));
+        }
+        if result.format==NativeFormat::SpirV{
+            let original=reflect_original_spirv(&result.bytecode)?;
+            let actual_sets=original.descriptors.iter()
+                .map(|descriptor|descriptor.set)
+                .collect::<std::collections::BTreeSet<_>>();
+            let expected_sets=if filename.starts_with("sky_"){
+                std::collections::BTreeSet::from([1u32])
+            }else{
+                std::collections::BTreeSet::from([1u32,3u32,4u32])
+            };
+            if actual_sets!=expected_sets ||
+                original.entry_points.len()!=1 ||
+                original.entry_points[0].stage!=4{
+                return Err(format!("incorrect real original shader descriptor ABI for {filename}: {actual_sets:?} vs {expected_sets:?}"));
+            }
+            println!("CERTIFIED_ORIGINAL_SPIRV_ABI {filename} entry={} descriptor_declarations={} sets={:?} incomplete={}",
+                original.entry_points[0].name,original.descriptors.len(),
+                actual_sets,original.incomplete_descriptors.len());
         }
         println!("CERTIFIED_ORIGINAL_GPU_CODE {filename} static={} dynamic={} type={:?} bytes={} compiler_hash={:02x?}",
             result.source_static_id,result.source_dynamic_id,result.format,
