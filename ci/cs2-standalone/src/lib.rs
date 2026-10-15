@@ -7,6 +7,7 @@
 pub mod kv3;
 pub mod vcs_native;
 pub mod vcs_spirv;
+pub mod vcs_descriptor_contract;
 pub mod entity;
 pub mod lighting;
 pub mod material;
