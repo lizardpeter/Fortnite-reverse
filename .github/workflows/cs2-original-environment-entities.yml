@@ -42,3 +42,5 @@ jobs:
           name: cs2-original-environment-entities
           path: ${{ runner.temp }}/source_environment_report.txt
           retention-days: 14
+
+# Assert exact Christmas sky tint/brightness and gradient fog source values in Rust
