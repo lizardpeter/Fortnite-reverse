@@ -110,3 +110,16 @@ pub struct NeutralTextureMip{pub width:u32,pub height:u32,pub rgba:Vec<u8>}
 
 #[derive(Clone,Debug)]
 pub struct NeutralSky {pub faces:[NeutralTexture;6],pub intensity:f32,pub cycle:Option<()>}
+
+/// Mirror of the current shared neutral-scene fog contract for isolated CI.
+#[derive(Clone,Copy,Debug)]
+pub struct NeutralFog{
+    pub color:[f32;3],pub density:f32,pub base_height:f32,
+    pub height_falloff:f32,pub max_opacity:f32,
+    pub sun:Option<NeutralSunFog>,
+}
+#[derive(Clone,Copy,Debug)]
+pub struct NeutralSunFog{
+    pub direction:[f32;3],pub color:[f32;3],
+    pub max_opacity:f32,pub inner_angle:f32,pub outer_angle:f32,
+}
