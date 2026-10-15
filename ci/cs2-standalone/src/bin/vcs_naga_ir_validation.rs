@@ -140,6 +140,32 @@ fn main()->Result<(),String>{
                 println!("ORIGINAL_SOURCE2_MIXED_DREF_PHYSICAL_OPCODES {}",
                     physical_sample_instruction_evidence(code));
             }
+            if family=="csgo_lightmappedgeneric" && stage=="ps"{
+                let words=spirv_webgpu_transform::u8_slice_to_u32_vec(code);
+                let mut corrections=None;
+                match spirv_webgpu_transform::drefsplitter(&words,&mut corrections){
+                    Ok(rewritten)=>{
+                        let new_bytes=spirv_webgpu_transform::u32_slice_to_u8_vec(&rewritten);
+                        println!(
+                            "SOURCE2_DREF_SPLIT_PHYSICAL {family} original_words={} rewritten_words={} relocations_needed={}",
+                            words.len(),rewritten.len(),corrections.is_some()
+                        );
+                        match cs2_importer::universal_spirv_ir::
+                            translate_source_spirv_with_ubo_rebase(&new_bytes){
+                            Ok(translated)=>println!(
+                                "CERTIFIED_SOURCE2_DREF_SPLIT_UNIVERSAL {family} executable_spirv_words={} original_ubo_layout_closed={} source_ubos={}",
+                                translated.shader.generated_spirv.len(),
+                                translated.original_abi_closed,translated.uniform_layouts.len()
+                            ),
+                            Err(e)=>println!(
+                                "SOURCE2_DREF_SPLIT_NAGA_BLOCKER {family}: {e}"
+                            ),
+                        }
+                    },
+                    Err(_)=>println!("SOURCE2_DREF_SPLIT_TRANSFORM_FAILED {family}"),
+                }
+            }
+
 
             match cs2_importer::universal_spirv_ir::
                 translate_source_spirv_with_ubo_rebase(code){
