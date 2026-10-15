@@ -103,12 +103,12 @@ fn prepare(
         return Err("source-native Vulkan stage pair requires original SPIR-V".into());
     }
     let reflection=reflect_original_spirv(&decoded.bytecode)?;
-    let model=match stage {
+    let expected_execution_model=match stage {
         SourceGpuStage::Vertex=>0,
         SourceGpuStage::Pixel=>4
     };
     if reflection.entry_points.len()!=1 ||
-        reflection.entry_points[0].stage!=model {
+        reflection.entry_points[0].stage!=expected_execution_model {
         return Err("selected original VCS shader stage is not the required VS or PS".into());
     }
     let rewritten=legalize_native_descriptor_types(
