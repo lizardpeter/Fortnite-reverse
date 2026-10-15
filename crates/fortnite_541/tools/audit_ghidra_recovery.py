@@ -18,7 +18,7 @@ def audit(root: Path, save: bool = True) -> dict:
         raise ValueError("First-pass unresolved ledger not consistent with original status")
     successfully_recovered = {}
     mode_stats = {}
-    for mode in ("fast_v1", "split_v1", "full_v1"):
+    for mode in ("fast_v1", "split_v1", "full_v1", "bounded_v1"):
         attempted = set()
         counts = dict(attempted=0, decompiled=0, decompiler_failed=0, missing_function=0)
         folder = root / "recovery" / mode
@@ -44,6 +44,16 @@ def audit(root: Path, save: bool = True) -> dict:
                     status = row.get("status")
                     if status not in ("decompiled", "missing_function", "decompiler_failed"):
                         raise ValueError(f"Invalid recovery outcome for {idx}")
+                    if mode == "bounded_v1":
+                        if row.get("recovery_mode") != "bounded_v1":
+                            raise ValueError(f"Unrecognized bounded recovery evidence mode: {idx}")
+                        if row.get("original_pdata_executable") is not True:
+                            raise ValueError(f"Unmapped/non-executable original .pdata recovered: {idx}")
+                        if status == "decompiled" and (
+                            row.get("retail_entry_instruction_decoded") is not True or
+                            row.get("exact_original_pdata_body_applied") is not True
+                        ):
+                            raise ValueError(f"Original bounded C lacks exact executable entry/body: {idx}")
                     if status == "decompiled":
                         if not isinstance(row.get("c"), str) or not row["c"].strip():
                             raise ValueError(f"Recovered function {idx} has no actual C pseudocode")
