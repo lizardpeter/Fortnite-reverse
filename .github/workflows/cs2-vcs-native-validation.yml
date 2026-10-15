@@ -127,3 +127,5 @@ jobs:
 # Test full source-to-canonical UBO field repack plans and reject unknown strides without guessed values
 
 # Inspect exact original Source2 mixed Dref shader opcodes before universal shader rewrites
+
+# Direct source-verified lightmapped PS comparison sampler split and Naga roundtrip diagnostic
