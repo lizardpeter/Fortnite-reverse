@@ -326,3 +326,64 @@ pub fn split_original_mixed_comparison_arrays(code:&[u8])
         aliases,rewritten_dref_samples:comparison_records.len(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn op(words:&mut Vec<u32>,code:u32,p:&[u32]){
+        words.push((((p.len()+1) as u32)<<16)|code);
+        words.extend_from_slice(p);
+    }
+    #[test]
+    fn original_compare_sample_gets_its_own_image_and_sampler_arrays(){
+        // Small physical SPIR-V SSA graph with one ordinary sample and one
+        // depth-reference sample sharing original 2048-style descriptor
+        // array semantics. No invented shadow math or changing sample op.
+        let mut words=vec![MAGIC,0x0001_0500,0,200,0];
+        op(&mut words,71,&[13,34,4]);
+        op(&mut words,71,&[13,33,46]);
+        op(&mut words,71,&[14,34,4]);
+        op(&mut words,71,&[14,33,29]);
+        op(&mut words,21,&[1,32,0]);
+        op(&mut words,43,&[1,2,4]);
+        op(&mut words,22,&[3,32]);
+        op(&mut words,25,&[4,3,1,2,0,0,1,0]);
+        op(&mut words,26,&[5]);
+        op(&mut words,27,&[6,4]);
+        op(&mut words,28,&[7,4,2]);
+        op(&mut words,28,&[8,5,2]);
+        op(&mut words,32,&[9,0,7]);
+        op(&mut words,32,&[10,0,8]);
+        op(&mut words,32,&[11,0,4]);
+        op(&mut words,32,&[12,0,5]);
+        op(&mut words,59,&[9,13,0]);
+        op(&mut words,59,&[10,14,0]);
+        op(&mut words,54,&[1,99,0,100]);
+        op(&mut words,65,&[11,20,13,2]);
+        op(&mut words,61,&[4,21,20]);
+        op(&mut words,65,&[12,22,14,2]);
+        op(&mut words,61,&[5,23,22]);
+        op(&mut words,86,&[6,24,21,23]);
+        op(&mut words,87,&[3,25,24,1]);
+        op(&mut words,65,&[11,30,13,2]);
+        op(&mut words,61,&[4,31,30]);
+        op(&mut words,65,&[12,32,14,2]);
+        op(&mut words,61,&[5,33,32]);
+        op(&mut words,86,&[6,34,31,33]);
+        op(&mut words,90,&[3,35,34,1,1,2]);
+        op(&mut words,56,&[]);
+        let original=words.iter().flat_map(|w|w.to_le_bytes()).collect::<Vec<_>>();
+        let lowered=split_original_mixed_comparison_arrays(&original).unwrap();
+        assert_eq!(lowered.rewritten_dref_samples,1);
+        assert_eq!(lowered.aliases.len(),2);
+        assert!(lowered.aliases.iter().any(|x|
+            x.original_binding==46&&x.alias_binding==47&&x.is_comparison_image));
+        assert!(lowered.aliases.iter().any(|x|
+            x.original_binding==29&&x.alias_binding==48&&!x.is_comparison_image));
+        let (_,records)=decode(&lowered.spirv).unwrap();
+        assert!(records.iter().any(|x|x.op==87)); // preserved ordinary sample
+        assert!(records.iter().any(|x|x.op==90)); // preserved DREF sample
+        let dref=records.iter().find(|r|r.op==86&&r.p.get(1)==Some(&34)).unwrap();
+        assert_ne!(dref.p[0],6); // DREF typed separately
+    }
+}
