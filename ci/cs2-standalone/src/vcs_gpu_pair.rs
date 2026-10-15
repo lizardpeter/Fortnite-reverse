@@ -330,6 +330,64 @@ pub fn prepare_source_vulkan_pipeline(
         source_contract:contract,
     })
 }
+/// A source-authored material's physically compiled Vulkan stage frontier.
+#[derive(Debug)]
+pub struct OriginalMaterialNativeGpuSelection {
+    pub vertex:crate::vcs_compiled_selection::PhysicalCompilerFrontier,
+    pub pixel:crate::vcs_compiled_selection::PhysicalCompilerFrontier,
+    /// Present only after exact physical VMAT/runtime combo closure.
+    /// The source Vulkan descriptors, uniforms, vertex inputs and material
+    /// textures still require separate runtime certification.
+    pub prepared:Option<PreparedSourceGpuPipeline>,
+}
+/// Recover the ORIGINAL source Vulkan programs only when the material and
+/// runtime determine physically existing compiler combo IDs. Incomplete
+/// authored values never silently become static/dynamic ID zero.
+pub fn prepare_compiled_material_vulkan_pipeline(
+    material:&crate::material::Material,
+    vertex_source:&Path,pixel_source:&Path,dictionaries:&Path,
+    vertex_dynamic:&BTreeMap<String,i64>,
+    pixel_dynamic:&BTreeMap<String,i64>,
+)->Result<OriginalMaterialNativeGpuSelection,String>{
+    use crate::vcs_compiled_selection::matching_physical_compiled_variants;
+    let family=material.shader.rsplit('/').next()
+        .and_then(|name|name.strip_suffix(".vfx"))
+        .ok_or("VMAT has no original .vfx shader family")?;
+    let (vs_family,vs_model)=physical_source_identity(
+        vertex_source,SourceGpuStage::Vertex)?;
+    let (ps_family,ps_model)=physical_source_identity(
+        pixel_source,SourceGpuStage::Pixel)?;
+    if !family.eq_ignore_ascii_case(&vs_family) ||
+        vs_family!=ps_family || vs_model!=ps_model{
+        return Err("original native VCS stage pair does not match VMAT shader family".into());
+    }
+    let vs_index=vcs_native::inspect_original_vcs_stage(vertex_source)?;
+    let ps_index=vcs_native::inspect_original_vcs_stage(pixel_source)?;
+    if vs_index.original_variable_abi_hash!=ps_index.original_variable_abi_hash{
+        return Err("source Vulkan VS/PS have different original compiler variable ABI".into());
+    }
+    let vertex=matching_physical_compiled_variants(
+        &vs_index,&material.switches,vertex_dynamic,16)?;
+    let pixel=matching_physical_compiled_variants(
+        &ps_index,&material.switches,pixel_dynamic,16)?;
+    let selected=match(
+        vertex.unique_fully_constrained(),
+        pixel.unique_fully_constrained(),
+    ){
+        (Some(vs),Some(ps))=>Some((
+            (vs.static_id,vs.dynamic_id),(ps.static_id,ps.dynamic_id)
+        )),
+        _=>None,
+    };
+    let prepared=match selected{
+        Some((vs,ps))=>Some(prepare_source_vulkan_pipeline(
+            vertex_source,pixel_source,dictionaries,vs,ps
+        )?),
+        None=>None,
+    };
+    Ok(OriginalMaterialNativeGpuSelection{vertex,pixel,prepared})
+}
+
 #[cfg(test)]
 mod tests{
     use super::*;
