@@ -74,3 +74,5 @@ jobs:
 # Verify original native Shader SPIR-V 2D/3D/cube conflict legalization by only rewriting Binding decorations
 
 # Verify original Source2 source-ABI-matched Vulkan VS/PS stage pair and legalized image types
+
+# Retry original stage-pair compiler ABI validation after execution-model variable shadow fix
