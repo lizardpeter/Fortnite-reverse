@@ -5,6 +5,7 @@ on:
     paths:
       - ci/cs2-standalone/src/bin/vcs_naga_ir_validation.rs
       - ci/cs2-standalone/src/universal_spirv_ir.rs
+      - ci/cs2-standalone/src/vcs_mixed_image_lowering.rs
       - ci/cs2-standalone/Cargo.toml
       - .github/workflows/cs2-original-shader-ir-fast.yml
   workflow_dispatch:
