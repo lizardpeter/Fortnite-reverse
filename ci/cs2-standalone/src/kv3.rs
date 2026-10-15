@@ -269,7 +269,16 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     if end2>bytes.len() {return Err("truncated KV3 compressed buffers".into());}
     let consumed1=if compression==0 {u1}else{c1};
     let consumed2=if compression==0 {u2}else{c2};
-    let remaining_compressed=compressed_total.checked_sub(consumed1)
+    // Some older uncompressed Source 2 KV3 producers leave this
+    // compressed-size aggregate unset. Their raw third lane is still fully
+    // determined by source blob lengths. Compressed Resources MUST provide
+    // the encoded aggregate; never guess missing Zstd/LZ4 byte extents.
+    let aggregate=if compression==0 && compressed_total==0 {
+        consumed1.checked_add(consumed2)
+            .and_then(|n|n.checked_add(binary_blob_bytes))
+            .ok_or("KV3 uncompressed lane extent overflow")?
+    } else {compressed_total};
+    let remaining_compressed=aggregate.checked_sub(consumed1)
         .and_then(|v|v.checked_sub(consumed2))
         .ok_or("KV3 advertised compressed buffers exceed total")?;
     if blocks==0 && remaining_compressed!=0 {
