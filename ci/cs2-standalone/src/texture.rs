@@ -218,6 +218,82 @@ pub fn decode(file:&[u8],name:&str)->Result<NeutralTexture,String>{
         mips:Vec::new(),compressed,
     })
 }
+/// An original Source 2 2D texture array contains all depth slices at
+/// each mip level, stored smallest mip first. The per-mip compression length
+/// covers the ENTIRE array, not just one slice. Keep each source layer distinct;
+/// the atlas chart/layer index comes from the compiled mesh/shader contract.
+pub const SOURCE_ARRAY_FLAG:u16=0x0040;
+pub const SOURCE_VOLUME_FLAG:u16=0x0020;
+pub fn decode_2d_array_layers(file:&[u8],name:&str)->Result<Vec<NeutralTexture>,String>{
+    let h=inspect(file)?;
+    if h.flags&SOURCE_CUBE_FLAG!=0 || h.flags&SOURCE_VOLUME_FLAG!=0 {
+        return Err("Source 2 cubemap/volume cannot be decoded as lightmap 2D array".into());
+    }
+    let count=h.depth as usize;
+    if count>256{return Err("Source 2 array exceeds 256 slices".into());}
+    if count>1 && h.flags&SOURCE_ARRAY_FLAG==0 {
+        return Err("VTEX multiple depth slices without TEXTURE_ARRAY flag".into());
+    }
+    if h.format==19 {
+        return Err("Source2 BC6H floating-point HDR cannot be losslessly represented as RGBA8 lightmap".into());
+    }
+    let mut pos=h.data_offset;
+    for level in (1..h.mips as usize).rev(){
+        let w=(h.width as usize>>level).max(1);
+        let height=(h.height as usize>>level).max(1);
+        let exact=mip_size(w,height,h.format)?.checked_mul(count)
+            .ok_or("VTEX array lower mip extent overflow")?;
+        let stored=h.mip_disk_sizes.get(level).copied().map(|x|x as usize).unwrap_or(exact);
+        if stored>exact {return Err("VTEX array lower mip exceeds uncompressed size".into());}
+        pos=pos.checked_add(stored).ok_or("VTEX array mip skip overflow")?;
+    }
+    let width=h.width as usize;let height=h.height as usize;
+    let per_slice=mip_size(width,height,h.format)?;
+    let exact=per_slice.checked_mul(count).ok_or("VTEX array total extent overflow")?;
+    if exact>512*1024*1024 {return Err("VTEX source array exceeds 512MiB per mip guard".into());}
+    let stored=h.mip_disk_sizes.first().copied().map(|x|x as usize).unwrap_or(exact);
+    if stored>exact{return Err("VTEX source array stored payload exceeds uncompressed size".into());}
+    let data=file.get(pos..pos.checked_add(stored).ok_or("VTEX source array offset overflow")?)
+        .ok_or("VTEX source array mip data truncated")?;
+    let raw=if stored==exact {data.to_vec()} else {
+        match h.mip_compression {
+            1=>lz4_flex::block::decompress(data,exact)
+                .map_err(|e|format!("Source 2 array LZ4: {e}"))?,
+            2=>zstd::bulk::decompress(data,exact)
+                .map_err(|e|format!("Source 2 array Zstd: {e}"))?,
+            x=>return Err(format!("VTEX source array unsupported compression {x}")),
+        }
+    };
+    if raw.len()!=exact{return Err("VTEX source array expanded extent mismatch".into());}
+    let format=match h.format {
+        1=>Some(NeutralBlockFormat::Bc1),
+        2=>Some(NeutralBlockFormat::Bc3),
+        20=>Some(NeutralBlockFormat::Bc7),
+        21=>Some(NeutralBlockFormat::Bc5),
+        27=>Some(NeutralBlockFormat::Bc4),
+        _=>None,
+    };
+    let mut layers=Vec::with_capacity(count);
+    for (i,encoded) in raw.chunks_exact(per_slice).enumerate(){
+        let rgba=match h.format {
+            1|2|20|21|27=>decode_blocks(encoded,width,height,h.format)?,
+            4|28|3|33=>decode_raw(encoded,width,height,h.format)?,
+            other=>return Err(format!("unsupported VTEX source array pixel format {other}")),
+        };
+        let compressed=format.map(|fmt| NeutralCompressedTexture {
+            format:fmt,levels:vec![NeutralCompressedLevel{
+                width:h.width as u32,height:h.height as u32,blocks:encoded.to_vec(),
+            }],
+        });
+        layers.push(NeutralTexture {
+            name:format!("{name}#source_array_slice_{i}"),
+            width:h.width as u32,height:h.height as u32,
+            rgba,mips:Vec::new(),compressed,
+        });
+    }
+    if layers.len()!=count{return Err("VTEX source array lost one or more slices".into());}
+    Ok(layers)
+}
 /// Source 2 cubemap flag in original compiled VTEX metadata.
 /// BC6H stores six HDR faces per mip, with all six image planes together in
 /// one LZ4/Zstd-compressed mip record. Do not treat mip_disk_sizes as 1 face.
@@ -310,6 +386,54 @@ pub fn decode_hdr_cube_faces(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn exact_rgba_source_array_slices_keep_independent_pixels(){
+        // VTEX resource v1 with one uncompressed 2x1 mip and two authored
+        // RGBA8 array layers, using the same header path as retail VTEX.
+        let mut file=vec![0u8;120];
+        let set32=|dst:&mut Vec<u8>,at:usize,x:u32|dst[at..at+4].copy_from_slice(&x.to_le_bytes());
+        file[4..6].copy_from_slice(&12u16.to_le_bytes());
+        file[6..8].copy_from_slice(&1u16.to_le_bytes());
+        set32(&mut file,8,8);set32(&mut file,12,1);
+        file[16..20].copy_from_slice(b"DATA");
+        set32(&mut file,20,44);set32(&mut file,24,40);
+        let start=64;
+        file[start..start+2].copy_from_slice(&1u16.to_le_bytes());
+        file[start+2..start+4].copy_from_slice(&SOURCE_ARRAY_FLAG.to_le_bytes());
+        file[start+20..start+22].copy_from_slice(&2u16.to_le_bytes());
+        file[start+22..start+24].copy_from_slice(&1u16.to_le_bytes());
+        file[start+24..start+26].copy_from_slice(&2u16.to_le_bytes());
+        file[start+26]=4;file[start+27]=1;
+        file[104..112].copy_from_slice(&[10,20,30,255,40,50,60,255]);
+        file[112..120].copy_from_slice(&[70,80,90,255,100,110,120,255]);
+        let layers=decode_2d_array_layers(&file,"lightmaps/irradiance.vtex_c").unwrap();
+        assert_eq!(layers.len(),2);
+        assert_eq!(layers[0].rgba,&[10,20,30,255,40,50,60,255]);
+        assert_eq!(layers[1].rgba,&[70,80,90,255,100,110,120,255]);
+        assert_ne!(layers[0].name,layers[1].name);
+    }
+    #[test]
+    fn rejects_3d_lightmaps_and_unrepresentable_hdr_without_fabrication(){
+        assert_ne!(SOURCE_ARRAY_FLAG,SOURCE_VOLUME_FLAG);
+        let mut file=vec![0u8;104];
+        file[4..6].copy_from_slice(&12u16.to_le_bytes());
+        file[6..8].copy_from_slice(&1u16.to_le_bytes());
+        file[8..12].copy_from_slice(&8u32.to_le_bytes());
+        file[12..16].copy_from_slice(&1u32.to_le_bytes());
+        file[16..20].copy_from_slice(b"DATA");
+        file[20..24].copy_from_slice(&44u32.to_le_bytes());
+        file[24..28].copy_from_slice(&40u32.to_le_bytes());
+        file[64..66].copy_from_slice(&1u16.to_le_bytes());
+        file[66..68].copy_from_slice(&SOURCE_VOLUME_FLAG.to_le_bytes());
+        file[84..86].copy_from_slice(&1u16.to_le_bytes());
+        file[86..88].copy_from_slice(&1u16.to_le_bytes());
+        file[88..90].copy_from_slice(&1u16.to_le_bytes());
+        file[90]=4;file[91]=1;
+        assert!(decode_2d_array_layers(&file,"volume").is_err());
+        file[66..68].copy_from_slice(&SOURCE_ARRAY_FLAG.to_le_bytes());
+        file[90]=19;
+        assert!(decode_2d_array_layers(&file,"hdr").is_err());
+    }
     #[test]
     fn source_bc6h_cube_has_six_full_source_face_payloads(){
         assert_eq!(mip_size(512,512,19).unwrap(),262144);
