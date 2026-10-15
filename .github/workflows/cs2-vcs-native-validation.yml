@@ -108,3 +108,5 @@ jobs:
 # Cross-stage original Vulkan VS/PS descriptor legalization regression on PR #391
 
 # Run exact physically compiled original GPU variant enumeration and compiler mixed-radix roundtrip
+
+# Execute compiler-closed authentic Source2 native Vulkan VS/PS selection with unprovided feature rejection
