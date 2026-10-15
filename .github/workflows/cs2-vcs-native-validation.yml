@@ -76,3 +76,5 @@ jobs:
 # Verify original Source2 source-ABI-matched Vulkan VS/PS stage pair and legalized image types
 
 # Retry original stage-pair compiler ABI validation after execution-model variable shadow fix
+
+# Verify complete original compiler-program hash arrays instead of fictitious unique program hash
