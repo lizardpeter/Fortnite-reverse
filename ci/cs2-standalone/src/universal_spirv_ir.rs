@@ -413,6 +413,48 @@ fn original_ir_matrix_shapes(module:&naga::Module)
     Ok(result)
 }
 
+fn original_ir_nested_vector_array_shapes(module:&naga::Module)
+    ->Result<std::collections::BTreeMap<(u32,u32,usize),(u32,u32,u32,u32)>,String>
+{
+    use naga::{TypeInner as T,ArraySize};
+    let mut layouts=std::collections::BTreeMap::new();
+    for (_,var) in module.global_variables.iter(){
+        if var.space!=naga::AddressSpace::Uniform{continue;}
+        let Some(location)=var.binding.as_ref() else{continue;};
+        let T::Struct{members,..}=&module.types[var.ty].inner else{continue;};
+        for (index,outer) in members.iter().enumerate(){
+            let T::Struct{members:inner,..}=&module.types[outer.ty].inner else{continue;};
+            if inner.len()!=1{continue;}
+            let T::Array{base,size,stride}=&module.types[inner[0].ty].inner
+                else{continue;};
+            let count=match size{
+                ArraySize::Constant(count)=>count.get(),
+                _=>continue,
+            };
+            let element_bytes=match &module.types[*base].inner{
+                T::Scalar(scalar)=>scalar.width as u32,
+                T::Vector{size,scalar}=>{
+                    let lanes=match size{
+                        naga::VectorSize::Bi=>2,
+                        naga::VectorSize::Tri=>3,
+                        naga::VectorSize::Quad=>4
+                    };
+                    lanes*scalar.width as u32
+                },
+                _=>continue, // array of matrices requires original matrix decorations
+            };
+            if count>4096||*stride<element_bytes{
+                return Err("source VCS nested uniform vector array outside admissible range".into());
+            }
+            layouts.insert(
+                (location.group,location.binding,index),
+                (count,*stride,element_bytes,inner[0].offset),
+            );
+        }
+    }
+    Ok(layouts)
+}
+
 /// Some source compilers deliberately overlay multiple uniform fields
 /// in one address span. Naga's WGSL type system cannot represent those
 /// overlapping members directly. Expand their *IR* offsets into disjoint
@@ -544,6 +586,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     let layouts=uniform_structs(&source)?;
     let authored_matrix_abi=original_spirv_matrix_decorations(input)?;
     let source_matrix_types=original_ir_matrix_shapes(&source)?;
+    let source_nested_arrays=original_ir_nested_vector_array_shapes(&source)?;
     let _rewritten_overlapping_members=normalize_overlapping_source_structs(&mut source)?;
     let _repaired_row_major_multiplications=repair_source_row_major_matrix_multiply(&mut source)?;
     // Naga cannot validate some author-approved Vulkan scalar-block
@@ -584,6 +627,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
         .map_err(|e|format!("canonical shader layout still invalid: {e:?}"))?;
     let normalized_layouts=uniform_structs(&normalized)?;
     let canonical_matrix_types=original_ir_matrix_shapes(&normalized)?;
+    let canonical_nested_arrays=original_ir_nested_vector_array_shapes(&normalized)?;
     if layouts.len()!=normalized_layouts.len() ||
         layouts.keys().any(|key|!normalized_layouts.contains_key(key)){
         return Err("canonical shader changed a source uniform descriptor identity".into());
@@ -623,6 +667,25 @@ pub fn translate_source_spirv_with_ubo_rebase(
                 canonical_stride,
             });
         }
+        let mut nested_vector_arrays=Vec::new();
+        for (&(set,slot,index),&(count,source_stride,element_bytes,source_inner_offset))
+            in source_nested_arrays.iter()
+        {
+            if (set,slot)!=(group,binding){continue;}
+            let Some(&(target_count,target_stride,target_bytes,target_inner_offset))=
+                canonical_nested_arrays.get(&(set,slot,index)) else{
+                    return Err("original source vector array missing from canonical shader".into());
+                };
+            if (count,element_bytes)!=(target_count,target_bytes){
+                return Err("canonical shader changed original source vector-array element type".into());
+            }
+            nested_vector_arrays.push(NestedVectorArrayRebase{
+                member_index:index,element_count:count,element_bytes,
+                original_stride:source_stride,canonical_stride:target_stride,
+                original_inner_offset:source_inner_offset,
+                canonical_inner_offset:target_inner_offset,
+            });
+        }
         let change=UniformLayoutRebase{
             group,binding,
             original_offsets:source_offsets,
@@ -630,7 +693,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
             original_bytes:source_bytes,canonical_bytes:*target_bytes,
             field_widths:source_widths,
             matrix_fields, // only compiled SPIR-V-authored MatrixStride + major order
-            nested_vector_arrays:Vec::new(), // source and canonical verified below
+            nested_vector_arrays, // verified source and canonical array layouts
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
