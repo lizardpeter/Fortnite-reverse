@@ -19,6 +19,10 @@ pub struct NativeCompiledCode {
     pub source_static_id:i64,
     pub source_dynamic_id:i64,
     pub compiler_hash:[u8;16],
+    /// Compiler-authored VCS program hash, distinct from selected GPU blob.
+    pub original_program_hash:[u8;16],
+    /// Source2 original variable-description ABI must match across VS/PS.
+    pub original_variable_abi_hash:[u8;16],
     pub format:NativeFormat,
     /// Exact compiled GPU shader bytes, not a rewritten or universal shader.
     pub bytecode:Vec<u8>,
@@ -56,6 +60,8 @@ pub struct NativeComboParameter {
 pub struct NativeVcsIndex {
     pub declared_metadata_bytes:usize,
     pub compiler_static_ids:usize,
+    pub original_program_hash:[u8;16],
+    pub original_variable_abi_hash:[u8;16],
     pub static_parameters:Vec<NativeComboParameter>,
     pub dynamic_parameters:Vec<NativeComboParameter>,
     pub compiler_dynamic_definitions:usize,
@@ -192,6 +198,15 @@ impl NativeVcsIndex {
             program
         }else{&document.root};
         let variables=vcs_variable_contract::compiler_source_variables(root)?;
+        let program_hashes=source_array(root,"m_programHashes")?;
+        if program_hashes.len()!=1 {
+            return Err("original VCS stage has no unique program identity".into());
+        }
+        let original_program_hash=guid(&program_hashes[0])?;
+        let original_variable_abi_hash=guid(
+            root.field("m_variableDescriptionVersionHash")
+                .ok_or("original Source2 VCS variable ABI digest missing")?
+        )?;
         let static_parameters=compiler_parameters(root,"m_staticComboArray")?;
         let dynamic_parameters=compiler_parameters(root,"m_dynamicComboArray")?;
         let combos=source_array(root,"m_staticComboData")?;
@@ -269,6 +284,7 @@ impl NativeVcsIndex {
         Ok(Self{
             declared_metadata_bytes:physical_metadata,
             compiler_static_ids:static_combos.len(),
+            original_program_hash,original_variable_abi_hash,
             static_parameters,dynamic_parameters,
             compiler_dynamic_definitions:source_array(root,"m_dynamicComboArray")?.len(),
             compiler_variable_descriptions:variables.len(),
@@ -421,6 +437,8 @@ pub fn recover_original_gpu_program(
     Ok(NativeCompiledCode{
         source_static_id:static_id,source_dynamic_id:dynamic_id,
         compiler_hash:block.original_hashes[bytecode_index],
+        original_program_hash:index.original_program_hash,
+        original_variable_abi_hash:index.original_variable_abi_hash,
         format,bytecode:bytes,
     })
 }
@@ -448,6 +466,8 @@ mod tests{
         let index=NativeVcsIndex{
             declared_metadata_bytes:64,
             compiler_static_ids:1,
+            original_program_hash:[0;16],
+            original_variable_abi_hash:[0;16],
             compiler_dynamic_definitions:1,
             compiler_variable_descriptions:0,
             variables:vec![],
