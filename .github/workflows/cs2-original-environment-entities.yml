@@ -44,3 +44,5 @@ jobs:
           retention-days: 14
 
 # Assert exact Christmas sky tint/brightness and gradient fog source values in Rust
+
+# Compile only matching isolated source-neutral scene contracts for authored fog/sky regression
