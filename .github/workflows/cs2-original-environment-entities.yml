@@ -1,0 +1,44 @@
+name: CS2 original Christmas environment entity audit
+on:
+  push:
+    branches: [probe/cs2-vcs-native-ci-20261015]
+    paths:
+      - .github/workflows/cs2-original-environment-entities.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source-environment:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Obtain byte-exact original source workshop VPK archive
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cs2-workshop-local-part-*
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/parts
+      - name: Recover original environment entity properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$RUNNER_TEMP"/parts/workshop-part-{00,01,02,03}.bin > "$RUNNER_TEMP/workshop-original.zip"
+          ( cd "$RUNNER_TEMP" && sha256sum -c "$RUNNER_TEMP/parts/workshop-original.sha256" )
+          mkdir "$RUNNER_TEMP/original-cs2-workshop"
+          unzip -q "$RUNNER_TEMP/workshop-original.zip" -d "$RUNNER_TEMP/original-cs2-workshop"
+          export ORIGINAL_CS2_WORKSHOP_DIR="$RUNNER_TEMP/original-cs2-workshop"
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_lighting_entities_audit > "$RUNNER_TEMP/source_environment_report.txt"
+          sed -n '1,80p' "$RUNNER_TEMP/source_environment_report.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2-original-environment-entities
+          path: ${{ runner.temp }}/source_environment_report.txt
+          retention-days: 14
