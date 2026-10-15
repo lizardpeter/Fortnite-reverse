@@ -64,3 +64,5 @@ jobs:
 # Source2 original VCS compiler variable metadata capture + exact name mapping test
 
 # Validate original source VTEX image array, shadow mask and VMAT physical input provisioning contract
+
+# Recheck fail-closed Source2 runtime and SH2 atlas completeness invariants
