@@ -1,0 +1,47 @@
+name: Validate original Source 2 executable Vulkan shader translation
+on:
+  push:
+    branches: [probe/cs2-vcs-native-ci-20261015]
+    paths:
+      - ci/cs2-standalone/src/bin/vcs_naga_ir_validation.rs
+      - ci/cs2-standalone/src/universal_spirv_ir.rs
+      - ci/cs2-standalone/Cargo.toml
+      - .github/workflows/cs2-original-shader-ir-fast.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  real-vulkan-shader-ir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Recover real original Valve Vulkan shaders
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-original-vcs-vulkan
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/vulkan
+      - name: Recover exact original source compression dictionaries
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-source2-zstd-vcs-dictionaries
+          run-id: 38678860607
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/dictionaries
+      - name: Translate original Valve lightmapped SPIR-V through universal shader IR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/original-source2-vcs"
+          cp "$RUNNER_TEMP"/vulkan/cs2-base-resources/shaders/vfx/*.vcs "$RUNNER_TEMP/original-source2-vcs/"
+          export CS2_NATIVE_CORPUS="$RUNNER_TEMP/original-source2-vcs"
+          export CS2_NATIVE_DICTIONARIES="$RUNNER_TEMP/dictionaries"
+          cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin vcs_naga_ir_validation
