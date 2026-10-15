@@ -31,6 +31,13 @@ fn main()->Result<(),String>{
         stage_file.read_exact(&mut metadata[4..]).map_err(|e|e.to_string())?;
         let physical_len=stage_file.metadata().map_err(|e|e.to_string())?.len();
         let index=NativeVcsIndex::parse(&metadata,physical_len)?;
+        if index.variables.len()!=index.compiler_variable_descriptions {
+            return Err(format!("source VCS variable table mismatch for {filename}"));
+        }
+        let examples=index.variables.iter()
+            .take(12).map(|v|v.name.as_str()).collect::<Vec<_>>();
+        println!("CERTIFIED_SOURCE_COMPILER_VARIABLES {filename} count={} names={:?}",
+            index.variables.len(),examples);
         let static_features=index.static_parameters.iter().map(|p|
             (p.name.clone(),p.min)).collect::<BTreeMap<_,_>>();
         let dynamic_features=index.dynamic_parameters.iter().map(|p|
