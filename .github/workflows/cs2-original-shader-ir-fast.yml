@@ -7,6 +7,7 @@ on:
       - ci/cs2-standalone/src/universal_spirv_ir.rs
       - ci/cs2-standalone/src/vcs_mixed_image_lowering.rs
       - ci/cs2-standalone/Cargo.toml
+      - ci/cs2-standalone/patch_naga_binding_array.py
       - .github/workflows/cs2-original-shader-ir-fast.yml
   workflow_dispatch:
 permissions:
@@ -36,6 +37,19 @@ jobs:
           run-id: 38678860607
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/dictionaries
+      - name: Compile source-neutral Naga BindingArray comparison fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd ci/cs2-standalone
+          cargo fetch
+          SOURCE="$(find "$HOME/.cargo/registry/src" -maxdepth 3 -type d -name 'naga-30.0.1' | head -n 1)"
+          test -d "$SOURCE"
+          mkdir -p vendor
+          cp -a "$SOURCE" vendor/naga
+          python3 patch_naga_binding_array.py vendor/naga/src/front/spv/image.rs
+          printf '\n[patch.crates-io]\nnaga = { path = "vendor/naga" }\n' >> Cargo.toml
+          echo "Using locally patched original Naga source from $SOURCE"
       - name: Translate original Valve lightmapped SPIR-V through universal shader IR
         shell: bash
         run: |
