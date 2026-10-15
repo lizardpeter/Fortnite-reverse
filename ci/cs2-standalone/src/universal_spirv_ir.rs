@@ -96,6 +96,52 @@ pub struct UniformLayoutRebase{
     /// scalars/vectors with explicit source and canonical element stride.
     /// Matrix and nested aggregate arrays remain fail-closed separately.
     pub nested_vector_arrays:Vec<NestedVectorArrayRebase>,
+    pub nested_matrix_arrays:Vec<NestedMatrixArrayRebase>,
+}
+#[derive(Clone,Debug)]
+pub struct NestedMatrixArrayRebase{
+    pub member_index:usize,
+    pub element_count:u32,
+    pub original_array_stride:u32,
+    pub canonical_array_stride:u32,
+    pub original_inner_offset:u32,
+    pub canonical_inner_offset:u32,
+    pub matrix:OriginalMatrixFieldRebase,
+}
+impl NestedMatrixArrayRebase{
+    fn repack(&self,source:&[u8],source_at:usize,output:&mut[u8],target_at:usize)
+        ->Result<(),String>{
+        if self.element_count==0||self.element_count>4096{
+            return Err("original Vulkan nested matrix-array count invalid".into());
+        }
+        let min_src=self.matrix.original_stride.checked_mul(
+            if self.matrix.original_row_major{
+                self.matrix.rows
+            }else{
+                self.matrix.columns
+            }
+        ).ok_or("source matrix payload stride overflow")?;
+        let min_dst=self.matrix.canonical_stride.checked_mul(self.matrix.columns)
+            .ok_or("canonical matrix payload stride overflow")?;
+        if self.original_array_stride<min_src ||
+            self.canonical_array_stride<min_dst{
+            return Err("nested Vulkan matrix array stride overlaps adjacent matrices".into());
+        }
+        for index in 0..self.element_count as usize{
+            let source_index=source_at
+                .checked_add(self.original_inner_offset as usize)
+                .and_then(|s|index.checked_mul(self.original_array_stride as usize)
+                    .and_then(|offset|s.checked_add(offset)))
+                .ok_or("source matrix-array element offset overflow")?;
+            let target_index=target_at
+                .checked_add(self.canonical_inner_offset as usize)
+                .and_then(|s|index.checked_mul(self.canonical_array_stride as usize)
+                    .and_then(|offset|s.checked_add(offset)))
+                .ok_or("canonical matrix-array element offset overflow")?;
+            self.matrix.repack(source,source_index,output,target_index)?;
+        }
+        Ok(())
+    }
 }
 #[derive(Clone,Debug)]
 pub struct NestedVectorArrayRebase{
@@ -219,12 +265,19 @@ impl UniformLayoutRebase{
             a.original_stride!=a.canonical_stride ||
             a.original_inner_offset!=a.canonical_inner_offset
         ) ||
+        self.nested_matrix_arrays.iter().any(|a|
+            a.original_array_stride!=a.canonical_array_stride ||
+            a.original_inner_offset!=a.canonical_inner_offset ||
+            a.matrix.original_row_major ||
+            a.matrix.original_stride!=a.matrix.canonical_stride
+        ) ||
         // An unrecognized aggregate or array is never ABI-certified just
         // because its original and canonical struct spans happen to match.
         self.field_widths.iter().enumerate().any(|(index,width)|
             width.is_none() &&
             !self.matrix_fields.iter().any(|m|m.member_index==index) &&
-            !self.nested_vector_arrays.iter().any(|m|m.member_index==index)
+            !self.nested_vector_arrays.iter().any(|m|m.member_index==index) &&
+            !self.nested_matrix_arrays.iter().any(|m|m.member_index==index)
         )
     }
     /// Copy proven byte-level fields from original source UBO packing into
@@ -242,6 +295,14 @@ impl UniformLayoutRebase{
         let mut output=vec![0u8;self.canonical_bytes as usize];
         for (i,((&from,&to),width)) in self.original_offsets.iter()
             .zip(&self.canonical_offsets).zip(&self.field_widths).enumerate(){
+            if let Some(array)=self.nested_matrix_arrays.iter()
+                .find(|m|m.member_index==i){
+                if width.is_some(){
+                    return Err("original matrix array conflicts with scalar member".into());
+                }
+                array.repack(source,from as usize,&mut output,to as usize)?;
+                continue;
+            }
             if let Some(array)=self.nested_vector_arrays.iter()
                 .find(|m|m.member_index==i){
                 if width.is_some(){
@@ -694,6 +755,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
             field_widths:source_widths,
             matrix_fields, // only compiled SPIR-V-authored MatrixStride + major order
             nested_vector_arrays, // verified source and canonical array layouts
+            nested_matrix_arrays:Vec::new(), // only with original nested MatrixStride
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
@@ -734,6 +796,7 @@ mod tests{
             field_widths:vec![Some(4),Some(4),Some(4)],
             matrix_fields:Vec::new(),
             nested_vector_arrays:Vec::new(),
+            nested_matrix_arrays:Vec::new(),
         };
         let source=(0u8..12).collect::<Vec<_>>();
         let target=layout.repack_original_bytes(&source).unwrap();
@@ -767,6 +830,7 @@ mod tests{
             original_bytes:48,canonical_bytes:64,
             field_widths:vec![None],matrix_fields:vec![spec],
             nested_vector_arrays:Vec::new(),
+            nested_matrix_arrays:Vec::new(),
         };
         let data=plan.repack_original_bytes(&input).unwrap();
         for row in 0..3usize {
@@ -788,6 +852,7 @@ mod tests{
             original_bytes:64,canonical_bytes:64,
             field_widths:vec![None],
             nested_vector_arrays:Vec::new(),
+            nested_matrix_arrays:Vec::new(),
             matrix_fields:vec![OriginalMatrixFieldRebase{
                 member_index:0,columns:4,rows:4,scalar_bytes:4,
                 original_stride:16,original_row_major:true,canonical_stride:16,
@@ -801,6 +866,7 @@ mod tests{
         assert_eq!(&fixed[4..8],&bytes[16..20]);
         let canonical=UniformLayoutRebase{
             nested_vector_arrays:Vec::new(),
+            nested_matrix_arrays:Vec::new(),
             matrix_fields:vec![OriginalMatrixFieldRebase{
                 original_row_major:false,..plan.matrix_fields[0].clone()
             }],..plan
@@ -813,7 +879,7 @@ mod tests{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:64,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],
+            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],nested_matrix_arrays:vec![],
         };
         assert!(plan.requires_repack());
         assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
@@ -829,7 +895,7 @@ mod tests{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:64,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![matrix],nested_vector_arrays:vec![],
+            field_widths:vec![None],matrix_fields:vec![matrix],nested_vector_arrays:vec![],nested_matrix_arrays:vec![],
         };
         assert!(plan.repack_original_bytes(&[0u8;64]).is_err());
     }
@@ -846,6 +912,7 @@ mod tests{
             group:3,binding:0,original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:48,canonical_bytes:96,field_widths:vec![None],
             matrix_fields:vec![],
+            nested_matrix_arrays:Vec::new(),
             nested_vector_arrays:vec![NestedVectorArrayRebase{
                 member_index:0,element_count:3,element_bytes:16,
                 original_stride:16,canonical_stride:32,
@@ -861,12 +928,56 @@ mod tests{
         assert!(plan.repack_original_bytes(&original[..47]).is_err());
     }
     #[test]
+    fn nested_row_major_matrix_arrays_repack_all_source_matrix_elements(){
+        // The input is two original row-major mat4x4 matrices, each
+        // separated by compiler-authored array stride of 80 bytes.
+        let mut source=vec![0u8;160];
+        for matrix in 0..2usize{
+            for row in 0..4usize{
+                for column in 0..4usize{
+                    let address=matrix*80+row*16+column*4;
+                    source[address..address+4].copy_from_slice(
+                        &(100*matrix as u32+10*row as u32+column as u32).to_le_bytes()
+                    );
+                }
+            }
+        }
+        let matrix=OriginalMatrixFieldRebase{
+            member_index:0,columns:4,rows:4,scalar_bytes:4,
+            original_stride:16,original_row_major:true,canonical_stride:16,
+        };
+        let plan=UniformLayoutRebase{
+            group:3,binding:0,
+            original_offsets:vec![0],canonical_offsets:vec![0],
+            original_bytes:160,canonical_bytes:128,
+            field_widths:vec![None],
+            matrix_fields:Vec::new(),nested_vector_arrays:Vec::new(),
+            nested_matrix_arrays:vec![NestedMatrixArrayRebase{
+                member_index:0,element_count:2,
+                original_array_stride:80,canonical_array_stride:64,
+                original_inner_offset:0,canonical_inner_offset:0,matrix,
+            }],
+        };
+        let decoded=plan.repack_original_bytes(&source).unwrap();
+        for m in 0..2usize{
+            for row in 0..4usize{
+                for col in 0..4usize{
+                    let at=m*64+col*16+row*4;
+                    assert_eq!(u32::from_le_bytes(decoded[at..at+4].try_into().unwrap()),
+                        m as u32*100+row as u32*10+col as u32);
+                }
+            }
+        }
+        assert!(plan.requires_repack());
+        assert!(plan.repack_original_bytes(&source[..120]).is_err());
+    }
+    #[test]
     fn source_matrix_stride_is_never_invented(){
         let plan=UniformLayoutRebase{
             group:0,binding:0,
             original_offsets:vec![0],canonical_offsets:vec![0],
             original_bytes:32,canonical_bytes:64,
-            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],
+            field_widths:vec![None],matrix_fields:vec![],nested_vector_arrays:vec![],nested_matrix_arrays:vec![],
         };
         assert!(plan.repack_original_bytes(&[0u8;32]).is_err());
         let bad=OriginalMatrixFieldRebase{
