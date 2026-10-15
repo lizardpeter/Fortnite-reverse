@@ -351,6 +351,15 @@ fn main()->Result<(),String>{
                             Ok(ir)=>{
                                 let compiled_bytes=ir.shader.generated_spirv.iter()
                                     .flat_map(|w|w.to_le_bytes()).collect::<Vec<_>>();
+                                if let Ok(out)=std::env::var("SOURCE2_TRANSLATED_VULKAN_SHADERS"){
+                                    let base=std::path::Path::new(&out);
+                                    std::fs::create_dir_all(base).map_err(|e|
+                                        format!("prepare original shader compiler output directory: {e}"))?;
+                                    std::fs::write(base.join("csgo_lightmappedgeneric_ps.spv"),
+                                        &compiled_bytes).map_err(|e|format!(
+                                        "save regenerated original lightmapped pixel shader: {e}"
+                                    ))?;
+                                }
                                 let (ordinary,depth_compare)=
                                     count_shader_sampling_opcodes(&compiled_bytes)?;
                                 let reflection=cs2_importer::vcs_spirv::
