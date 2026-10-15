@@ -6,6 +6,8 @@
 //! resource and material semantics acquire source-backed decoding.
 pub mod kv3;
 pub mod vcs_native;
+pub mod vcs;
+pub mod vcs_selection;
 pub mod vcs_spirv;
 pub mod vcs_descriptor_contract;
 pub mod vcs_variable_contract;
