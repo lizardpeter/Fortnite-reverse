@@ -441,7 +441,14 @@ mod tests{
         assert_eq!(identity.shader_model,"50");
         assert_eq!(identity.stage,"ps");
         assert_eq!(parse_vcs_filename("csgo_effects_pc_50_features.vcs").unwrap().stage,"features");
-        assert_eq!(parse_vcs_filename("csgo_complex_android_vulkan_50_vs.vcs"),None);
+        // The basename parser only validates the final three suffixes.
+        // An extra token belongs to a potentially valid shader family, not
+        // an inferred target platform. The audited VMAT family set filters it.
+        assert_eq!(
+            parse_vcs_filename("csgo_complex_android_vulkan_50_vs.vcs")
+                .unwrap().family,
+            "csgo_complex_android"
+        );
         assert_eq!(parse_vcs_filename("csgo_complex_pc_50_ps.vcs_c"),None);
         assert_eq!(parse_vcs_filename("csgo_complex_pc_77_ps.vcs"),None);
         assert_eq!(vmats_to_families(["csgo_complex.vfx","shaders/csgo_effects.vfx"]),
