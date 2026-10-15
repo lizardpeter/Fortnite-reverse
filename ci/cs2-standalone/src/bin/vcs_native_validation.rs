@@ -3,6 +3,7 @@
 use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
 use cs2_importer::vcs_spirv::reflect_original_spirv;
+use cs2_importer::vcs_descriptor_contract::audit_original_vs_ps;
 use std::{collections::BTreeMap,fs::File,io::Read};
 fn main()->Result<(),String>{
     let root=Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -70,6 +71,41 @@ fn main()->Result<(),String>{
         println!("CERTIFIED_ORIGINAL_GPU_CODE {filename} static={} dynamic={} type={:?} bytes={} compiler_hash={:02x?}",
             result.source_static_id,result.source_dynamic_id,result.format,
             result.bytecode.len(),result.compiler_hash);
+    }
+    // Pair ORIGINAL vertex and pixel shaders, not fabricated neutral
+    // geometry or a canned SPIR-V shader. Count actual SPIR-V decorations.
+    for (family,declared,coordinates,aliased,ambiguous,sets) in [
+        ("sky",6usize,6usize,0usize,0usize,vec![0u32,1u32]),
+        ("csgo_lightmappedgeneric",16,13,2,1,vec![0,1,3,4])
+    ]{
+        let vertex_name=format!("{family}_vulkan_50_vs.vcs");
+        let pixel_name=format!("{family}_vulkan_50_ps.vcs");
+        let vs=recover_original_gpu_program(
+            &Path::new(&physical).join(&vertex_name),
+            Path::new(&dictionaries),0,0)?;
+        let ps=recover_original_gpu_program(
+            &Path::new(&physical).join(&pixel_name),
+            Path::new(&dictionaries),0,0)?;
+        if vs.format!=NativeFormat::SpirV || ps.format!=NativeFormat::SpirV {
+            return Err(format!("source shader family {family} is not original SPIR-V"));
+        }
+        let reflection_vs=reflect_original_spirv(&vs.bytecode)?;
+        let reflection_ps=reflect_original_spirv(&ps.bytecode)?;
+        let contract=audit_original_vs_ps(&reflection_vs,&reflection_ps)?;
+        let expected_sets=sets.into_iter().collect::<std::collections::BTreeSet<_>>();
+        if contract.source_declarations!=declared ||
+            contract.distinct_coordinates!=coordinates ||
+            contract.alias_coordinates!=aliased ||
+            contract.incompatible_or_ambiguous_coordinates!=ambiguous ||
+            contract.original_sets!=expected_sets {
+            return Err(format!("source VCS ABI diverged for {family}: {contract:?}"));
+        }
+        println!(
+            "CERTIFIED_SOURCE2_SHADER_PAIR_ABI {family} original_source_declarations={} distinct_native_slots={} source_alias_coordinates={} unresolved_aliases={} descriptor_sets={:?}",
+            contract.source_declarations,contract.distinct_coordinates,
+            contract.alias_coordinates,contract.incompatible_or_ambiguous_coordinates,
+            contract.original_sets
+        );
     }
     Ok(())
 }
