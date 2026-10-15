@@ -85,6 +85,44 @@ fn relaxed_layout_diagnostic(stage:&str,code:&[u8])->String{
         ),
     }
 }
+
+fn physical_sample_instruction_evidence(code:&[u8])->String{
+    if code.len()%4!=0||code.len()<20{return "invalid bytes".into();}
+    let words=code.chunks_exact(4).map(|s|u32::from_le_bytes(s.try_into().unwrap())).collect::<Vec<_>>();
+    let mut kind=std::collections::BTreeMap::<u32,(u32,Vec<u32>)>::new();
+    let mut decorations=std::collections::BTreeMap::<u32,(Option<u32>,Option<u32>)>::new();
+    let mut mixed=std::collections::BTreeMap::<u32,Vec<(u32,Vec<u32>)>>::new();
+    let mut cursor=5;
+    while cursor<words.len(){
+        let inst=words[cursor];let count=(inst>>16) as usize;let opcode=inst&0xffff;
+        if count==0||cursor+count>words.len(){return format!("broken at {cursor}");}
+        let p=&words[cursor+1..cursor+count];
+        match opcode{
+            25|26|27|32|59|61|65|66|67|68|86 if p.len()>=2=>{
+                kind.insert(p[1],(opcode,p.to_vec()));
+            },
+            71 if p.len()>=3&&(p[1]==33||p[1]==34)=>{
+                let row=decorations.entry(p[0]).or_insert((None,None));
+                if p[1]==33{row.1=Some(p[2]);}else{row.0=Some(p[2]);}
+            },
+            87..=98 if p.len()>=3=>{
+                mixed.entry(opcode).or_default().push((cursor,p.to_vec()));
+            },
+            _=>{}
+        }
+        cursor+=count;
+    }
+    let mut sorted=kind.iter().filter(|(_,v)|matches!(v.0,25|26|27|59|86)).map(|(id,(op,p))|
+        format!("{}:op{}:{:?}:binding={:?}",id,op,p,decorations.get(id))).collect::<Vec<_>>();
+    sorted.truncate(60);
+    let mut ops=Vec::new();
+    for (code,uses) in mixed{
+        ops.push(format!("op{code}:count={} samples={:?}",uses.len(),
+            uses.iter().take(4).map(|(at,p)|format!("{at}:{:?}",p)).collect::<Vec<_>>()));
+    }
+    format!("type/var={:?}; sampling={:?}",sorted,ops)
+}
+
 fn main()->Result<(),String>{
     let corpus=std::env::var("CS2_NATIVE_CORPUS")
         .map_err(|_|"source VCS corpus missing".to_owned())?;
@@ -98,6 +136,11 @@ fn main()->Result<(),String>{
         let original=prepare_source_vulkan_pipeline(
             &v,&p,Path::new(&dict),(0,0),(0,0))?;
         for (stage,code) in [("vs",&original.vertex_spirv[..]),("ps",&original.pixel_spirv[..])]{
+            if family=="csgo_lightmappedgeneric" && stage=="ps" {
+                println!("ORIGINAL_SOURCE2_MIXED_DREF_PHYSICAL_OPCODES {}",
+                    physical_sample_instruction_evidence(code));
+            }
+
             match cs2_importer::universal_spirv_ir::
                 translate_source_spirv_with_ubo_rebase(code){
                 Ok(ir)=>{
