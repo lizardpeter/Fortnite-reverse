@@ -1,0 +1,43 @@
+name: CS2 original native BC6H lightmap source validation
+on:
+  push:
+    branches: [probe/cs2-vcs-native-ci-20261015]
+    paths:
+      - '.github/workflows/cs2-native-lightmap-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  original-native-lightmap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Verify native array / BC6H source preservation unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path ci/cs2-standalone/Cargo.toml --lib vtex_native_array
+      - name: Retrieve exact original Steam Workshop VPK package
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cs2-workshop-local-part-*
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/parts
+      - name: Decode all original HDR irradiance, directional and direct-shadow texture arrays
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$RUNNER_TEMP"/parts/workshop-part-{00,01,02,03}.bin > "$RUNNER_TEMP/workshop-original.zip"
+          ( cd "$RUNNER_TEMP" && sha256sum -c "$RUNNER_TEMP/parts/workshop-original.sha256" )
+          mkdir -p "$RUNNER_TEMP/workshop"
+          unzip -q "$RUNNER_TEMP/workshop-original.zip" -d "$RUNNER_TEMP/workshop"
+          export ORIGINAL_CS2_WORKSHOP_DIR="$RUNNER_TEMP/workshop"
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_native_lightmap_validation
