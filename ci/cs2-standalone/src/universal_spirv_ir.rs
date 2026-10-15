@@ -211,6 +211,71 @@ fn normalize_overlapping_source_structs(module:&mut naga::Module)
     Ok(corrected)
 }
 
+/// Recover a matrix multiply obscured by Naga's row-major input-load
+/// transpose. Restrict the adjustment to a provably invalid matrix * vector
+/// whose *original pre-transpose* matrix columns match the vector size.
+/// This keeps the exact source instruction's vector cardinality and every
+/// matrix element intact. Original row-major upload still requires a
+/// source-backed matrix stride and transpose provider before runtime use.
+fn repair_source_row_major_matrix_multiply(
+    module:&mut naga::Module
+)->Result<usize,String>{
+    use naga::{Expression as E,TypeInner as T,BinaryOperator as B,MathFunction as M};
+    fn fix_one(
+        module:&naga::Module,
+        function:&naga::Function,
+    )->Result<Vec<(naga::Handle<naga::Expression>,naga::Handle<naga::Expression>)>,String>{
+        let ctx=naga::proc::ResolveContext::with_locals(
+            module,&function.local_variables,&function.arguments);
+        let mut typer=naga::front::Typifier::new();
+        let mut candidates=Vec::new();
+        for (handle,expression) in function.expressions.iter(){
+            let E::Binary{op:B::Multiply,left,right}=*expression else{continue;};
+            let E::Math{fun:M::Transpose,arg,arg1:None,arg2:None,arg3:None}=
+                function.expressions[left] else{continue;};
+            typer.grow(right,&function.expressions,&ctx)
+                .map_err(|e|format!("original source vector type unresolved: {e:?}"))?;
+            typer.grow(arg,&function.expressions,&ctx)
+                .map_err(|e|format!("original source matrix type unresolved: {e:?}"))?;
+            let (T::Matrix{columns,rows,..},T::Vector{size,..})=
+                (typer.get(arg,&module.types),typer.get(right,&module.types))
+            else{continue;};
+            // In the already transposed expression, columns==rows(original)
+            // and the multiply is invalid if the vec length differs from the
+            // new columns. Only repair when the pre-transpose matrix was
+            // the exact vector-compatible type.
+            if columns!=size && rows!=size{
+                continue;
+            }
+            if columns==size && rows!=size {
+                candidates.push((handle,arg));
+            }
+        }
+        Ok(candidates)
+    }
+    let original=module.clone();
+    let mut count=0;
+    for (handle,func) in original.functions.iter(){
+        let corrections=fix_one(&original,func)?;
+        let target=&mut module.functions[handle];
+        for (expr,arg) in corrections{
+            if let E::Binary{ref mut left,..}=target.expressions[expr]{
+                *left=arg;count+=1;
+            }
+        }
+    }
+    for (idx,entry) in original.entry_points.iter().enumerate(){
+        let corrections=fix_one(&original,&entry.function)?;
+        let target=&mut module.entry_points[idx].function;
+        for (expr,arg) in corrections{
+            if let E::Binary{ref mut left,..}=target.expressions[expr]{
+                *left=arg;count+=1;
+            }
+        }
+    }
+    Ok(count)
+}
+
 /// IMPORTS the original shader operations into the common Naga IR and uses
 /// the ordinary WGSL writer to canonicalize layout. Unlike the strict path,
 /// this returns the *original and translated* UBO member offsets, so the
@@ -232,6 +297,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     }
     let layouts=uniform_structs(&source)?;
     let _rewritten_overlapping_members=normalize_overlapping_source_structs(&mut source)?;
+    let _repaired_row_major_multiplications=repair_source_row_major_matrix_multiply(&mut source)?;
     // Naga cannot validate some author-approved Vulkan scalar-block
     // packing as WebGPU Uniform. Relax ONLY host-shareable struct layout
     // for THIS import. The canonical WGSL is strictly revalidated below.
