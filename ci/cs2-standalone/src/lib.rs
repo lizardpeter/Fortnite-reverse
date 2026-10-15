@@ -10,6 +10,7 @@ pub mod vcs_spirv;
 pub mod vcs_descriptor_contract;
 pub mod vcs_variable_contract;
 pub mod vcs_resource_provision;
+pub mod vtex_native_array;
 pub mod vcs_descriptor_types;
 pub mod vcs_spirv_usage;
 pub mod vcs_spirv_relocate;
