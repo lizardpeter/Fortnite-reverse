@@ -6,6 +6,16 @@
  //! UBO offsets, texture identities or ambient equations is allowed.
 use naga::{self,back,front,valid};
 const MAX_SOURCE_SPV:usize=64*1024*1024;
+/// Original SPIR-V already uses Vulkan coordinate semantics. Avoid
+/// WGSL-origin coordinate adjustment, and never fabricate descriptor slots.
+fn source_native_vulkan_codegen_options<'a>() -> back::spv::Options<'a> {
+    let mut options=back::spv::Options::default();
+    options.lang_version=(1,3);
+    options.flags=back::spv::WriterFlags::LABEL_VARYINGS;
+    options.fake_missing_bindings=false;
+    options
+}
+
 pub struct TranslatedSourceShader {
     /// Source-neutral validated code which can be compiled by the shared
     /// Vulkan shader module backend after provider/descriptor admission.
@@ -60,7 +70,7 @@ pub fn translate_source_spirv(input:&[u8])->Result<TranslatedSourceShader,String
     };
     let spirv=back::spv::write_vec(
         &canonical,&canonical_info,
-        &back::spv::Options::default(),Some(&pipeline)
+        &source_native_vulkan_codegen_options(),Some(&pipeline)
     ).map_err(|e|format!("universal IR -> Vulkan SPIR-V codegen failed: {e:?}"))?;
     if spirv.len()<5 || spirv[0]!=0x0723_0203{
         return Err("translated Vulkan shader is not executable SPIR-V".into());
@@ -851,7 +861,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     };
     let spirv=back::spv::write_vec(
         &normalized,&normalized_info,
-        &back::spv::Options::default(),Some(&options)
+        &source_native_vulkan_codegen_options(),Some(&options)
     ).map_err(|e|format!("canonical shader Vulkan code generation failed: {e:?}"))?;
     if spirv.len()<5 || spirv[0]!=0x0723_0203 {
         return Err("rebased source shader did not generate actual Vulkan SPIR-V".into());
@@ -1071,6 +1081,15 @@ mod tests{
         };
         let incorrect=UniformLayoutRebase{matrix_fields:vec![bad],..plan};
         assert!(incorrect.repack_original_bytes(&[0u8;32]).is_err());
+    }
+    #[test]
+    fn original_vulkan_shader_codegen_refuses_fake_bindings_and_double_coordinate_adjustment(){
+        let options=source_native_vulkan_codegen_options();
+        assert_eq!(options.lang_version,(1,3));
+        assert!(!options.fake_missing_bindings);
+        assert!(!options.flags.contains(
+            back::spv::WriterFlags::ADJUST_COORDINATE_SPACE
+        ));
     }
     #[test]
     fn input_bounds_reject_truncated_source_shader(){
