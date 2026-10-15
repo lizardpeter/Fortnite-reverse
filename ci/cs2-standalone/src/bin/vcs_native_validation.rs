@@ -2,6 +2,7 @@
 //! outside Git and are retrieved from source-verified Actions artifacts.
 use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
+use cs2_importer::vcs_compiled_selection::{matching_physical_compiled_variants,decode_native_compiler_id};
 use cs2_importer::vcs_spirv::reflect_original_spirv;
 use cs2_importer::vcs_spirv_usage::trace_original_entrypoint;
 use cs2_importer::vcs_spirv_relocate::legalize_native_descriptor_types;
@@ -42,6 +43,47 @@ fn main()->Result<(),String>{
             .take(12).map(|v|v.name.as_str()).collect::<Vec<_>>();
         println!("CERTIFIED_SOURCE_COMPILER_VARIABLES {filename} count={} names={:?}",
             index.variables.len(),examples);
+        // Enumerate only source-compiled SPIR-V/DXBC variants. The VCS
+        // header alone is not proof that a theoretical permutation exists.
+        let physical=matching_physical_compiled_variants(
+            &index,&BTreeMap::new(),&BTreeMap::new(),6)?;
+        if physical.total_matches==0 || physical.candidates.is_empty() {
+            return Err(format!("original physical VCS bytecode census was empty for {filename}"));
+        }
+        let first=&physical.candidates[0];
+        let decoded_static=decode_native_compiler_id(
+            &index.static_parameters,first.static_id)?;
+        let decoded_dynamic=decode_native_compiler_id(
+            &index.dynamic_parameters,first.dynamic_id)?;
+        if first.physical_block>=index.blocks.len() ||
+            index.source_selection(first.static_id,first.dynamic_id).is_err(){
+            return Err(format!("source compiler physical variant witness invalid: {filename}"));
+        }
+        let exact=matching_physical_compiled_variants(
+            &index,&decoded_static,&decoded_dynamic,6)?;
+        if exact.total_matches!=1 || exact.unique_fully_constrained().is_none() {
+            return Err(format!(
+                "roundtrip exact original VCS candidate selection ambiguous for {filename}: {}",
+                exact.total_matches
+            ));
+        }
+        println!(
+            "CERTIFIED_ORIGINAL_VCS_PHYSICAL_CANDIDATES {filename} compiled_static_ids={} actual_executable_bytecodes={} returned={} truncated={} first_static={} first_dynamic={} unresolved_static={} unresolved_dynamic={}",
+            physical.physically_compiled_static_ids,physical.total_matches,
+            physical.candidates.len(),physical.truncated,
+            first.static_id,first.dynamic_id,
+            first.missing_static_features.len(),first.missing_dynamic_features.len()
+        );
+        let source_partial=index.static_parameters.iter().take(2)
+            .map(|p|(p.name.clone(),p.min))
+            .collect::<BTreeMap<_,_>>();
+        let partial=matching_physical_compiled_variants(
+            &index,&source_partial,&BTreeMap::new(),8)?;
+        println!(
+            "CERTIFIED_ORIGINAL_VCS_PARTIAL_FEATURE_FRONTIER {filename} known_static={} matching_static={} matching_physical_bytecodes={} truncated={} (NOT original runtime admission)",
+            source_partial.len(),partial.matching_static_ids,
+            partial.total_matches,partial.truncated
+        );
         let static_features=index.static_parameters.iter().map(|p|
             (p.name.clone(),p.min)).collect::<BTreeMap<_,_>>();
         let dynamic_features=index.dynamic_parameters.iter().map(|p|
