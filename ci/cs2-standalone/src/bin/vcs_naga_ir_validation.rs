@@ -75,6 +75,14 @@ fn main()->Result<(),String>{
         for (stage,code) in [("vs",&original.vertex_spirv[..]),("ps",&original.pixel_spirv[..])]{
             match translate(stage,code){
                 Ok((functions,globals,entries,wgsl_bytes))=>{
+                    match cs2_importer::universal_spirv_ir::translate_source_spirv(code){
+                        Ok(shader)=>println!(
+                            "CERTIFIED_ORIGINAL_SOURCE2_EXECUTABLE_UNIVERSAL_IR {family} {stage} source_bytes={} universal_spirv_words={} universal_wgsl_bytes={} (runtime resource admission remains separate)",
+                            code.len(),shader.generated_spirv.len(),shader.generated_wgsl.len()
+                        ),
+                        Err(error)=>println!("SOURCE2_UNIVERSAL_SPIRV_CODEGEN_BLOCKER {family} {stage}: {error}"),
+                    }
+
                     imported+=1;
                     println!(
                         "CERTIFIED_SOURCE2_NAGA_IR_TRANSLATED {family} {stage} source_spirv_bytes={} translated_functions={} translated_globals={} entrypoints={} generated_wgsl_bytes={} roundtrip_wgsl_valid=true",
