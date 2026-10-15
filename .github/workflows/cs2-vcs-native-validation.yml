@@ -56,3 +56,5 @@ jobs:
 # validation rerun after KV3 compatibility correction
 
 # Source-compiler mixed-radix original stage ID validation
+
+# Validate native SPIR-V descriptor sets and entry-point reflection
