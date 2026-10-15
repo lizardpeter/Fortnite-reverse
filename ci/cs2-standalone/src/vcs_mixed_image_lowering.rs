@@ -288,13 +288,13 @@ pub fn split_original_mixed_comparison_arrays(code:&[u8])
     out.extend_from_slice(&inst[first_type..first_function]);
     // Preserve topological type dependency order produced by clone_type;
     // the source alias variables themselves must come after the types.
-    out.extend(late_types);
     let mut alias_vars=Vec::new();
     let mut alias_types=Vec::new();
     for added in additions{
         if added.op==59{alias_vars.push(added)}else{alias_types.push(added)}
     }
     out.extend(alias_types);
+    out.extend(late_types);
     out.extend(alias_vars);
     out.extend_from_slice(&inst[first_function..]);
     // Append aliases to OpEntryPoint interface only when their source globals
