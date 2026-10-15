@@ -4,6 +4,7 @@ use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
 use cs2_importer::vcs_compiled_selection::{matching_physical_compiled_variants,decode_native_compiler_id};
 use cs2_importer::vcs_spirv::reflect_original_spirv;
+use cs2_importer::vcs_stage_io::{reflect_original_stage_io,match_original_vs_ps_io};
 use cs2_importer::vcs_spirv_usage::trace_original_entrypoint;
 use cs2_importer::vcs_spirv_relocate::legalize_native_descriptor_types;
 use cs2_importer::vcs_gpu_pair::{prepare_source_vulkan_pipeline,prepare_compiled_material_vulkan_pipeline};
@@ -202,6 +203,20 @@ fn main()->Result<(),String>{
             return Err(format!("real native original pair ABI did not close for {family}: {} slots {} moves",
                 original.descriptor_bindings.len(),original.pixel_relocations.len()));
         }
+        let vs_io=reflect_original_stage_io(&original.vertex_spirv)?;
+        let ps_io=reflect_original_stage_io(&original.pixel_spirv)?;
+        let linked=match_original_vs_ps_io(&vs_io,&ps_io)?;
+        println!(
+            "CERTIFIED_SOURCE2_NATIVE_VULKAN_INTERSTAGE_IO {family} vs_vertex_inputs={:?} vs_outputs={} ps_inputs={} ps_outputs={} matched_varyings={} missing_varyings={:?} mismatched_types={:?} unresolved_vs={} unresolved_ps={} builtins_vs={} builtins_ps={} (not material runtime admission)",
+            linked.vertex_attribute_locations,vs_io.outputs.len(),
+            ps_io.inputs.len(),ps_io.outputs.len(),
+            linked.matched_pixel_inputs,linked.missing_pixel_inputs,
+            linked.mismatched_pixel_inputs,
+            vs_io.unresolved_inputs+vs_io.unresolved_outputs,
+            ps_io.unresolved_inputs+ps_io.unresolved_outputs,
+            vs_io.builtin_inputs+vs_io.builtin_outputs,
+            ps_io.builtin_inputs+ps_io.builtin_outputs
+        );
         if original.supports_direct_universal_admission(){
             return Err("original Source2 GPU program admitted without source input providers".into());
         }
