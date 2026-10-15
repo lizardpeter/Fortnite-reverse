@@ -17,6 +17,7 @@ pub mod vcs_descriptor_types;
 pub mod vcs_spirv_usage;
 pub mod vcs_spirv_relocate;
 pub mod vcs_gpu_pair;
+pub mod vcs_compiled_selection;
 pub mod lightmap;
 pub mod entity;
 pub mod lighting;
