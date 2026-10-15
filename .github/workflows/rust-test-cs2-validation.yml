@@ -1,0 +1,28 @@
+name: Validate Rust-test CS2 importer
+on:
+  workflow_dispatch:
+    inputs:
+      rust_test_ref:
+        description: Rust-test branch or commit SHA to validate
+        required: false
+        default: main
+  push:
+    paths:
+      - .github/workflows/rust-test-cs2-validation.yml
+permissions:
+  contents: read
+jobs:
+  cs2-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Fetch Rust-test exact source branch
+        uses: actions/checkout@v4
+        with:
+          repository: lizardpeter/Rust-test
+          ref: ${{ github.event_name == 'push' && 'feature/cs2-vcs-original-shader-header-frontier-20261014' || inputs.rust_test_ref }}
+          persist-credentials: false
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Verify CS2 importer (source-only regression tests)
+        run: cargo test --manifest-path asset_import/importers/cs2/Cargo.toml --locked
