@@ -395,6 +395,7 @@ fn original_spirv_matrix_decorations(
     let mut member_abi=BTreeMap::<(u32,u32),(Option<u32>,Option<bool>)>::new();
     let mut structs=BTreeMap::<u32,Vec<u32>>::new();
     let mut matrices=BTreeMap::<u32,()>::new();
+    let mut array_element_types=BTreeMap::<u32,u32>::new();
     let mut pointers=BTreeMap::<u32,(u32,u32)>::new();
     let mut vars=Vec::<(u32,u32,u32)>::new();
     let mut at=5;
@@ -421,6 +422,7 @@ fn original_spirv_matrix_decorations(
                 }
             },
             24 if !p.is_empty()=>{matrices.insert(p[0],());},
+            28 if p.len()>=2=>{array_element_types.insert(p[0],p[1]);},
             30 if !p.is_empty()=>{structs.insert(p[0],p[1..].to_vec());},
             32 if p.len()>=3=>{pointers.insert(p[0],(p[1],p[2]));},
             59 if p.len()>=3=>vars.push((p[0],p[1],p[2])),
@@ -437,9 +439,22 @@ fn original_spirv_matrix_decorations(
         let (Some(&group),Some(&binding))=(groups.get(&var),bindings.get(&var))
             else{continue;};
         for (index,&ty) in members.iter().enumerate(){
-            if !matrices.contains_key(&ty){continue;}
+            // In Source2's original ABI, matrices are often wrapped in
+            // a one-field struct containing an array of matrix values.
+            // Read the MatrixStride on that nested *declaring struct* rather
+            // than mistaking an outer wrapper for a plain matrix.
+            let declaring_member=if matrices.contains_key(&ty){
+                Some((structure,index as u32))
+            }else{
+                structs.get(&ty).and_then(|nested|{
+                    if nested.len()!=1{return None;}
+                    let element=*array_element_types.get(&nested[0])?;
+                    matrices.contains_key(&element).then_some((ty,0))
+                })
+            };
+            let Some(declaring_member)=declaring_member else{continue;};
             let Some((Some(stride),Some(rowmajor)))=
-                member_abi.get(&(structure,index as u32)).copied()
+                member_abi.get(&declaring_member).copied()
                 else{continue;};
             if stride==0{return Err("source matrix stride cannot be zero".into());}
             if result.insert((group,binding,index),(stride,rowmajor)).is_some(){
@@ -472,6 +487,41 @@ fn original_ir_matrix_shapes(module:&naga::Module)
         }
     }
     Ok(result)
+}
+
+fn original_ir_nested_matrix_array_shapes(module:&naga::Module)
+    ->Result<std::collections::BTreeMap<(u32,u32,usize),(u32,u32,u32,u32,u32,u32,u32)>,String>{
+    use naga::{TypeInner as T,ArraySize};
+    let mut shapes=std::collections::BTreeMap::new();
+    let dimension=|v:naga::VectorSize|->u32{
+        match v{naga::VectorSize::Bi=>2,naga::VectorSize::Tri=>3,naga::VectorSize::Quad=>4}
+    };
+    for (_,var) in module.global_variables.iter(){
+        if var.space!=naga::AddressSpace::Uniform{continue;}
+        let Some(location)=var.binding.as_ref() else{continue;};
+        let T::Struct{members,..}=&module.types[var.ty].inner else{continue;};
+        for (index,outer) in members.iter().enumerate(){
+            let T::Struct{members:inner,..}=&module.types[outer.ty].inner else{continue;};
+            if inner.len()!=1{continue;}
+            let T::Array{base,size,stride}=&module.types[inner[0].ty].inner
+                else{continue;};
+            let count=match size{
+                ArraySize::Constant(count)=>count.get(),_=>continue
+            };
+            let T::Matrix{columns,rows,scalar}=&module.types[*base].inner
+                else{continue;};
+            if count>4096{
+                return Err("original Source2 UBO matrix array exceeds safe count".into());
+            }
+            shapes.insert(
+                (location.group,location.binding,index),
+                (count,*stride,inner[0].offset,
+                    dimension(*columns),dimension(*rows),scalar.width as u32,
+                    outer.offset),
+            );
+        }
+    }
+    Ok(shapes)
 }
 
 fn original_ir_nested_vector_array_shapes(module:&naga::Module)
@@ -648,6 +698,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     let authored_matrix_abi=original_spirv_matrix_decorations(input)?;
     let source_matrix_types=original_ir_matrix_shapes(&source)?;
     let source_nested_arrays=original_ir_nested_vector_array_shapes(&source)?;
+    let source_nested_matrix_arrays=original_ir_nested_matrix_array_shapes(&source)?;
     let _rewritten_overlapping_members=normalize_overlapping_source_structs(&mut source)?;
     let _repaired_row_major_multiplications=repair_source_row_major_matrix_multiply(&mut source)?;
     // Naga cannot validate some author-approved Vulkan scalar-block
@@ -689,6 +740,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
     let normalized_layouts=uniform_structs(&normalized)?;
     let canonical_matrix_types=original_ir_matrix_shapes(&normalized)?;
     let canonical_nested_arrays=original_ir_nested_vector_array_shapes(&normalized)?;
+    let canonical_nested_matrix_arrays=original_ir_nested_matrix_array_shapes(&normalized)?;
     if layouts.len()!=normalized_layouts.len() ||
         layouts.keys().any(|key|!normalized_layouts.contains_key(key)){
         return Err("canonical shader changed a source uniform descriptor identity".into());
@@ -747,6 +799,39 @@ pub fn translate_source_spirv_with_ubo_rebase(
                 canonical_inner_offset:target_inner_offset,
             });
         }
+        let mut nested_matrix_arrays=Vec::new();
+        for (&(set,slot,index),&(count,src_array_stride,src_inner,
+            cols,rows,width,src_outer)) in source_nested_matrix_arrays.iter(){
+            if (set,slot)!=(group,binding){continue;}
+            let Some(&(target_count,target_stride,target_inner,
+                target_cols,target_rows,target_width,target_outer))=
+                canonical_nested_matrix_arrays.get(&(set,slot,index)) else{
+                    return Err("source nested matrix array missing from canonical shader".into());
+                };
+            if (count,cols,rows,width)!=(target_count,target_cols,target_rows,target_width) {
+                return Err("original Source2 matrix-array element shape changed in universal IR".into());
+            }
+            if src_outer!=source_offsets[index] ||
+                target_outer!=target_offsets[index] {
+                return Err("source nested matrix-array outer field offset mismatch".into());
+            }
+            // Only the original compiler's member MatrixStride and major
+            // order may authorize a row-major matrix-array upload.
+            let Some(&(original_stride,row_major))=
+                authored_matrix_abi.get(&(set,slot,index)) else{continue;};
+            let canonical_stride=if rows==2{rows*width}else{4*width};
+            nested_matrix_arrays.push(NestedMatrixArrayRebase{
+                member_index:index,element_count:count,
+                original_array_stride:src_array_stride,
+                canonical_array_stride:target_stride,
+                original_inner_offset:src_inner,
+                canonical_inner_offset:target_inner,
+                matrix:OriginalMatrixFieldRebase{
+                    member_index:index,columns:cols,rows,scalar_bytes:width,
+                    original_stride,original_row_major:row_major,canonical_stride,
+                },
+            });
+        }
         let change=UniformLayoutRebase{
             group,binding,
             original_offsets:source_offsets,
@@ -755,7 +840,7 @@ pub fn translate_source_spirv_with_ubo_rebase(
             field_widths:source_widths,
             matrix_fields, // only compiled SPIR-V-authored MatrixStride + major order
             nested_vector_arrays, // verified source and canonical array layouts
-            nested_matrix_arrays:Vec::new(), // only with original nested MatrixStride
+            nested_matrix_arrays, // only original nested MatrixStride and authored layout
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
