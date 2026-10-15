@@ -68,3 +68,5 @@ jobs:
 # Recheck fail-closed Source2 runtime and SH2 atlas completeness invariants
 
 # Verify source shader UBO SSBO image2DArray and sampler GPU resource shapes
+
+# Measure original Source2 SPIR-V entrypoint reachable descriptor aliases, no synthetic default shaders
