@@ -98,6 +98,31 @@ fn gradient_fog(e:&entity::Entity)->Option<(NeutralFog,SourceGradientFog)> {
         max_opacity:opacity,sun:None,
     },source))
 }
+/// Apply compiler-authored env_sky linear tint to original sRGB cube pixels.
+/// Keep texture image resolution/orientation and all per-face source details;
+/// Source2 sky shader exposure/bloom still requires native translation.
+pub fn tint_source_sky_faces(
+    mut faces:[neutral_scene::NeutralTexture;6],tint:[f32;3]
+)->[neutral_scene::NeutralTexture;6]{
+    let linear=|s:f32|if s<=0.04045{s/12.92}else{
+        ((s+0.055)/1.055).powf(2.4)
+    };
+    let srgb=|s:f32|if s<=0.0031308{s*12.92}else{
+        1.055*s.powf(1./2.4)-0.055
+    };
+    let tint_linear=tint.map(|v|linear(v.clamp(0.,1.)));
+    for face in &mut faces{
+        for pixel in face.rgba.chunks_exact_mut(4){
+            for c in 0..3{
+                let light=linear(pixel[c] as f32/255.)*tint_linear[c];
+                pixel[c]=(srgb(light).clamp(0.,1.)*255.).round() as u8;
+            }
+        }
+    }
+    faces
+}
+
+
 fn source_sun(angles:[f32;3])->[f32;3]{
     let pitch=angles[0].to_radians();
     let yaw=angles[1].to_radians();
@@ -189,6 +214,18 @@ mod tests{
         assert_eq!(l.local[0].position,[0.,128.*0.0254,0.]);
         assert!((l.local[0].radius-13.0048).abs()<1e-4);
         assert!((l.local[0].intensity-8.).abs()<1e-5);
+    }
+    #[test]
+    fn original_srgb_sky_tint_applies_all_source_channels_without_face_loss(){
+        let original=std::array::from_fn(|i|neutral_scene::NeutralTexture{
+            name:format!("original_face_{i}"),width:1,height:1,
+            rgba:vec![255,255,255,255],mips:Vec::new(),compressed:None,
+        });
+        let tinted=tint_source_sky_faces(original,[206./255.,218./255.,1.]);
+        for face in tinted {
+            assert_eq!(face.rgba,[206,218,255,255]);
+            assert_eq!((face.width,face.height),(1,1));
+        }
     }
     #[test]
     fn original_christmas_env_sky_brightness_tint_and_gradient_fog_are_preserved(){
