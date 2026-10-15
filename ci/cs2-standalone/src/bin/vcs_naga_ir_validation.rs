@@ -112,6 +112,17 @@ fn source_sampling_dependencies(code:&[u8])->String{
         }
         at+=count;
     }
+    let root=|mut id:u32|->u32{
+        for _ in 0..24{
+            match defs.get(&id){
+                Some((61|65|66|67|68|83|124,p)) if p.len()>=3=>{
+                    id=p[2];
+                },
+                _=>return id,
+            }
+        }
+        id
+    };
     let mut outputs=Vec::new();
     for (op,sampled) in samples{
         let ss=defs.get(&sampled).map(|(id,p)|format!("{id}:{:?}",p));
@@ -122,10 +133,12 @@ fn source_sampling_dependencies(code:&[u8])->String{
         let sampler_load=source_sampler.and_then(|id|defs.get(&id));
         let sampler_origin=sampler_load.and_then(|(op,p)|
             if *op==61{p.get(2).copied()}else{None});
-        let sampler_binding=sampler_origin.and_then(|id|positions.get(&id));
+        let sampler_binding=sampler_origin.map(|id|root(id))
+            .and_then(|id|positions.get(&id));
         let image_load=source_image.and_then(|id|defs.get(&id));
         let origin=image_load.and_then(|(op,p)|if *op==61{p.get(2).copied()}else{None});
-        let binding=origin.and_then(|id|positions.get(&id));
+        let binding=origin.map(|id|root(id))
+            .and_then(|id|positions.get(&id));
         let sampled_type=defs.get(&sampled).and_then(|(_,p)|p.first()).copied();
         let image_type=sampled_type.and_then(|id|defs.get(&id))
             .filter(|(op,_)|*op==27).and_then(|(_,p)|p.get(1)).copied();
