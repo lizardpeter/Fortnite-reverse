@@ -115,3 +115,5 @@ jobs:
 # Validate physical original CS2 Vulkan vertex input types and VS/PS interstage varying ABI
 
 # Certify Source2 original Vulkan prepared shader pair exposes its exact vertex attribute ABI
+
+# Source2 Naga original scalar uniform layout failure isolated separately from instruction lowering
