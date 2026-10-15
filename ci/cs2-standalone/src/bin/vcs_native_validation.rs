@@ -4,6 +4,7 @@ use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
 use cs2_importer::vcs_spirv::reflect_original_spirv;
 use cs2_importer::vcs_spirv_usage::trace_original_entrypoint;
+use cs2_importer::vcs_spirv_relocate::legalize_native_descriptor_types;
 use cs2_importer::vcs_descriptor_types::{reflect_original_types,native_array_binding_candidates,NativeResourceShape};
 use cs2_importer::vcs_descriptor_contract::audit_original_vs_ps;
 use std::{collections::BTreeMap,fs::File,io::Read};
@@ -73,6 +74,17 @@ fn main()->Result<(),String>{
                 original.entry_points[0].stage!=4{
                 return Err(format!("incorrect real original shader descriptor ABI for {filename}: {actual_sets:?} vs {expected_sets:?}"));
             }
+            let legalized=legalize_native_descriptor_types(&result.bytecode,&original)?;
+            let expected_moves=if filename.starts_with("csgo_lightmappedgeneric_") {
+                2usize
+            }else {0usize};
+            if legalized.relocations.len()!=expected_moves ||
+                legalized.bytecode.len()!=result.bytecode.len(){
+                return Err(format!("original VCS descriptor alias legalization unexpected {filename}: relocations={:?}",
+                    legalized.relocations));
+            }
+            println!("CERTIFIED_ORIGINAL_DESCRIPTOR_RELOCATION {filename} mixed_groups={} moved_bindings={} relocations={:?}",
+                legalized.relocated_type_conflicts,legalized.relocations.len(),legalized.relocations);
             let usage=trace_original_entrypoint(
                 &result.bytecode,&original,original.entry_points[0].function_id)?;
             println!("CERTIFIED_SOURCE_DESCRIPTOR_USAGE {filename} original_variables={} referenced={} unreachable_only={} duplicate_bindings={} reachable_duplicate_bindings={} remaining_aliases={:?}",
