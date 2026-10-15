@@ -41,3 +41,5 @@ jobs:
           unzip -q "$RUNNER_TEMP/workshop-original.zip" -d "$RUNNER_TEMP/workshop"
           export ORIGINAL_CS2_WORKSHOP_DIR="$RUNNER_TEMP/workshop"
           cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_native_lightmap_validation
+
+# Verify authored 4096px Christmas and 2048px Winter atlas resolutions independently
