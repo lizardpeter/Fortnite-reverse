@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.p.outputs.matrix }}
+      already_audited: ${{ steps.p.outputs.already_audited }}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -26,6 +27,18 @@ jobs:
           python3 crates/fortnite_541/tools/prepare_ghidra_recovery.py --self-test
           python3 crates/fortnite_541/tools/audit_ghidra_recovery.py --self-test
           git fetch origin re/fortnite541-ghidra-full
+          python3 - <<'PY'
+          import json,os,subprocess
+          data=subprocess.check_output(["git","show","origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_status.json"])
+          status=json.loads(data)
+          done=status.get("recovery_modes",{}).get("bounded_v1",{}).get("attempted",0)==56
+          with open(os.environ["GITHUB_OUTPUT"],"a") as f:
+              f.write("already_audited="+str(done).lower()+"\n")
+              if done:
+                  f.write('matrix={"include":[{"start":0,"count":1,"label":"already_audited"}]}\n')
+          print("ORIGINAL_BOUNDED_RECOVERY_ALREADY_VERIFIED",done)
+          PY
+          if grep -q '^already_audited=true$' "$GITHUB_OUTPUT"; then exit 0; fi
           git show origin/re/fortnite541-ghidra-full:decompilation/fortnite541/recovery_remaining.jsonl.gz > "$RUNNER_TEMP/remaining.gz"
           python3 - <<'PY'
           import gzip,json,os
@@ -38,7 +51,7 @@ jobs:
           print("FORTNITE541_BOUNDED_ORIGINAL_RECOVERY_QUEUE",jobs)
           PY
   original-pdata-4-shard-ghidra:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.plan.outputs.already_audited != 'true'
     needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -133,7 +146,7 @@ jobs:
             ${{ runner.temp }}/source/targets.tsv
           if-no-files-found: warn
   audit-and-save-original-source-c:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.already_audited != 'true'
     needs: [plan, original-pdata-4-shard-ghidra]
     runs-on: ubuntu-latest
     steps:
