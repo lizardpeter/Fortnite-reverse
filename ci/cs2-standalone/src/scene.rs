@@ -5,11 +5,36 @@
 //! lightmaps, visibility and authored physics are *not* silently inferred.
 use std::{collections::{BTreeMap,BTreeSet},path::Path};
 use neutral_scene::{NeutralAlpha,NeutralInstance,NeutralMaterial,NeutralMesh,NeutralScene,NeutralVertex,NeutralSky};
-use crate::{draw,world,vpk::VpkArchive,surface,material,entity,lighting,bindings};
+use crate::{draw,world,vpk::VpkArchive,surface,material,entity,lighting,lightmap,bindings};
 
 const SOURCE_UNITS_TO_METRES:f32=0.0254; // Source 2 world unit convention (inch)
 const MAX_SCENE_MESHES:usize=250_000;
 const MAX_TRIANGLES:usize=15_000_000;
+
+/// Apply compiler-authored env_sky linear tint to original sRGB cube pixels.
+/// Keep texture image resolution/orientation and all per-face source details;
+/// Source2 sky shader exposure/bloom still requires native translation.
+fn tint_source_sky_faces(
+    mut faces:[neutral_scene::NeutralTexture;6],tint:[f32;3]
+)->[neutral_scene::NeutralTexture;6]{
+    let linear=|s:f32|if s<=0.04045{s/12.92}else{
+        ((s+0.055)/1.055).powf(2.4)
+    };
+    let srgb=|s:f32|if s<=0.0031308{s*12.92}else{
+        1.055*s.powf(1./2.4)-0.055
+    };
+    let tint_linear=tint.map(|v|linear(v.clamp(0.,1.)));
+    for face in &mut faces{
+        for pixel in face.rgba.chunks_exact_mut(4){
+            for c in 0..3{
+                let light=linear(pixel[c] as f32/255.)*tint_linear[c];
+                pixel[c]=(srgb(light).clamp(0.,1.)*255.).round() as u8;
+            }
+        }
+    }
+    faces
+}
+
 
 /// x,y,z (Source 2 Z-up) -> x,z,-y (shared engine right-handed Y-up).
 fn engine_position(p:[f32;3])->[f32;3] {
@@ -35,7 +60,7 @@ fn source_color_pass_visible(name:&str)->bool{
 }
 fn material(name:&str,alpha:Option<f32>)->NeutralMaterial{
     NeutralMaterial{
-        name:name.to_owned(),base_color_texture:None,normal_texture:None,
+        parallax_depth: 0.0, subsurface_scattering: false, name:name.to_owned(),base_color_texture:None,normal_texture:None,
         specular_texture:None,metallic_roughness_texture:None,emissive_texture:None,
         metallic:0.,emissive:[0.;3],roughness:1.,
         point_sampled:false,gloss_from_color_alpha:false,
@@ -265,9 +290,21 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
     let light_count=authored_lighting.local.len();
     let sun_present=authored_lighting.sun.is_some();
     let sky_material=authored_lighting.source_sky_material.clone();
+    let source_sky_tint=authored_lighting.sky_tint;
+    let source_sky_brightness=authored_lighting.sky_brightness_scale;
+    let gradient_fog=authored_lighting.gradient_fog_source.clone();
     let source_lights_unsupported=authored_lighting.omitted;
     scene.sun=authored_lighting.sun;
     scene.local_lights=authored_lighting.local;
+    scene.fog=authored_lighting.fog;
+    if let Some(fog)=gradient_fog.as_ref(){
+        scene.report.lines.push(format!(
+            "CS2 ORIGINAL GRADIENT FOG: authored source distance {:.1}..{:.1} units, color {:?}, distance exponent {:.2}, height enabled={} source height {:.1}..{:.1}, vertical exponent {:.2}; shared exponential-distance fog is a bounded approximation (Source2 gradient shader still pending).",
+            fog.start_distance,fog.end_distance,scene.fog.as_ref().map(|f|f.color),
+            fog.falloff_exponent,fog.source_height_enabled,
+            fog.source_start_height,fog.source_end_height,fog.vertical_exponent
+        ));
+    }
     scene.report.lines.push(format!(
         "CS2 ORIGINAL LIGHTING: {} author-positioned point lights using lumens/candelas, source sun={}, remaining Source2 area/disabled lights={}, authored sky material={:?} (sky texture shader pending). Shared Forward+ approximation, NOT baked Source2 parity.",
         light_count,sun_present,source_lights_unsupported,sky_material,
@@ -301,11 +338,15 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
                             // WITHIN the six authored faces, not just face
                             // permutation. The earlier permutation generated
                             // a visible rectangular horizon seam.
+                            let faces=if let Some(tint)=source_sky_tint{
+                                tint_source_sky_faces(faces,tint)
+                            }else{faces};
                             let faces=crate::cubemap_axis::source_z_up_to_engine_y_up(faces)?;
-                            scene.sky=Some(NeutralSky{faces,intensity:1.,cycle:None});
+                            let intensity=source_sky_brightness.unwrap_or(1.).clamp(0.,16.);
+                            scene.sky=Some(NeutralSky{faces,intensity,cycle:None});
                             scene.report.lines.push(format!(
-                                "CS2 ORIGINAL SKY: source-authored original BC1/BC6H cubemap {} decoded into 6 exact image faces (generic display approximation, sky.vfx exposure and Vulkan image-space validation pending).",
-                                path
+                                "CS2 ORIGINAL SKY: source-authored BC1/BC6H cubemap {} decoded into 6 original faces, env_sky brightnessscale={} tint={:?} now applied in shared renderer (source sky.vfx exposure/image-space parity pending).",
+                                path,intensity,source_sky_tint
                             ));
                         },
                         Err(e)=>scene.report.lines.push(format!(
@@ -318,41 +359,99 @@ pub fn import_workshop_preview(outer_directory:&Path,map_package:&str)->Result<N
             Err(e)=>scene.report.lines.push(format!("CS2 SKY SOURCE MISSING: {e}")),
         }
     }
-    // Preserve a precise census of Source 2 baked texture dependencies.
-    // Source2 lightmaps contain lighting data and encoding-specific layer
-    // semantics. Never feed them to generic RGBM until the exact
-    // atlas/UV placement mapping and light transport contract are decoded.
-    let mut authored_lightmap_formats=Vec::new();
-    for original in &graph.lighting_textures {
-        let path=if original.ends_with("_c"){original.clone()}else{
-            format!("{original}_c")
-        };
-        match packages.read(&path).and_then(|bytes|crate::texture::inspect(&bytes)) {
-            Ok(meta)=>authored_lightmap_formats.push(format!(
-                "{}: {}x{}, VTEX format {}, {} mip(s), flags 0x{:04x}",
-                path,meta.width,meta.height,meta.format,meta.mips,meta.flags
-            )),
-            Err(error)=>authored_lightmap_formats.push(format!("{path}: {error}")),
-        }
-    }
+    // Validate original Source 2 lightmap channel identity and native
+    // texture-array layout. Original channels must NOT become generic RGBM.
+    let atlas=lightmap::audit(&packages,&graph.lighting_textures,graph.lightmap_version);
+    let atlas_files=atlas.channels.iter().map(|(slot,entry)|format!(
+        "{slot}={} [{}x{} layers={} fmt={} mips={}]",
+        entry.path,entry.meta.width,entry.meta.height,entry.meta.depth,
+        entry.meta.format,entry.meta.mips
+    )).collect::<Vec<_>>().join("; ");
     scene.report.lines.push(format!(
-        "CS2 BAKED LIGHTMAP SOURCE AUDIT: {}/{} original lightmap reference(s) inspected. Source shader lightmap version {}.{}, authored atlas UV scale {:?}; source lighting is NOT yet lowered into universal RGBM. File inventory: {}",
-        authored_lightmap_formats.iter().filter(|value|value.contains("VTEX format")).count(),
-        graph.lighting_textures.len(),graph.lightmap_version[0],graph.lightmap_version[1],
-        graph.lightmap_uv_scale,authored_lightmap_formats.join("; ")
+        "CS2 ORIGINAL BAKED LIGHTMAP ATLAS: shader version {}.{}, {}/{} required channels found, matching dimensions/layers={}, complete={}; authored TEXCOORD3 UV scale {:?}. Source VTEX array layers have an independent lossless BCn decoding path. Directional SH and shadow-mask shader translation / GPU array sampling are pending: channels are NOT generic RGBM. Channels: {}. Errors: {}",
+        atlas.version[0],atlas.version[1],atlas.channels.len(),atlas.expected_channels.len(),
+        atlas.matching_atlas_layout,atlas.complete,graph.lightmap_uv_scale,atlas_files,
+        atlas.errors.iter().take(12).cloned().collect::<Vec<_>>().join("; ")
     ));
     let census=packages.audit(untextured.iter().map(String::as_str));
+    // Rank SOURCE-AUTHORED VMAT feature signatures to prioritize actual
+    // original VCS shader/permutation and ABI recovery. These are *not*
+    // already translated or compiled shader programs.
+    let top_signatures=census.ranked_feature_signatures().into_iter().take(12)
+        .map(|(signature,count)|format!(
+            "{count} material(s) {} switches={:?} texture_slots={:?}",
+            signature.shader,signature.switches,signature.texture_slots
+        )).collect::<Vec<_>>().join("; ");
+    scene.report.lines.push(format!(
+        "CS2 P0 SHADER TRANSLATION FRONTIER: {} referenced VMAT identities, {} source shader families, {} distinct authored VMAT switch/slot signatures (NOT compiled VCS permutations). {} packed normal/roughness, {} second-colour-layer, {} authored metalness, {} authored roughness, {} authored translucent/alpha-tested, {} missing VTEX. Exact VCS permutation decoding and surface-program admission are NOT implemented; 0 verified complete CS2 shader programs. Top source feature candidates: {}",
+        census.referenced,census.shaders.len(),census.feature_signatures.len(),
+        census.packed_normal_roughness,census.second_color_layer,
+        census.authored_metalness,census.authored_roughness,
+        census.authored_translucency_or_alpha_test,census.material_with_missing_vtex,
+        top_signatures
+    ));
+    // VCS executable shader files are indexed independently from VMAT
+    // authoring. This identifies actual source byte ownership and stable
+    // header hashes; it does NOT select combos or bind a SurfaceProgram.
+    let vcs=crate::vcs::audit(&packages,census.shaders.keys().map(String::as_str));
+    // Link compiler-defined static combo *names and ranges* to authored VMAT
+    // integer parameters. This is a constrained feature frontier, not a
+    // selected VCS shader blob or a runnable SurfaceProgram.
+    let source_materials=untextured.iter()
+        .filter_map(|path|packages.describe(path).ok()).collect::<Vec<_>>();
+    let selected=crate::vcs_selection::audit_materials(source_materials.iter(),&vcs);
+    scene.report.lines.push(format!(
+        "CS2 VCS STATIC SELECTION FRONTIER: {}/{} resolved VMATs have a readable original ABI-compatible VS/PS pair ({} candidate source pairs). {} VMATs constrain every compiler static feature by exact named value or compiler singleton, {} still have unresolved static values, {} have only invalid/out-of-range candidates; {} material candidate sets exceeded bounded pairing. These are candidate constraints, NOT native compiled permutation IDs or executed SurfacePrograms (0 admitted). Samples: {}. Missing: {}",
+        selected.vmats_with_abi_pair,selected.vmats_checked,
+        selected.compatible_pairs,selected.vmats_with_closed_static_values,
+        selected.vmats_with_unresolved_values,selected.vmats_with_invalid_values,
+        selected.candidate_pairs_truncated,
+        selected.examples.join("; "),selected.missing_examples.join("; ")
+    ));
+    let named=vcs.sources.iter().filter(|row|row.header.is_some()).take(24)
+        .map(|row|format!(
+            "{}:{}:{}:{} v{} [{}]",
+            row.identity.family,row.identity.platform,row.identity.shader_model,
+            row.identity.stage,row.header.as_ref().unwrap().version,row.origin
+        )).collect::<Vec<_>>().join("; ");
+    // Count decoded original static combo definitions separately from
+    // VMAT-authored guesses and from shader-program admission.
+    let native_combo_definitions=vcs.sources.iter().filter_map(|s|s.header.as_ref())
+        .map(|header|header.static_combo_definitions.len()).sum::<usize>();
+    let combo_examples=vcs.sources.iter().filter_map(|row|
+        row.header.as_ref().map(|header|(&row.identity,header))
+    ).filter(|(_,hdr)|!hdr.static_combo_definitions.is_empty()).take(6)
+        .map(|(identity,header)|format!("{}:{} [{}]",
+            identity.family,identity.stage,
+            header.static_combo_definitions.iter().take(12)
+                .map(|c|format!("{}({}..{})",c.name,c.range_min,c.range_max))
+                .collect::<Vec<_>>().join(", ")
+        )).collect::<Vec<_>>().join("; ");
+    let failures=vcs.sources.iter().filter_map(|row|row.error.as_ref()
+        .map(|error|format!("{}: {error}",row.path))).take(12)
+        .collect::<Vec<_>>().join("; ");
+    scene.report.lines.push(format!(
+        "CS2 ORIGINAL COMPILED VCS CENSUS: {} source shader families; {} have indexed VCS files, {} have both readable VS+PS headers. {} listed VCS stage files, {} readable VCS headers, {} indexed-but-missing physical files, {} unsupported headers; {} authentic static combo definition(s) recovered from complete VCS2/Resource files. Source-selected static combo IDs, shader ops and renderer SurfaceProgram admission remain pending (0 fully admitted). Combo samples: {}. Stage samples: {}. Missing families: {:?}. Failures: {}",
+        vcs.expected_families,vcs.found_families,vcs.families_with_vertex_and_pixel,
+        vcs.files_listed,vcs.verified_headers,vcs.missing_physical_file,vcs.unsupported_headers,
+        native_combo_definitions,combo_examples,
+        named,vcs.missing_families.iter().take(12).collect::<Vec<_>>(),failures
+    ));
     let bound=bindings::bind(&mut scene,&packages);
     scene.report.lines.push(format!(
-        "CS2 ORIGINAL EFFECT SHADING: {} authored additive csgo_effects.vfx material(s); {} have original g_tColor alpha * three source VTEX masks and source opacity scale compiled to universal ADDITIVE transparency. Source camera Fresnel/fade/depth-feather remains pending.",
-        bound.additive_effect_materials,bound.original_effect_masks_combined
+        "CS2 ORIGINAL EFFECT SHADING: {} additive and {} alpha-blended csgo_effects.vfx material(s); {} composited with 1-3 original VTEX masks, {} used exact source opacity scale, {} other VMATs have authored translucency and {} have authored alpha-test reference. Mask UV animation, camera Fresnel/fade/depth-feather remain pending.",
+        bound.additive_effect_materials,bound.non_additive_effect_materials,
+        bound.original_effect_masks_combined,bound.source_effect_opacity_scaled,
+        bound.authored_translucent_materials,bound.authored_alpha_test_materials
     ));
     scene.report.lines.push(format!(
-        "CS2 ACTUAL VTEX MATERIAL INPUTS: {} original textures decoded ({} MiB decoded RGBA; limit {}), {}/{} original geometry materials with a source-backed base-color texture, {} direct normal bindings, {} unavailable/unsupported texture requests. Original metalness scalar mapped on {} materials. Additional original shader semantics pending: Layer2 blend={} materials, packed normal/roughness={} materials, self-illumination={} materials. Source shader graph translation, map lightmaps and skybox remain incomplete. Failure samples: {}",
+        "CS2 ACTUAL VTEX MATERIAL INPUTS: {} original textures decoded ({} MiB decoded RGBA; limit {}), {}/{} original geometry materials with a source-backed base-color texture, {} generic normal bindings, {} unavailable/unsupported texture requests. {} material(s) have shader-proven source HemiOct tangent-space normal unpacking, {} also have authored BC7 roughness mapped into universal PBR, {} unsupported packed conversions. Original metalness scalar mapped on {} materials. Remaining semantics: Layer2 blend={} materials, packed source references={} materials, self-illumination={} materials. VCS permutation replay and baked lightmap shader integration remain incomplete. Failure samples: {}",
         bound.vtex_loaded,bound.total_rgba_bytes/(1024*1024),
         bound.budget_bytes.map(|bytes|format!("{} MiB",bytes/(1024*1024))).unwrap_or_else(||"disabled".into()),
         bound.materials_with_albedo,scene.materials.len(),bound.materials_with_normal,
-        bound.vtex_failed,bound.mapped_metalness,bound.authored_layer2,
+        bound.vtex_failed,bound.source_hemi_normal_materials,
+        bound.source_hemi_roughness_materials,bound.source_hemi_unsupported,
+        bound.mapped_metalness,bound.authored_layer2,
         bound.authored_normal_roughness,bound.authored_self_illum,
         bound.missing.iter().take(8).cloned().collect::<Vec<_>>().join("; ")
     ));
@@ -452,5 +551,24 @@ mod tests {
         let x=engine_axis([1.,0.,0.]);
         let y=engine_axis([0.,1.,0.]);
         assert_eq!([x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]],[0.,1.,0.]);
+    }
+}
+
+#[cfg(test)]
+mod authored_christmas_sky_tests {
+    use super::*;
+    #[test]
+    fn source_sky_linear_tint_preserves_cube_faces_and_alpha(){
+        let source=std::array::from_fn(|i|
+            neutral_scene::NeutralTexture{
+                name:format!("sky face {i}"),width:1,height:1,
+                rgba:vec![255,255,255,255],mips:vec![],compressed:None
+            });
+        let tinted=tint_source_sky_faces(source,[206./255.,218./255.,1.]);
+        for face in tinted {
+            assert_eq!(face.rgba,[206,218,255,255]);
+            assert_eq!(face.width,1);
+            assert_eq!(face.height,1);
+        }
     }
 }
