@@ -129,3 +129,5 @@ jobs:
 # Inspect exact original Source2 mixed Dref shader opcodes before universal shader rewrites
 
 # Direct source-verified lightmapped PS comparison sampler split and Naga roundtrip diagnostic
+
+# Re-run native source shader diagnostic after typed instruction cursor fix
