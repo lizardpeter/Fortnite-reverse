@@ -230,9 +230,10 @@ fn repair_source_row_major_matrix_multiply(
         let mut typer=naga::front::Typifier::new();
         let mut candidates=Vec::new();
         for (handle,expression) in function.expressions.iter(){
-            let E::Binary{op:B::Multiply,left,right}=*expression else{continue;};
+            let E::Binary{op:B::Multiply,left,right}=expression else{continue;};
             let E::Math{fun:M::Transpose,arg,arg1:None,arg2:None,arg3:None}=
-                function.expressions[left] else{continue;};
+                &function.expressions[*left] else{continue;};
+            let (left,right,arg)=(*left,*right,*arg);
             typer.grow(right,&function.expressions,&ctx)
                 .map_err(|e|format!("original source vector type unresolved: {e:?}"))?;
             typer.grow(arg,&function.expressions,&ctx)
