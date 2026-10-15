@@ -399,13 +399,10 @@ pub fn source_shader_bytes<'a>(
     }
 }
 
-/// Stream one native GPU program from a physically recovered VCS. Never load
-/// hundreds of MiB of alternate permutations or keep an on-disk shader cache.
-pub fn recover_original_gpu_program(
-    source:&Path,dictionary_dir:&Path,static_id:i64,dynamic_id:i64
-)->Result<NativeCompiledCode,String>{
-    let mut file=File::open(source)
-        .map_err(|e|format!("open original compiled VCS {}: {e}",source.display()))?;
+/// Inspect the source compiler's complete physical permutation index without
+/// decompressing any GPU code or guessing a runtime selection. Bounded by
+/// MAX_VCS_META regardless of the number of native shader variants.
+fn read_physical_source_index(file:&mut File)->Result<NativeVcsIndex,String>{
     let file_size=file.metadata().map_err(|e|e.to_string())?.len();
     if file_size<16{return Err("source VCS too short".into());}
     let mut first=[0u8;8];
@@ -417,7 +414,24 @@ pub fn recover_original_gpu_program(
     file.seek(SeekFrom::Start(0)).map_err(|e|e.to_string())?;
     let mut metadata=vec![0;length];
     file.read_exact(&mut metadata).map_err(|e|e.to_string())?;
-    let index=NativeVcsIndex::parse(&metadata,file_size)?;
+    NativeVcsIndex::parse(&metadata,file_size)
+}
+/// Inspect a physically recovered original VCS on demand. The much larger
+/// selected GPU payload is not read or cached here.
+pub fn inspect_original_vcs_stage(source:&Path)->Result<NativeVcsIndex,String>{
+    let mut file=File::open(source)
+        .map_err(|e|format!("open original compiled VCS {}: {e}",source.display()))?;
+    read_physical_source_index(&mut file)
+}
+
+/// Stream one native GPU program from a physically recovered VCS. Never load
+/// hundreds of MiB of alternate permutations or keep an on-disk shader cache.
+pub fn recover_original_gpu_program(
+    source:&Path,dictionary_dir:&Path,static_id:i64,dynamic_id:i64
+)->Result<NativeCompiledCode,String>{
+    let mut file=File::open(source)
+        .map_err(|e|format!("open original compiled VCS {}: {e}",source.display()))?;
+    let index=read_physical_source_index(&mut file)?;
     let (block,bytecode_index)=index.source_selection(static_id,dynamic_id)?;
     file.seek(SeekFrom::Start(block.file_offset)).map_err(|e|e.to_string())?;
     let mut packed=vec![0u8;block.compressed_size];
