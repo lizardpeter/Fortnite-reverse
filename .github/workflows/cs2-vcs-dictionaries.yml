@@ -1,0 +1,39 @@
+name: Obtain Source 2 shader decompression dictionaries
+on:
+  push:
+    branches: [probe/cs2-vcs-dictionary-20261015]
+    paths: ['.github/workflows/cs2-vcs-dictionaries.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-source2-dictionaries:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download public Source 2 VCS dictionary references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vcs-dictionaries"
+          for id in 255df362 2bc2fa87; do
+            curl -fL --retry 3 \
+              "https://raw.githubusercontent.com/ValveResourceFormat/ValveResourceFormat/master/ValveResourceFormat/Utils/vfx_zstd_${id}.bin" \
+              -o "$RUNNER_TEMP/vcs-dictionaries/vfx_zstd_${id}.bin"
+          done
+          python3 - <<'PY'
+          import pathlib,struct,hashlib,os
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'vcs-dictionaries'
+          for id in (0x255df362,0x2bc2fa87):
+              path=root/f'vfx_zstd_{id:08x}.bin'
+              content=path.read_bytes()
+              assert len(content)==65536
+              magic,actual=struct.unpack_from('<II',content)
+              assert magic==0xec30a437 and actual==id, (hex(magic),hex(actual))
+              print('VALIDATED_SOURCE2_SHADER_DICTIONARY',hex(id),hashlib.sha256(content).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2-source2-zstd-vcs-dictionaries
+          path: ${{ runner.temp }}/vcs-dictionaries/*.bin
+          retention-days: 14
