@@ -142,13 +142,13 @@ fn main()->Result<(),String>{
             }
             if family=="csgo_lightmappedgeneric" && stage=="ps"{
                 let words=spirv_webgpu_transform::u8_slice_to_u32_vec(code);
-                let mut corrections=None;
+                let mut corrections=spirv_webgpu_transform::CorrectionMap::default();
                 match spirv_webgpu_transform::drefsplitter(&words,&mut corrections){
                     Ok(rewritten)=>{
                         let new_bytes=spirv_webgpu_transform::u32_slice_to_u8_vec(&rewritten);
                         println!(
                             "SOURCE2_DREF_SPLIT_PHYSICAL {family} original_words={} rewritten_words={} relocations_needed={}",
-                            words.len(),rewritten.len(),corrections.is_some()
+                            words.len(),rewritten.len(),corrections.sets.as_ref().is_some_and(|s|!s.is_empty())
                         );
                         match cs2_importer::universal_spirv_ir::
                             translate_source_spirv_with_ubo_rebase(&new_bytes){
