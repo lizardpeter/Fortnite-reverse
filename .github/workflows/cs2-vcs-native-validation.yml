@@ -66,3 +66,5 @@ jobs:
 # Validate original source VTEX image array, shadow mask and VMAT physical input provisioning contract
 
 # Recheck fail-closed Source2 runtime and SH2 atlas completeness invariants
+
+# Verify source shader UBO SSBO image2DArray and sampler GPU resource shapes
