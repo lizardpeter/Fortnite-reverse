@@ -62,3 +62,5 @@ jobs:
 # Assert original source Vulkan VS+PS alias ABI contracts for sky and lightmapped materials
 
 # Source2 original VCS compiler variable metadata capture + exact name mapping test
+
+# Validate original source VTEX image array, shadow mask and VMAT physical input provisioning contract
