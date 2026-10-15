@@ -234,10 +234,8 @@ fn main()->Result<(),String>{
                     physical_sample_instruction_evidence(code));
                 println!("ORIGINAL_SOURCE2_MIXED_DREF_RESOURCE_CHAIN {}",
                     source_sampling_dependencies(code));
-                for depth in [0u32,1u32]{
-                    println!("SOURCE2_SOURCE_IMAGE_DEPTH_CLASS_PROBE depth={depth} {}",
-                        diagnostic_explicit_image_depth(code,depth));
-                }
+                // Explicit Depth=1 over a BindingArray panics in Naga 30.
+                // Only test original typed descriptor alias legalization above.
             }
             if family=="csgo_lightmappedgeneric" && stage=="ps"{
                 match cs2_importer::vcs_mixed_image_lowering::
