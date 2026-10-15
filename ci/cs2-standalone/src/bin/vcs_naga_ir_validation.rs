@@ -86,6 +86,50 @@ fn relaxed_layout_diagnostic(stage:&str,code:&[u8])->String{
     }
 }
 
+fn source_sampling_dependencies(code:&[u8])->String{
+    if code.len()<20||code.len()%4!=0{return "bad source bytes".into();}
+    let words=code.chunks_exact(4).map(|v|u32::from_le_bytes(v.try_into().unwrap())).collect::<Vec<_>>();
+    let mut defs=std::collections::BTreeMap::<u32,(u32,Vec<u32>)>::new();
+    let mut positions=std::collections::BTreeMap::<u32,(u32,u32)>::new();
+    let mut samples=Vec::new();
+    let mut at=5;
+    while at<words.len(){
+        let op=words[at];let count=(op>>16) as usize;let id=op&0xffff;
+        if count==0||at+count>words.len(){return format!("invalid SPIRV at {at}");}
+        let p=&words[at+1..at+count];
+        if id==71 && p.len()>=3{
+            let row=positions.entry(p[0]).or_default();
+            if p[1]==33{row.1=p[2]}else if p[1]==34{row.0=p[2]}
+        }
+        let result=match id{
+            25|26|27|32 if !p.is_empty()=>Some(p[0]),
+            59|61|65|66|67|68|86|83|124 if p.len()>=2=>Some(p[1]),
+            _=>None
+        };
+        if let Some(result)=result {defs.insert(result,(id,p.to_vec()));}
+        if matches!(id,87..=98) && p.len()>=3{
+            samples.push((id,p[2]));
+        }
+        at+=count;
+    }
+    let mut outputs=Vec::new();
+    for (op,sampled) in samples{
+        let ss=defs.get(&sampled).map(|(id,p)|format!("{id}:{:?}",p));
+        let source_image=defs.get(&sampled)
+            .filter(|(id,_)|*id==86).and_then(|(_,p)|p.get(2)).copied();
+        let image_load=source_image.and_then(|id|defs.get(&id));
+        let origin=image_load.and_then(|(op,p)|if *op==61{p.get(2).copied()}else{None});
+        let binding=origin.and_then(|id|positions.get(&id));
+        let sampled_type=defs.get(&sampled).and_then(|(_,p)|p.first()).copied();
+        let image_type=sampled_type.and_then(|id|defs.get(&id))
+            .filter(|(op,_)|*op==27).and_then(|(_,p)|p.get(1)).copied();
+        let type_def=image_type.and_then(|id|defs.get(&id));
+        outputs.push(format!("sample-op{op}:res{sampled} sampled={ss:?} image_load={:?} origin={origin:?} binding={binding:?} type={type_def:?}", image_load.map(|(o,p)|(*o,p.clone()))));
+    }
+    outputs.sort();outputs.dedup();
+    outputs.join("; ")
+}
+
 fn physical_sample_instruction_evidence(code:&[u8])->String{
     if code.len()%4!=0||code.len()<20{return "invalid bytes".into();}
     let words=code.chunks_exact(4).map(|s|u32::from_le_bytes(s.try_into().unwrap())).collect::<Vec<_>>();
@@ -139,6 +183,8 @@ fn main()->Result<(),String>{
             if family=="csgo_lightmappedgeneric" && stage=="ps" {
                 println!("ORIGINAL_SOURCE2_MIXED_DREF_PHYSICAL_OPCODES {}",
                     physical_sample_instruction_evidence(code));
+                println!("ORIGINAL_SOURCE2_MIXED_DREF_RESOURCE_CHAIN {}",
+                    source_sampling_dependencies(code));
             }
             if family=="csgo_lightmappedgeneric" && stage=="ps"{
                 let words=spirv_webgpu_transform::u8_slice_to_u32_vec(code);
