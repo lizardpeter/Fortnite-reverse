@@ -179,6 +179,33 @@ fn diagnostic_explicit_image_depth(code:&[u8],depth:u32)->String{
     }
 }
 
+fn source_unresolved_uniform_member_types(
+    code:&[u8],translated:&cs2_importer::universal_spirv_ir::RebasedUnboundShader
+)->Result<Vec<String>,String>{
+    let source=naga::front::spv::parse_u8_slice(
+        code,&naga::front::spv::Options::default()
+    ).map_err(|e|format!("source original UBO type introspection failed: {e:?}"))?;
+    let mut missing=Vec::new();
+    for (_,var) in source.global_variables.iter(){
+        if var.space!=naga::AddressSpace::Uniform{continue;}
+        let Some(abi)=var.binding.as_ref() else{continue;};
+        let Some(layout)=translated.uniform_layouts.iter().find(|x|
+            x.group==abi.group && x.binding==abi.binding) else{continue;};
+        let naga::TypeInner::Struct{members,..}=&source.types[var.ty].inner
+            else{continue;};
+        for (i,member) in members.iter().enumerate(){
+            if layout.field_widths.get(i).is_some_and(|x|x.is_some()) ||
+                layout.matrix_fields.iter().any(|m|m.member_index==i){continue;}
+            missing.push(format!(
+                "group={} binding={} member={} byte_offset={} type={:?}",
+                layout.group,layout.binding,i,member.offset,
+                source.types[member.ty].inner
+            ));
+        }
+    }
+    Ok(missing)
+}
+
 fn count_shader_sampling_opcodes(code:&[u8])->Result<(usize,usize),String>{
     if code.len()<20||code.len()%4!=0{
         return Err("translated shader SPIR-V has invalid byte width".into());
@@ -335,6 +362,10 @@ fn main()->Result<(),String>{
                                                 )
                                         ).count()
                                     }).sum::<usize>();
+                                println!(
+                                    "SOURCE2_REMAINING_ORIGINAL_UBO_MEMBER_TYPES {:?}",
+                                    source_unresolved_uniform_member_types(&lowered.spirv,&ir)?
+                                );
                                 println!(
                                     "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} ordinary_sampling_ops={} depth_compare_sampling_ops={} compiled_source_descriptor_slots={:?} authored_matrix_strides={} structurally_repackable_uniform_buffers={}/{} unknown_field_layouts={} original_ubo_layout_closed={} (NOT actual runtime UBO provider admission)",
                                     ir.shader.generated_spirv.len(),lowered.aliases.len(),
