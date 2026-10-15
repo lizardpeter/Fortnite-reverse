@@ -110,3 +110,5 @@ jobs:
 # Run exact physically compiled original GPU variant enumeration and compiler mixed-radix roundtrip
 
 # Execute compiler-closed authentic Source2 native Vulkan VS/PS selection with unprovided feature rejection
+
+# Validate physical original CS2 Vulkan vertex input types and VS/PS interstage varying ABI
