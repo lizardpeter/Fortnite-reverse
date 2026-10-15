@@ -359,6 +359,14 @@ fn main()->Result<(),String>{
                                     (r.set,r.binding)).collect::<Vec<_>>();
                                 let authored_matrices=ir.uniform_layouts.iter()
                                     .map(|ubo|ubo.matrix_fields.len()).sum::<usize>();
+                                let nested_vector_arrays=ir.uniform_layouts.iter()
+                                    .map(|u|u.nested_vector_arrays.len()).sum::<usize>();
+                                let nested_matrix_arrays=ir.uniform_layouts.iter()
+                                    .map(|u|u.nested_matrix_arrays.len()).sum::<usize>();
+                                println!(
+                                    "SOURCE2_TYPED_ORIGINAL_NESTED_UBO_ARRAYS vector_arrays={} matrix_arrays={} source-authored-only=true",
+                                    nested_vector_arrays,nested_matrix_arrays
+                                );
                                 let upload_ready=ir.uniform_layouts.iter().filter(|ubo|{
                                     if ubo.original_bytes>16*1024*1024{return false;}
                                     ubo.repack_original_bytes(
@@ -370,6 +378,12 @@ fn main()->Result<(),String>{
                                         ubo.field_widths.iter().enumerate().filter(
                                             |(member,width)|width.is_none() &&
                                                 !ubo.matrix_fields.iter().any(
+                                                    |m|m.member_index==*member
+                                                ) &&
+                                                !ubo.nested_vector_arrays.iter().any(
+                                                    |m|m.member_index==*member
+                                                ) &&
+                                                !ubo.nested_matrix_arrays.iter().any(
                                                     |m|m.member_index==*member
                                                 )
                                         ).count()
