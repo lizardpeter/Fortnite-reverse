@@ -240,6 +240,33 @@ fn main()->Result<(),String>{
                 }
             }
             if family=="csgo_lightmappedgeneric" && stage=="ps"{
+                match cs2_importer::vcs_mixed_image_lowering::
+                    split_original_mixed_comparison_arrays(code){
+                    Ok(lowered)=>{
+                        println!(
+                            "SOURCE2_PHYSICAL_TYPED_DREF_ALIASES count={} rewritten_depth_samples={} aliases={:?}",
+                            lowered.aliases.len(),lowered.rewritten_dref_samples,
+                            lowered.aliases.iter().map(|x|format!(
+                                "{}:{} -> {}:{} image={} original_var={} new_var={}",
+                                x.original_set,x.original_binding,x.alias_set,
+                                x.alias_binding,x.is_comparison_image,
+                                x.original_variable_id,x.alias_variable_id
+                            )).collect::<Vec<_>>()
+                        );
+                        match cs2_importer::universal_spirv_ir::
+                            translate_source_spirv_with_ubo_rebase(&lowered.spirv){
+                            Ok(ir)=>println!(
+                                "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} original_ubo_layout_closed={} (not runtime uniform/image admission)",
+                                ir.shader.generated_spirv.len(),lowered.aliases.len(),
+                                ir.original_abi_closed
+                            ),
+                            Err(e)=>println!("SOURCE2_TYPED_DREF_ALIAS_NAGA_BLOCKER {e}"),
+                        }
+                    }
+                    Err(e)=>println!("SOURCE2_TYPED_DREF_ALIAS_REJECTED {e}"),
+                }
+            }
+            if family=="csgo_lightmappedgeneric" && stage=="ps"{
                 let words=spirv_webgpu_transform::u8_slice_to_u32_vec(code);
                 let mut corrections=spirv_webgpu_transform::CorrectionMap::default();
                 match spirv_webgpu_transform::drefsplitter(&words,&mut corrections){
