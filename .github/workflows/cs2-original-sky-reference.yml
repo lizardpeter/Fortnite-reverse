@@ -1,0 +1,39 @@
+name: CS2 original Christmas sky visual reference
+on:
+  push:
+    branches: [probe/cs2-vcs-native-ci-20261015]
+    paths:
+      - .github/workflows/cs2-original-sky-reference.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  source-cube:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            ci/cs2-standalone
+            ci/neutral-scene-contract
+      - name: Download exact original CS2 source sky VTEX
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-compact-part-10
+          run-id: 38591298007
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/source
+      - name: Decode original author-selected Dust2 cubemap with Rust importer
+        shell: bash
+        run: |
+          set -euo pipefail
+          export CS2_SKY_SOURCE="$RUNNER_TEMP/source"
+          export CS2_SKY_OUTPUT="$RUNNER_TEMP/original-sky"
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_sky_source_audit
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cs2-christmas-original-sky-face-reference
+          path: ${{ runner.temp }}/original-sky
+          retention-days: 14
