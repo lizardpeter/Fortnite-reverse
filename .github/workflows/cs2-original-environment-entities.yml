@@ -35,6 +35,8 @@ jobs:
           mkdir "$RUNNER_TEMP/original-cs2-workshop"
           unzip -q "$RUNNER_TEMP/workshop-original.zip" -d "$RUNNER_TEMP/original-cs2-workshop"
           export ORIGINAL_CS2_WORKSHOP_DIR="$RUNNER_TEMP/original-cs2-workshop"
+          cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib original_srgb_sky_tint_applies_all_source_channels_without_face_loss
+          cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib original_christmas_env_sky_brightness_tint_and_gradient_fog_are_preserved
           cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin cs2_lighting_entities_audit > "$RUNNER_TEMP/source_environment_report.txt"
           sed -n '1,80p' "$RUNNER_TEMP/source_environment_report.txt"
       - uses: actions/upload-artifact@v4
