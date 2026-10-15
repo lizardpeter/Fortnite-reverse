@@ -185,6 +185,77 @@ fn read_value(reader:&mut Reader<'_>,kind:u8,flag:u8,auxiliary:bool,depth:usize)
     };
     Ok(if flag==0 {value}else{Value::Flagged(flag,Box::new(value))})
 }
+/// Valve's compiled Source 2 KV3 v4/v5 DATA blocks are raw LZ4 *blocks*,
+/// not an LZ4 frame and not a length-prefixed block. Consume precisely the
+/// compressed buffer advertised by the KV3 header and accept a final
+/// literals-only sequence as the terminator. The output size is an external
+/// signed header value already checked against MAX_PAYLOAD.
+fn decode_source2_lz4_block(input:&[u8],expected:usize)->Result<Vec<u8>,String>{
+    if expected>MAX_PAYLOAD {return Err("KV3 LZ4 decoded size exceeds limit".into());}
+    let mut result=Vec::with_capacity(expected);
+    let mut cursor=0usize;
+    let extended=|start:usize,source:&[u8],cursor:&mut usize|->Result<usize,String>{
+        let mut length=start;
+        if start==15 {
+            loop {
+                let extra=*source.get(*cursor).ok_or(
+                    "truncated KV3 LZ4 extended length"
+                )? as usize;
+                *cursor+=1;
+                length=length.checked_add(extra)
+                    .ok_or("KV3 LZ4 length overflow")?;
+                if extra!=255 {break;}
+            }
+        }
+        Ok(length)
+    };
+    while cursor<input.len(){
+        let token=input[cursor];
+        cursor+=1;
+        let literal_length=extended((token>>4) as usize,input,&mut cursor)?;
+        let end=cursor.checked_add(literal_length)
+            .ok_or("KV3 LZ4 literal extent overflow")?;
+        let literal=input.get(cursor..end)
+            .ok_or("KV3 LZ4 literals exceed compressed input")?;
+        if result.len().checked_add(literal_length)
+            .is_none_or(|length|length>expected){
+            return Err("KV3 LZ4 literals exceed declared output".into());
+        }
+        result.extend_from_slice(literal);
+        cursor=end;
+        // LZ4 raw blocks terminate with a literals-only sequence; do not
+        // attempt to read an offset after the final source literal.
+        if cursor==input.len() {break;}
+        let offset_end=cursor.checked_add(2)
+            .ok_or("KV3 LZ4 offset overflow")?;
+        let offset_bytes=input.get(cursor..offset_end)
+            .ok_or("KV3 LZ4 match offset truncated")?;
+        let offset=u16::from_le_bytes([offset_bytes[0],offset_bytes[1]]) as usize;
+        cursor=offset_end;
+        if offset==0 || offset>result.len(){
+            return Err("KV3 LZ4 invalid match offset".into());
+        }
+        let length=extended((token&15) as usize,input,&mut cursor)?
+            .checked_add(4).ok_or("KV3 LZ4 match length overflow")?;
+        if result.len().checked_add(length)
+            .is_none_or(|size|size>expected){
+            return Err("KV3 LZ4 match exceeds declared output".into());
+        }
+        // The source format explicitly permits overlapping match copies.
+        for _ in 0..length {
+            let value=result[result.len()-offset];
+            result.push(value);
+        }
+    }
+    if result.len()!=expected || cursor!=input.len(){
+        return Err(format!(
+            "KV3 LZ4 output size mismatch: {} decoded vs {expected} advertised",
+            result.len()
+        ));
+    }
+    Ok(result)
+}
+
 fn decoded(compression:u32,bytes:&[u8],uncompressed:usize,compressed:usize)->Result<Vec<u8>,String>{
     if uncompressed>MAX_PAYLOAD{return Err("KV3 decompressed buffer exceeds hard size limit".into());}
     match compression {
@@ -194,7 +265,7 @@ fn decoded(compression:u32,bytes:&[u8],uncompressed:usize,compressed:usize)->Res
         },
         1=>{
             let buf=bytes.get(..compressed).ok_or("truncated LZ4 KV3 buffer")?;
-            lz4_flex::block::decompress(buf,uncompressed)
+            decode_source2_lz4_block(buf,uncompressed)
                 .map_err(|e|format!("KV3 LZ4 decompress failed: {e}"))
         },
         2=>{
@@ -473,6 +544,32 @@ mod tests{
     /// Real compiled VCS v72 KV3 documents place nonempty binary members in
     /// a third separately compressed buffer. Preserve the exact source blobs
     /// rather than treating their presence as an unsupported shader version.
+    #[test]
+    fn source2_raw_lz4_literals_and_overlapping_matches(){
+        // Literal 'A', then a back-reference of length 18 from offset 1,
+        // and a legal source-final five-literal sequence.
+        let source=[0x1e,b'A',1,0,0x50,b'B',b'C',b'D',b'E',b'F'];
+        let decoded=decode_source2_lz4_block(&source,24).unwrap();
+        assert_eq!(&decoded[..19],&[b'A';19]);
+        assert_eq!(&decoded[19..],b"BCDEF");
+    }
+    #[test]
+    fn source2_raw_lz4_bounds_and_truncated_lengths_rejected(){
+        assert_eq!(decode_source2_lz4_block(&[0x00],0).unwrap(),b"");
+        assert!(decode_source2_lz4_block(&[0xf0],15).is_err());
+        assert!(decode_source2_lz4_block(&[0x00,1],4).is_err());
+        assert!(decode_source2_lz4_block(&[0x00,0,0],4).is_err());
+        assert!(decode_source2_lz4_block(&[0x10,b'A'],2).is_err());
+        assert!(decode_source2_lz4_block(&[0x10,b'A'],1).is_ok());
+        assert!(decode_source2_lz4_block(&[0x10,b'A'],0).is_err());
+    }
+    #[test]
+    fn source2_lz4_roundtrip_matches_existing_encoder(){
+        let plain=b"Valve Source2 original KV3 entity arrays + more KV3 entity arrays";
+        let compressed=lz4_flex::block::compress(plain);
+        let decoded=decode_source2_lz4_block(&compressed,plain.len()).unwrap();
+        assert_eq!(decoded,plain);
+    }
     #[test]
     fn v5_nonempty_external_shader_blob_roundtrip_and_bad_lengths(){
         let strings=b"shader_blob\0";
