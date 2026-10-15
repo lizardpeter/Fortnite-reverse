@@ -22,7 +22,8 @@ def audit(root: Path, save: bool = True) -> dict:
         attempted = set()
         counts = dict(attempted=0, decompiled=0, decompiler_failed=0, missing_function=0)
         folder = root / "recovery" / mode
-        for filename in sorted((folder / "records").glob("retry_*.jsonl.gz")):
+        pattern = "bounded_*.jsonl.gz" if mode == "bounded_v1" else "retry_*.jsonl.gz"
+        for filename in sorted((folder / "records").glob(pattern)):
             expected_report = folder / "reports" / (filename.name[:-len(".jsonl.gz")] + ".json")
             if not expected_report.is_file():
                 raise ValueError(f"Missing source Ghidra report: {filename}")
@@ -136,6 +137,44 @@ def self_test() -> None:
         assert result["effectively_decompiled"] == 4, result
         assert result["unresolved_remaining"] == 1, result
         assert result["recovery_modes"]["fast_v1"]["attempted"] == 2
+        # Regression: bounded_v1 writes bounded_*.jsonl.gz, never retry_*
+        # and must increment audited coverage only for real decompiled C.
+        bounded = root / "recovery" / "bounded_v1"
+        (bounded / "records").mkdir(parents=True)
+        (bounded / "reports").mkdir()
+        record = {
+            "index": 3, "rva": "0x30", "end_rva": "0x40",
+            "status": "decompiled", "c": "void real_native(void) {}",
+            "recovery_mode": "bounded_v1",
+            "retail_entry_instruction_decoded": True,
+            "exact_original_pdata_body_applied": True,
+            "original_pdata_executable": True,
+        }
+        bounded_name = "bounded_000003_000003"
+        with gzip.open(bounded / "records" / (bounded_name + ".jsonl.gz"), "wt") as f:
+            f.write(json.dumps(record) + "\n")
+        (bounded / "reports" / (bounded_name + ".json")).write_text(json.dumps({
+            "original_pdata_functions": 5, "retry_count": 1, "recovered": 1,
+            "decompiler_failed": 0, "missing": 0,
+            "first_original_index": 3, "last_original_index": 3,
+        }))
+        joined = audit(root)
+        assert joined["effectively_decompiled"] == 5, joined
+        assert joined["unresolved_remaining"] == 0
+        assert joined["recovery_modes"]["bounded_v1"]["attempted"] == 1
+        assert joined["recovery_modes"]["bounded_v1"]["decompiled"] == 1
+        record["exact_original_pdata_body_applied"] = False
+        with gzip.open(bounded / "records" / (bounded_name + ".jsonl.gz"), "wt") as f:
+            f.write(json.dumps(record) + "\n")
+        try:
+            audit(root, save=False)
+        except ValueError as exc:
+            assert "exact executable entry/body" in str(exc)
+        else:
+            raise AssertionError("Unbounded Ghidra C was accepted")
+        record["exact_original_pdata_body_applied"] = True
+        with gzip.open(bounded / "records" / (bounded_name + ".jsonl.gz"), "wt") as f:
+            f.write(json.dumps(record) + "\n")
         rows[0]["rva"] = "0x99"
         with gzip.open(filename, "wt") as f:
             for r in rows:
