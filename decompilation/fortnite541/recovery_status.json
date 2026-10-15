@@ -25,6 +25,12 @@
       "decompiled": 10,
       "decompiler_failed": 41,
       "missing_function": 15
+    },
+    "bounded_v1": {
+      "attempted": 0,
+      "decompiled": 0,
+      "decompiler_failed": 0,
+      "missing_function": 0
     }
   }
 }
