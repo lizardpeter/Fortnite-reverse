@@ -196,8 +196,20 @@ fn source_unresolved_uniform_member_types(
         for (i,member) in members.iter().enumerate(){
             if layout.field_widths.get(i).is_some_and(|x|x.is_some()) ||
                 layout.matrix_fields.iter().any(|m|m.member_index==i){continue;}
+            let nested=match &source.types[member.ty].inner {
+                naga::TypeInner::Struct{members,..}=>members.iter()
+                    .map(|field|format!(
+                        "inner_offset={} inner_type={:?} inner_inner={:?}",
+                        field.offset,source.types[field.ty].inner,
+                        if let naga::TypeInner::Array{base,..}=
+                            &source.types[field.ty].inner{
+                            Some(format!("{:?}",source.types[*base].inner))
+                        }else{None}
+                    )).collect::<Vec<_>>(),
+                _=>Vec::new(),
+            };
             missing.push(format!(
-                "group={} binding={} member={} byte_offset={} type={:?}",
+                "group={} binding={} member={} byte_offset={} type={:?} nested={nested:?}",
                 layout.group,layout.binding,i,member.offset,
                 source.types[member.ty].inner
             ));
