@@ -225,7 +225,9 @@ pub fn plan_original_inputs(
 #[derive(Clone,Debug)]
 pub enum OriginalLoadedInput {
     Texture2D(NeutralTexture),
-    TextureArray(Vec<NeutralTexture>),
+    /// Original Source2 compressed BCn payload, including BC6H HDR.
+    /// This has NOT been assigned an arbitrary engine RGBA/RGBM lightmap.
+    NativeBlockArray(crate::vtex_native_array::SourceNativeVtexArray),
     Scalar(f32),
     Switch(i64),
 }
@@ -242,12 +244,13 @@ pub fn load_original_input(
                 return Err("source baked atlas layer count outside supported range".into());
             }
             let file=packs.read(path)?;
-            let decoded=texture::decode_2d_array_layers(&file,path)?;
-            if decoded.len()!=*layers as usize || decoded.iter().any(|layer|
-                layer.width!=*width||layer.height!=*height){
-                return Err("original Source2 atlas VTEX layer topology mismatch".into());
+            let decoded=crate::vtex_native_array::decode_source_native_vtex_array(
+                &file,path)?;
+            if decoded.layers as u32!=*layers ||
+                decoded.width!=*width || decoded.height!=*height {
+                return Err("original Source2 atlas GPU BCn topology mismatch".into());
             }
-            Ok(OriginalLoadedInput::TextureArray(decoded))
+            Ok(OriginalLoadedInput::NativeBlockArray(decoded))
         },
         NativeInput::MaterialScalar(value)=>Ok(OriginalLoadedInput::Scalar(*value)),
         NativeInput::MaterialSwitch(value)=>Ok(OriginalLoadedInput::Switch(*value)),
