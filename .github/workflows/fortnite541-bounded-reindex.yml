@@ -1,0 +1,64 @@
+name: Fortnite 5.41 reconcile authenticated bounded Ghidra C coverage
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-bounded-reindex.yml"
+      - "crates/fortnite_541/tools/audit_ghidra_recovery.py"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: fortnite541-reconcile-source-original-C-counts
+  cancel-in-progress: false
+jobs:
+  audit-original-56-bounded-shards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Test source-boundary recovery indexing regression
+        run: python3 crates/fortnite_541/tools/audit_ghidra_recovery.py --self-test
+      - name: Independently audit all preserved original C bodies without new decompilation
+        run: |
+          set -euo pipefail
+          cp crates/fortnite_541/tools/audit_ghidra_recovery.py "$RUNNER_TEMP/audit_original.py"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout --detach FETCH_HEAD
+          python3 "$RUNNER_TEMP/audit_original.py" --root decompilation/fortnite541 | tee "$RUNNER_TEMP/reindex.json"
+          python3 - <<'PY'
+          import gzip,json,pathlib
+          root=pathlib.Path("decompilation/fortnite541")
+          x=json.loads((root/"recovery_status.json").read_text())
+          assert x["recovery_modes"]["bounded_v1"]["attempted"]==56
+          assert x["recovery_modes"]["bounded_v1"]["decompiled"]==14
+          assert x["effectively_decompiled"]==291715
+          assert x["unresolved_remaining"]==42
+          with gzip.open(root/"recovery_remaining.jsonl.gz","rt") as f:
+              missing=[json.loads(s) for s in f if s.strip()]
+          assert len(missing)==42
+          print("FORTNITE541_ORIGINAL_BOUNDARY_RECOVERY_COMPLETE",x)
+          PY
+      - name: Permanently update source-verified original C counts
+        run: |
+          set -euo pipefail
+          cp decompilation/fortnite541/recovery_status.json "$RUNNER_TEMP/status.json"
+          cp decompilation/fortnite541/recovery_remaining.jsonl.gz "$RUNNER_TEMP/remaining.gz"
+          git config user.name "Fortnite 5.41 genuine C coverage audit"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin re/fortnite541-ghidra-full
+          git checkout -B re/fortnite541-ghidra-full origin/re/fortnite541-ghidra-full
+          cp "$RUNNER_TEMP/status.json" decompilation/fortnite541/recovery_status.json
+          cp "$RUNNER_TEMP/remaining.gz" decompilation/fortnite541/recovery_remaining.jsonl.gz
+          git add decompilation/fortnite541/recovery_status.json decompilation/fortnite541/recovery_remaining.jsonl.gz
+          if ! git diff --cached --quiet; then
+            git commit -m "Fortnite: count 14 genuine new original Ghidra C functions with exact original .pdata evidence"
+            for n in 1 2 3 4 5; do
+              if git push origin HEAD:refs/heads/re/fortnite541-ghidra-full; then exit 0; fi
+              git fetch origin re/fortnite541-ghidra-full
+              git rebase origin/re/fortnite541-ghidra-full
+              if [ "$n" -eq 5 ]; then exit 1; fi
+              sleep "$n"
+            done
+          fi
