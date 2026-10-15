@@ -12,6 +12,7 @@ meshopt = "0.6.2"
 bcdec_rs = "0.2"
 half = "2"
 naga = { version = "30.0.0", default-features = false, features = ["spv-in", "spv-out", "wgsl-in", "wgsl-out"] }
+spirv-webgpu-transform = "=0.1.7"
 neutral-scene = { path = "../neutral-scene-contract" }
 
 [[bin]]
