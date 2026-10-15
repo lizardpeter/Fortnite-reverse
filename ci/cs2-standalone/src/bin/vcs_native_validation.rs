@@ -3,6 +3,7 @@
 use std::path::Path;
 use cs2_importer::vcs_native::{NativeFormat,NativeVcsIndex,recover_original_gpu_program};
 use cs2_importer::vcs_spirv::reflect_original_spirv;
+use cs2_importer::vcs_descriptor_types::{reflect_original_types,native_array_binding_candidates,NativeResourceShape};
 use cs2_importer::vcs_descriptor_contract::audit_original_vs_ps;
 use std::{collections::BTreeMap,fs::File,io::Read};
 fn main()->Result<(),String>{
@@ -71,6 +72,17 @@ fn main()->Result<(),String>{
                 original.entry_points[0].stage!=4{
                 return Err(format!("incorrect real original shader descriptor ABI for {filename}: {actual_sets:?} vs {expected_sets:?}"));
             }
+            let typed=reflect_original_types(&result.bytecode,&original)?;
+            if typed.len()!=original.descriptors.len(){
+                return Err(format!("source SPIR-V type descriptor count changed {filename}"));
+            }
+            let images=native_array_binding_candidates(&typed);
+            let buffers=typed.iter().filter(|t|matches!(t.shape,
+                NativeResourceShape::UniformBuffer|NativeResourceShape::StorageBuffer)).count();
+            let unknown=typed.iter().filter(|t|t.shape==NativeResourceShape::Unknown).count();
+            println!("CERTIFIED_ORIGINAL_NATIVE_DESCRIPTOR_TYPES {filename} declarations={} ubo_ssbo={} image2d_arrays={:?} unclassified={} details={:?}",
+                typed.len(),buffers,images,unknown,
+                typed.iter().map(|d|format!("{}:{}:{:?}",d.set,d.binding,d.shape)).collect::<Vec<_>>());
             println!("CERTIFIED_ORIGINAL_SPIRV_ABI {filename} entry={} descriptor_declarations={} sets={:?} incomplete={}",
                 original.entry_points[0].name,original.descriptors.len(),
                 actual_sets,original.incomplete_descriptors.len());
