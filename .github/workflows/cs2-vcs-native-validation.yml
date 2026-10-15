@@ -125,3 +125,5 @@ jobs:
 # Original source Vulkan relaxed uniform layout normalized into executable universal IR with explicit member-offset ABI mapping
 
 # Test full source-to-canonical UBO field repack plans and reject unknown strides without guessed values
+
+# Inspect exact original Source2 mixed Dref shader opcodes before universal shader rewrites
