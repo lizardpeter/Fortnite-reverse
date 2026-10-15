@@ -6,7 +6,7 @@ use cs2_importer::vcs_compiled_selection::{matching_physical_compiled_variants,d
 use cs2_importer::vcs_spirv::reflect_original_spirv;
 use cs2_importer::vcs_spirv_usage::trace_original_entrypoint;
 use cs2_importer::vcs_spirv_relocate::legalize_native_descriptor_types;
-use cs2_importer::vcs_gpu_pair::prepare_source_vulkan_pipeline;
+use cs2_importer::vcs_gpu_pair::{prepare_source_vulkan_pipeline,prepare_compiled_material_vulkan_pipeline};
 use cs2_importer::vcs_descriptor_types::{reflect_original_types,native_array_binding_candidates,NativeResourceShape};
 use cs2_importer::vcs_descriptor_contract::audit_original_vs_ps;
 use std::{collections::BTreeMap,fs::File,io::Read};
@@ -205,6 +205,52 @@ fn main()->Result<(),String>{
         if original.supports_direct_universal_admission(){
             return Err("original Source2 GPU program admitted without source input providers".into());
         }
+        let vs_index=cs2_importer::vcs_native::inspect_original_vcs_stage(&vs)?;
+        let ps_index=cs2_importer::vcs_native::inspect_original_vcs_stage(&ps)?;
+        let mut features=BTreeMap::new();
+        for parameter in vs_index.static_parameters.iter().chain(&ps_index.static_parameters){
+            if let Some(previous)=features.insert(parameter.name.clone(),parameter.min){
+                if previous!=parameter.min {
+                    return Err(format!("source compiler feature {family}/{} differs between stages",
+                        parameter.name));
+                }
+            }
+        }
+        let vs_runtime=vs_index.dynamic_parameters.iter().map(|p|
+            (p.name.clone(),p.min)).collect::<BTreeMap<_,_>>();
+        let ps_runtime=ps_index.dynamic_parameters.iter().map(|p|
+            (p.name.clone(),p.min)).collect::<BTreeMap<_,_>>();
+        let vm=cs2_importer::material::Material{
+            path:format!("materials/compiler-fixture/{family}.vmat_c"),
+            material_name:"explicit original compiler selection fixture".into(),
+            shader:format!("{family}.vfx"),
+            switches:features,
+            textures:BTreeMap::new(),scalars:BTreeMap::new(),
+            unresolved_texture_files:vec![],
+        };
+        let exact=prepare_compiled_material_vulkan_pipeline(
+            &vm,&vs,&ps,Path::new(&dictionaries),&vs_runtime,&ps_runtime)?;
+        let selected=exact.prepared.ok_or_else(||format!(
+            "explicit compiler-authored static/dynamic feature fixture did not select {family} real VS/PS"
+        ))?;
+        if selected.vertex_static_id!=0 || selected.vertex_dynamic_id!=0 ||
+            selected.pixel_static_id!=0 || selected.pixel_dynamic_id!=0 ||
+            selected.descriptor_bindings.len()!=expected_descriptors {
+            return Err(format!("physically constrained original Vulkan pair mismatch: {family}"));
+        }
+        let unresolved_vm=cs2_importer::material::Material{
+            switches:BTreeMap::new(),..vm
+        };
+        let unresolved=prepare_compiled_material_vulkan_pipeline(
+            &unresolved_vm,&vs,&ps,Path::new(&dictionaries),
+            &BTreeMap::new(),&BTreeMap::new())?;
+        if unresolved.prepared.is_some() {
+            return Err(format!("unprovided runtime Source2 features falsely admitted original shader {family}"));
+        }
+        println!(
+            "CERTIFIED_ORIGINAL_EXPLICIT_NATIVE_STAGE_SELECTION {family} chosen_vs=(0,0) chosen_ps=(0,0) real_slots={} vertex_compiled={} pixel_compiled={} unknown_vmats_fail_closed=1",
+            selected.descriptor_bindings.len(),selected.vertex_spirv.len(),selected.pixel_spirv.len()
+        );
         println!("CERTIFIED_ORIGINAL_NATIVE_STAGE_PAIR {family} slots={} vertex_bytes={} pixel_bytes={} ps_moves={} anonymous={} ABI={:02x?}",
             original.descriptor_bindings.len(),
             original.vertex_spirv.len(),original.pixel_spirv.len(),
