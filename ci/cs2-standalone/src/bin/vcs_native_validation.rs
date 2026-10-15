@@ -203,6 +203,19 @@ fn main()->Result<(),String>{
             return Err(format!("real native original pair ABI did not close for {family}: {} slots {} moves",
                 original.descriptor_bindings.len(),original.pixel_relocations.len()));
         }
+        let expected_vertex_locations=if family=="sky"{vec![0u32]}
+            else{vec![0u32,1,2,3,4,5]};
+        if original.source_varying_abi.vertex_attribute_locations!=expected_vertex_locations ||
+            !original.source_varying_abi.varying_abi_closed() ||
+            original.source_vertex_io.stage!=0 ||
+            original.source_pixel_io.stage!=4{
+            return Err(format!("Source2 native shader pair lost exact Vulkan IO metadata for {family}"));
+        }
+        println!(
+            "CERTIFIED_PREPARED_NATIVE_VULKAN_INPUT_ABI {family} source_vertex_locations={:?} matched_native_varyings={} incomplete_input_types=0",
+            original.source_varying_abi.vertex_attribute_locations,
+            original.source_varying_abi.matched_pixel_inputs
+        );
         let vs_io=reflect_original_stage_io(&original.vertex_spirv)?;
         let ps_io=reflect_original_stage_io(&original.pixel_spirv)?;
         let linked=match_original_vs_ps_io(&vs_io,&ps_io)?;
