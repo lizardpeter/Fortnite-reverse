@@ -58,3 +58,5 @@ jobs:
 # Source-compiler mixed-radix original stage ID validation
 
 # Validate native SPIR-V descriptor sets and entry-point reflection
+
+# Assert original source Vulkan VS+PS alias ABI contracts for sky and lightmapped materials
