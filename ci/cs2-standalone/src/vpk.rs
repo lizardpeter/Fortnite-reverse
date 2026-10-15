@@ -169,7 +169,11 @@ impl VpkArchive {
     /// A compact overlay is placed beside the Workshop _dir.vpk, under
     /// cs2-base-resources/materials/...; it never replaces the Workshop VPK.
     fn overlay_path(&self,name:&str)->Result<PathBuf,String>{
-        if !safe_path(name) || !(name.ends_with(".vmat_c")||name.ends_with(".vtex_c")) {
+        if !safe_path(name) || !(
+            name.ends_with(".vmat_c") ||
+            name.ends_with(".vtex_c") ||
+            (name.starts_with("shaders/vfx/") && name.ends_with(".vcs"))
+        ) {
             return Err(format!("unsafe or unsupported original source overlay path {name}"));
         }
         let parent=self.segment.path.parent().ok_or("Workshop has no base directory")?;
@@ -189,6 +193,72 @@ impl VpkArchive {
             return Err(format!("invalid original source overlay size {len} for {name}"));
         }
         std::fs::read(&path).map_err(|e|format!("read compiled original resource {}: {e}",path.display()))
+    }
+    /// Enumerate only genuine loose, original compiled shader stages placed
+    /// in the authenticated compact Source 2 overlay beside the Workshop VPK.
+    /// Never recurse or follow symlinks; only Source 2 shader files are valid.
+    pub fn overlay_vcs_paths(&self)->Vec<String>{
+        let Some((parent,_))=self.archive_prefix.as_ref() else{return Vec::new()};
+        let directory=parent.join("cs2-base-resources/shaders/vfx");
+        let Ok(read_dir)=std::fs::read_dir(directory) else{return Vec::new()};
+        let mut paths=Vec::new();
+        for entry in read_dir.flatten(){
+            if !entry.file_type().is_ok_and(|kind|kind.is_file()){continue;}
+            let name=entry.file_name();
+            let Some(name)=name.to_str() else{continue};
+            let path=format!("shaders/vfx/{name}");
+            if path.ends_with(".vcs") && safe_path(&path) {
+                paths.push(path);
+            }
+        }
+        paths.sort();
+        paths.dedup();
+        // A compact corpus cannot cause unbounded map-admission enumeration.
+        paths.truncate(8192);
+        paths
+    }
+    /// Read only VCS header / Resource-KV3 compiler metadata; never load the
+    /// enormous appended native pixel-shader binary into RAM just to inspect
+    /// names, ABI hashes, and static-combination definitions. A Source 2
+    /// Resource header declares its metadata length independently of the
+    /// potentially hundreds of MiB of trailing GPU bytecode.
+    pub fn read_overlay_vcs_metadata(&self,name:&str,limit:usize)->Result<Vec<u8>,String>{
+        if !(name.starts_with("shaders/vfx/") && name.ends_with(".vcs")) {
+            return Err("only source VCS overlay stage metadata is supported".into());
+        }
+        let path=self.overlay_path(name)?;
+        let length=std::fs::metadata(&path)
+            .map_err(|e|format!("VCS overlay metadata {}: {e}",path.display()))?.len();
+        if length<16{return Err("truncated original VCS overlay stage".into());}
+        let mut source=File::open(&path)
+            .map_err(|e|format!("open original VCS {}: {e}",path.display()))?;
+        let mut prefix=[0u8;16];
+        source.read_exact(&mut prefix)
+            .map_err(|e|format!("read VCS Resource prefix: {e}"))?;
+        let requested=if &prefix[0..4]==b"vcs2" {
+            // Legacy VCS2 is not a Source 2 resource with declared file size.
+            // Preserve full metadata only within a bounded reader budget.
+            if length>limit as u64 {
+                return Err("legacy VCS source exceeds metadata-only read limit".into());
+            }
+            length as usize
+        }else{
+            if le16(&prefix,4)?!=12 {
+                return Err("unsupported original VCS Resource header version".into());
+            }
+            le32(&prefix,0)? as usize
+        };
+        if requested<16 || requested>limit || requested as u64>length {
+            return Err(format!(
+                "invalid VCS metadata extent {requested} for source {length} bytes"
+            ));
+        }
+        source.seek(SeekFrom::Start(0))
+            .map_err(|e|format!("seek VCS metadata: {e}"))?;
+        let mut bytes=vec![0u8;requested];
+        source.read_exact(&mut bytes)
+            .map_err(|e|format!("read VCS compiler metadata: {e}"))?;
+        Ok(bytes)
     }
     /// True only if a source entry's referenced physical archive is present
     /// and includes its exact byte range, not merely listed in pak01_dir.vpk.
@@ -284,6 +354,35 @@ mod tests {
         std::fs::remove_file(path).unwrap();
         std::fs::remove_file(&original).unwrap();
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn authentic_shader_overlay_is_enumerated_without_loading_appended_bytecode(){
+        let stamp=std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let dir=std::env::temp_dir()
+            .join(format!("cs2-compact-vcs-{}-{stamp}",std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let index=dir.join("original_dir.vpk");
+        std::fs::write(&index,fixture(b"workshop",false)).unwrap();
+        let compiled=dir.join("cs2-base-resources/shaders/vfx/csgo_complex_vulkan_50_ps.vcs");
+        std::fs::create_dir_all(compiled.parent().unwrap()).unwrap();
+        let mut original=vec![0u8;4*1024*1024];
+        original[0..4].copy_from_slice(&64u32.to_le_bytes());
+        original[4..6].copy_from_slice(&12u16.to_le_bytes());
+        original[6..8].copy_from_slice(&72u16.to_le_bytes());
+        std::fs::write(&compiled,&original).unwrap();
+        let archive=VpkArchive::open_directory(&index).unwrap();
+        assert_eq!(archive.overlay_vcs_paths(),vec![
+            "shaders/vfx/csgo_complex_vulkan_50_ps.vcs".to_string()]);
+        assert!(archive.overlay_available("shaders/vfx/csgo_complex_vulkan_50_ps.vcs"));
+        assert_eq!(archive.read_overlay_vcs_metadata(
+            "shaders/vfx/csgo_complex_vulkan_50_ps.vcs",32*1024*1024
+        ).unwrap().len(),64);
+        assert!(archive.read_overlay_vcs_metadata(
+            "../csgo_complex_vulkan_50_ps.vcs",32*1024*1024
+        ).is_err());
+        assert!(archive.overlay_vcs_paths().iter().all(|p|p.ends_with(".vcs")));
+        std::fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn reads_real_vpk2_tree_shape_and_checks_crc() {
