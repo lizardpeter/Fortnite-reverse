@@ -54,3 +54,5 @@ jobs:
           export CS2_NATIVE_DICTIONARIES="$RUNNER_TEMP/dictionaries"
           cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin vcs_native_validation
 # validation rerun after KV3 compatibility correction
+
+# Source-compiler mixed-radix original stage ID validation
