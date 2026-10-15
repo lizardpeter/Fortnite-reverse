@@ -22,6 +22,27 @@ jobs:
         run: |
           set -euo pipefail
           cargo test --release --manifest-path ci/cs2-standalone/Cargo.toml --lib
+      - name: Retrieve original Workshop VPK archive in four independently verified parts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cs2-workshop-local-part-*
+          run-id: 38677787314
+          github-token: ${{ github.token }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/workshop-parts
+      - name: Reconstruct original Valve Workshop package and verify Source2 entity bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/workshop-parts"
+          cat workshop-part-00.bin workshop-part-01.bin workshop-part-02.bin workshop-part-03.bin > "$RUNNER_TEMP/workshop-original.zip"
+          cd "$RUNNER_TEMP"
+          sha256sum -c "$RUNNER_TEMP/workshop-parts/workshop-original.sha256"
+          mkdir -p "$RUNNER_TEMP/original-cs2-workshop"
+          unzip -q "$RUNNER_TEMP/workshop-original.zip" -d "$RUNNER_TEMP/original-cs2-workshop"
+          export ORIGINAL_CS2_WORKSHOP_DIR="$RUNNER_TEMP/original-cs2-workshop"
+          cd "$GITHUB_WORKSPACE"
+          cargo run --release --manifest-path ci/cs2-standalone/Cargo.toml --bin kv3_launch_validation
       - name: Obtain original compiled PC Source 2 shader stages
         uses: actions/download-artifact@v4
         with:
