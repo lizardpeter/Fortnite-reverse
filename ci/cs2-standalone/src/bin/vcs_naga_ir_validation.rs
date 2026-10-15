@@ -50,10 +50,35 @@ fn relaxed_layout_diagnostic(stage:&str,code:&[u8])->String{
         Err(err)=>return format!("typed_ir_valid=true wgsl_rejected={err:?}"),
     };
     match front::wgsl::parse_str(&wgsl){
-        Ok(reparsed)=>format!(
-            "typed_ir_valid_without_struct_layout=true wgsl_bytes={} reparsed_functions={} (NOT validated or executable due unresolved original scalar UBO)",
-            wgsl.len(),reparsed.functions.len()
-        ),
+        Ok(reparsed)=>{
+            match valid::Validator::new(
+                valid::ValidationFlags::all(),valid::Capabilities::all()
+            ).validate(&reparsed){
+                Ok(info)=>{
+                    let stage=reparsed.entry_points.first()
+                        .map(|e|e.stage).unwrap_or(naga::ShaderStage::Fragment);
+                    let entrypoint=reparsed.entry_points.first()
+                        .map(|e|e.name.clone()).unwrap_or_default();
+                    let pipeline=back::spv::PipelineOptions{
+                        shader_stage:stage,entry_point:entrypoint
+                    };
+                    match back::spv::write_vec(
+                        &reparsed,&info,&back::spv::Options::default(),Some(&pipeline)
+                    ){
+                        Ok(words)=>format!(
+                            "typed_ir_valid_without_struct_layout=true canonical_wgsl_revalidated=true regenerated_spirv_words={} (NOT source UBO-byte parity until host repack)",
+                            words.len()
+                        ),
+                        Err(err)=>format!(
+                            "typed_ir_valid_without_struct_layout=true canonical_wgsl_valid=true spirv_codegen_failed={err:?}"
+                        ),
+                    }
+                },
+                Err(err)=>format!(
+                    "typed_ir_valid_without_struct_layout=true canonical_wgsl_invalid={err:?}"
+                ),
+            }
+        },
         Err(err)=>format!(
             "typed_ir_valid_without_struct_layout=true wgsl_bytes={} reparsing_failed={}",
             wgsl.len(),err.emit_to_string(&wgsl).lines().take(2).collect::<Vec<_>>().join(" ")
