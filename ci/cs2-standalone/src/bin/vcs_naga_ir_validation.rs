@@ -179,6 +179,38 @@ fn diagnostic_explicit_image_depth(code:&[u8],depth:u32)->String{
     }
 }
 
+fn source_matrix_instruction_census(code:&[u8])->String{
+    if code.len()<20||code.len()%4!=0{return "invalid original SPIR-V".into();}
+    let words=code.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let mut census=std::collections::BTreeMap::<u32,Vec<Vec<u32>>>::new();
+    let mut types=std::collections::BTreeMap::<u32,Vec<u32>>::new();
+    let mut at=5;
+    while at<words.len(){
+        let n=(words[at]>>16) as usize;
+        let op=words[at]&65535;
+        if n==0||at+n>words.len(){return "invalid source matrix opcode".into();}
+        let args=words[at+1..at+n].to_vec();
+        if matches!(op,22|23|24|84|142|143|144|145|146){
+            census.entry(op).or_default().push(args.clone());
+            if matches!(op,22|23|24) && !args.is_empty(){
+                types.insert(args[0],args);
+            }
+        }
+        at+=n;
+    }
+    let mut results=Vec::new();
+    for (op,records) in &census{
+        if matches!(op,84|142|143|144|145|146){
+            results.push(format!("opcode{op}:count={} sample_result_types={:?}",
+                records.len(),records.iter().take(12).map(|r|{
+                    format!("{:?} result_type={:?}",r,types.get(&r[0]))
+                }).collect::<Vec<_>>()));
+        }
+    }
+    results.join("; ")
+}
+
 fn physical_sample_instruction_evidence(code:&[u8])->String{
     if code.len()%4!=0||code.len()<20{return "invalid bytes".into();}
     let words=code.chunks_exact(4).map(|s|u32::from_le_bytes(s.try_into().unwrap())).collect::<Vec<_>>();
@@ -234,6 +266,8 @@ fn main()->Result<(),String>{
                     physical_sample_instruction_evidence(code));
                 println!("ORIGINAL_SOURCE2_MIXED_DREF_RESOURCE_CHAIN {}",
                     source_sampling_dependencies(code));
+                println!("ORIGINAL_SOURCE2_MATRIX_INSTRUCTIONS {}",
+                    source_matrix_instruction_census(code));
                 // Explicit Depth=1 over a BindingArray panics in Naga 30.
                 // Only test original typed descriptor alias legalization above.
             }
