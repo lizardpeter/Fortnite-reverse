@@ -98,6 +98,10 @@ fn clone_type(
     head:&mut [u32;5],memo:&mut BTreeMap<u32,u32>,added:&mut Vec<Inst>,
 )->Result<u32,String>{
     if let Some(value)=memo.get(&id){return Ok(*value);}
+    // Multiple original DREF samples may share one OpAccessChain or
+    // sampled-image type. Once a type has been cloned, its fresh SPIR-V ID
+    // is not present in the unmodified original declaration index.
+    if memo.values().any(|&created|created==id){return Ok(id);}
     let d=source.get(*defs.get(&id).ok_or_else(||format!(
         "source sampled-image type id {id} not defined"
     ))?).ok_or_else(||format!(
