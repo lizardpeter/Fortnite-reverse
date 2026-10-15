@@ -106,7 +106,7 @@ fn physical_sample_instruction_evidence(code:&[u8])->String{
                 if p[1]==33{row.1=Some(p[2]);}else{row.0=Some(p[2]);}
             },
             87..=98 if p.len()>=3=>{
-                mixed.entry(opcode).or_default().push((cursor,p.to_vec()));
+                mixed.entry(opcode).or_default().push((cursor as u32,p.to_vec()));
             },
             _=>{}
         }
