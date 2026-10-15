@@ -84,11 +84,43 @@ pub struct UniformLayoutRebase{
     pub canonical_offsets:Vec<u32>,
     pub original_bytes:u32,
     pub canonical_bytes:u32,
+    /// Only 32-bit/16-bit scalar or vector fields can currently be byte-
+    /// copied automatically. Matrix, nested struct or array strides must
+    /// be source-certified before their runtime providers are enabled.
+    pub field_widths:Vec<Option<u32>>,
 }
 impl UniformLayoutRebase{
     pub fn requires_repack(&self)->bool{
         self.original_offsets!=self.canonical_offsets ||
         self.original_bytes!=self.canonical_bytes
+    }
+    /// Copy proven byte-level fields from original source UBO packing into
+    /// the generated universal shader's canonical buffer layout. Unknown
+    /// matrix/array/nested structure strides are rejected rather than
+    /// silently producing plausible but incorrect lighting.
+    pub fn repack_original_bytes(&self,source:&[u8])->Result<Vec<u8>,String>{
+        if source.len()<self.original_bytes as usize{
+            return Err("source shader uniform upload lacks original buffer extent".into());
+        }
+        if self.original_offsets.len()!=self.canonical_offsets.len() ||
+            self.field_widths.len()!=self.original_offsets.len(){
+            return Err("source/native UBO member identities changed".into());
+        }
+        let mut output=vec![0u8;self.canonical_bytes as usize];
+        for (i,((&from,&to),width)) in self.original_offsets.iter()
+            .zip(&self.canonical_offsets).zip(&self.field_widths).enumerate(){
+            let bytes=width.ok_or_else(||format!(
+                "source uniform member {i} uses an unresolved array/matrix/struct stride"
+            ))? as usize;
+            let source_start=from as usize;
+            let target_start=to as usize;
+            let input_slice=source.get(source_start..source_start.saturating_add(bytes))
+                .ok_or("source shader UBO field extends beyond original range")?;
+            let target=output.get_mut(target_start..target_start.saturating_add(bytes))
+                .ok_or("canonical shader UBO field extends beyond destination range")?;
+            target.copy_from_slice(input_slice);
+        }
+        Ok(output)
     }
 }
 pub struct RebasedUnboundShader{
@@ -99,8 +131,22 @@ pub struct RebasedUnboundShader{
     pub uniform_layouts:Vec<UniformLayoutRebase>,
     pub original_abi_closed:bool,
 }
+fn plain_member_width(module:&naga::Module,ty:naga::Handle<naga::Type>)->Option<u32>{
+    match &module.types[ty].inner{
+        naga::TypeInner::Scalar(scalar)=>Some(scalar.width as u32),
+        naga::TypeInner::Vector{size,scalar}=>{
+            let count=match size{
+                naga::VectorSize::Bi=>2,
+                naga::VectorSize::Tri=>3,
+                naga::VectorSize::Quad=>4
+            };
+            Some(count*scalar.width as u32)
+        },
+        _=>None,
+    }
+}
 fn uniform_structs(module:&naga::Module)
-    ->Result<std::collections::BTreeMap<(u32,u32),(Vec<u32>,u32)>,String>
+    ->Result<std::collections::BTreeMap<(u32,u32),(Vec<u32>,u32,Vec<Option<u32>>)>,String>
 {
     let mut out=std::collections::BTreeMap::new();
     for (_,var) in module.global_variables.iter(){
@@ -113,8 +159,10 @@ fn uniform_structs(module:&naga::Module)
         };
         if members.len()>4096{return Err("source UBO member array exceeds safe limit".into())}
         let offsets=members.iter().map(|m|m.offset).collect::<Vec<_>>();
+        let widths=members.iter().map(|m|plain_member_width(module,m.ty))
+            .collect::<Vec<_>>();
         let key=(binding.group,binding.binding);
-        if out.insert(key,(offsets,*span)).is_some(){
+        if out.insert(key,(offsets,*span,widths)).is_some(){
             return Err("ambiguous duplicate source uniform descriptor coordinate".into())
         }
     }
@@ -169,17 +217,20 @@ pub fn translate_source_spirv_with_ubo_rebase(
     }
     let mut original_abi_closed=true;
     let mut changes=Vec::new();
-    for ((group,binding),(source_offsets,source_bytes)) in layouts{
-        let (target_offsets,target_bytes)=normalized_layouts
+    for ((group,binding),(source_offsets,source_bytes,source_widths)) in layouts{
+        let (target_offsets,target_bytes,target_widths)=normalized_layouts
             .get(&(group,binding)).ok_or("canonical uniform lost descriptor")?;
-        if source_offsets.len()!=target_offsets.len() {
-            return Err("canonical shader reordered/dropped source uniform fields".into());
+        if source_offsets.len()!=target_offsets.len() ||
+            source_widths.len()!=target_widths.len() ||
+            source_widths.iter().zip(target_widths).any(|(a,b)|a!=b){
+            return Err("canonical shader changed source uniform field type/width identity".into());
         }
         let change=UniformLayoutRebase{
             group,binding,
             original_offsets:source_offsets,
             canonical_offsets:target_offsets.clone(),
             original_bytes:source_bytes,canonical_bytes:*target_bytes,
+            field_widths:source_widths,
         };
         original_abi_closed &= !change.requires_repack();
         changes.push(change);
@@ -210,6 +261,27 @@ pub fn translate_source_spirv_with_ubo_rebase(
 #[cfg(test)]
 mod tests{
     use super::*;
+    #[test]
+    fn source_uniform_repack_copies_verified_scalar_fields_without_guessing_padding(){
+        let layout=UniformLayoutRebase{
+            group:2,binding:7,
+            original_offsets:vec![0,4,8],
+            canonical_offsets:vec![0,16,20],
+            original_bytes:12,canonical_bytes:32,
+            field_widths:vec![Some(4),Some(4),Some(4)],
+        };
+        let source=(0u8..12).collect::<Vec<_>>();
+        let target=layout.repack_original_bytes(&source).unwrap();
+        assert_eq!(&target[0..4],&source[0..4]);
+        assert_eq!(&target[16..20],&source[4..8]);
+        assert_eq!(&target[20..24],&source[8..12]);
+        assert!(target[4..16].iter().all(|&b|b==0));
+        assert!(layout.repack_original_bytes(&source[0..11]).is_err());
+        let unknown=UniformLayoutRebase{
+            field_widths:vec![None,Some(4),Some(4)],..layout
+        };
+        assert!(unknown.repack_original_bytes(&source).is_err());
+    }
     #[test]
     fn input_bounds_reject_truncated_source_shader(){
         assert!(translate_source_spirv(&[]).is_err());
