@@ -190,7 +190,7 @@ fn read_value(reader:&mut Reader<'_>,kind:u8,flag:u8,auxiliary:bool,depth:usize)
 /// compressed buffer advertised by the KV3 header and accept a final
 /// literals-only sequence as the terminator. The output size is an external
 /// signed header value already checked against MAX_PAYLOAD.
-fn decode_source2_lz4_block(input:&[u8],expected:usize)->Result<Vec<u8>,String>{
+pub(crate) fn decode_source2_lz4_block(input:&[u8],expected:usize)->Result<Vec<u8>,String>{
     if expected>MAX_PAYLOAD {return Err("KV3 LZ4 decoded size exceeds limit".into());}
     let mut result=Vec::with_capacity(expected);
     let mut cursor=0usize;
