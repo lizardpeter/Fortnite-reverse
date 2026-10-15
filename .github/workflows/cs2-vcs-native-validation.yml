@@ -60,3 +60,5 @@ jobs:
 # Validate native SPIR-V descriptor sets and entry-point reflection
 
 # Assert original source Vulkan VS+PS alias ABI contracts for sky and lightmapped materials
+
+# Source2 original VCS compiler variable metadata capture + exact name mapping test
