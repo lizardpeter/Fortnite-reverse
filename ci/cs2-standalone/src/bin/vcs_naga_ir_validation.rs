@@ -179,6 +179,28 @@ fn diagnostic_explicit_image_depth(code:&[u8],depth:u32)->String{
     }
 }
 
+fn count_shader_sampling_opcodes(code:&[u8])->Result<(usize,usize),String>{
+    if code.len()<20||code.len()%4!=0{
+        return Err("translated shader SPIR-V has invalid byte width".into());
+    }
+    let words=code.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let mut regular=0;
+    let mut compare=0;
+    let mut at=5;
+    while at<words.len(){
+        let n=(words[at]>>16) as usize;
+        let opcode=words[at]&0xffff;
+        if n==0||at.checked_add(n).is_none_or(|end|end>words.len()){
+            return Err("shader has truncated Vulkan sampling instruction".into());
+        }
+        if matches!(opcode,87|88|91|92|95|96){regular+=1;}
+        if matches!(opcode,89|90|93|94|97|98){compare+=1;}
+        at+=n;
+    }
+    Ok((regular,compare))
+}
+
 fn source_matrix_instruction_census(code:&[u8])->String{
     if code.len()<20||code.len()%4!=0{return "invalid original SPIR-V".into();}
     let words=code.chunks_exact(4).map(|x|
@@ -287,11 +309,24 @@ fn main()->Result<(),String>{
                         );
                         match cs2_importer::universal_spirv_ir::
                             translate_source_spirv_with_ubo_rebase(&lowered.spirv){
-                            Ok(ir)=>println!(
-                                "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} original_ubo_layout_closed={} (not runtime uniform/image admission)",
-                                ir.shader.generated_spirv.len(),lowered.aliases.len(),
-                                ir.original_abi_closed
-                            ),
+                            Ok(ir)=>{
+                                let compiled_bytes=ir.shader.generated_spirv.iter()
+                                    .flat_map(|w|w.to_le_bytes()).collect::<Vec<_>>();
+                                let (ordinary,depth_compare)=
+                                    count_shader_sampling_opcodes(&compiled_bytes)?;
+                                let reflection=cs2_importer::vcs_spirv::
+                                    reflect_original_spirv(&compiled_bytes)?;
+                                let descriptors=reflection.descriptors.iter().map(|r|
+                                    (r.set,r.binding)).collect::<Vec<_>>();
+                                println!(
+                                    "CERTIFIED_ORIGINAL_LIGHTMAPPED_PIXEL_UNIVERSAL_COMPILATION executable_spirv_words={} aliased_original_source_bindings={} ordinary_sampling_ops={} depth_compare_sampling_ops={} compiled_source_descriptor_slots={:?} original_ubo_layout_closed={} (not runtime uniform/image admission)",
+                                    ir.shader.generated_spirv.len(),lowered.aliases.len(),
+                                    ordinary,depth_compare,descriptors,ir.original_abi_closed
+                                );
+                                if ordinary==0 || depth_compare==0 {
+                                    return Err("original Source2 lightmapped translation erased normal or shadow comparison sampling".into());
+                                }
+                            },
                             Err(e)=>println!("SOURCE2_TYPED_DREF_ALIAS_NAGA_BLOCKER {e}"),
                         }
                     }
