@@ -28,6 +28,38 @@ fn translate(stage:&str,code:&[u8])->Result<(usize,usize,usize,usize),String>{
     Ok((module.functions.len(),module.global_variables.len(),
         module.entry_points.len(),wgsl.len()))
 }
+// Diagnostic only. Source2 compilers may use relaxed/scalar UBO layout.
+// Turning Naga's structure-layout rule off does not legalize the shader;
+// this checks whether instruction semantics are otherwise translatable.
+fn relaxed_layout_diagnostic(stage:&str,code:&[u8])->String{
+    let module=match front::spv::parse_u8_slice(
+        code,&front::spv::Options::default()){
+        Ok(module)=>module,
+        Err(err)=>return format!("front_end_rejected={err:?}"),
+    };
+    let flags=valid::ValidationFlags::all() &
+        !valid::ValidationFlags::STRUCT_LAYOUTS;
+    let info=match valid::Validator::new(flags,valid::Capabilities::all())
+        .validate(&module){
+        Ok(info)=>info,
+        Err(err)=>return format!("typed_ir_rejected={err:?}"),
+    };
+    let wgsl=match back::wgsl::write_string(
+        &module,&info,back::wgsl::WriterFlags::empty()){
+        Ok(wgsl)=>wgsl,
+        Err(err)=>return format!("typed_ir_valid=true wgsl_rejected={err:?}"),
+    };
+    match front::wgsl::parse_str(&wgsl){
+        Ok(reparsed)=>format!(
+            "typed_ir_valid_without_struct_layout=true wgsl_bytes={} reparsed_functions={} (NOT validated or executable due unresolved original scalar UBO)",
+            wgsl.len(),reparsed.functions.len()
+        ),
+        Err(err)=>format!(
+            "typed_ir_valid_without_struct_layout=true wgsl_bytes={} reparsing_failed={}",
+            wgsl.len(),err.emit_to_string(&wgsl).lines().take(2).collect::<Vec<_>>().join(" ")
+        ),
+    }
+}
 fn main()->Result<(),String>{
     let corpus=std::env::var("CS2_NATIVE_CORPUS")
         .map_err(|_|"source VCS corpus missing".to_owned())?;
@@ -51,6 +83,10 @@ fn main()->Result<(),String>{
                 },
                 Err(err)=>{
                     println!("SOURCE2_NAGA_IR_TRANSLATION_BLOCKER {family} {stage}: {err}");
+                    println!(
+                        "SOURCE2_NAGA_RELAXED_LAYOUT_DIAGNOSTIC {family} {stage}: {}",
+                        relaxed_layout_diagnostic(stage,code)
+                    );
                     rejected.push(format!("{family}/{stage}: {err}"));
                 }
             }
