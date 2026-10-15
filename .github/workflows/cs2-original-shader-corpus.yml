@@ -1,0 +1,243 @@
+name: CS2 original shader VCS and Workshop portable corpus
+on:
+  push:
+    branches: [probe/cs2-shader-source-local-20261015]
+    paths: ['.github/workflows/cs2-original-shader-corpus.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  vcs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: "pc", depot: "2347771"}
+          - {target: "vulkan", depot: "2347770"}
+    env:
+      TARGET: ${{ matrix.target }}
+      DEPOT: ${{ matrix.depot }}
+    steps:
+      - name: Install original anonymous Steam depot retrieval tool
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/depot-tool"
+          curl --fail --location --retry 4 --connect-timeout 20 \
+            https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-linux-x64.zip \
+            -o "$RUNNER_TEMP/depot-tool.zip"
+          unzip -q "$RUNNER_TEMP/depot-tool.zip" -d "$RUNNER_TEMP/depot-tool"
+          chmod +x "$RUNNER_TEMP/depot-tool/DepotDownloader"
+      - name: Download original shader VPK directory indices only
+        shell: bash
+        run: |
+          set -euo pipefail
+          for folder in core csgo_core csgo; do
+            echo "game/$folder/shaders_${TARGET}_dir.vpk"
+          done > "$RUNNER_TEMP/index-files.txt"
+          timeout 800 "$RUNNER_TEMP/depot-tool/DepotDownloader" \
+            -app 730 -depot "$DEPOT" -filelist "$RUNNER_TEMP/index-files.txt" \
+            -dir "$RUNNER_TEMP/source" -max-downloads 3
+          find "$RUNNER_TEMP/source" -name "shaders_${TARGET}_dir.vpk" -printf '%p %s bytes\n'
+      - name: Derive actual archives containing original relevant shader families
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/extract_vcs.py" <<'PY'
+          from pathlib import Path
+          import os,struct,collections,hashlib,zlib,json
+          root=Path(os.environ['RUNNER_TEMP'])/'source'
+          target=os.environ['TARGET']
+          selected_families={
+            'csgo_vertexlitgeneric','csgo_lightmappedgeneric',
+            'csgo_complex','csgo_foliage','csgo_effects',
+            'sky','csgo_environment','csgo_unlitgeneric',
+            'csgo_water','csgo_character','csgo_terrain',
+          }
+          def records(data):
+            magic,version,tree=struct.unpack_from('<III',data,0)
+            assert magic==0x55aa1234 and version in (1,2)
+            pos=12 if version==1 else 28
+            end=pos+tree
+            assert end<=len(data)
+            def string():
+              nonlocal pos
+              at=data.index(b'\0',pos,end)
+              value=data[pos:at].decode('utf-8')
+              pos=at+1
+              return value
+            found=[]
+            while pos<end:
+              ext=string()
+              if not ext:break
+              while True:
+                folder=string()
+                if not folder:break
+                while True:
+                  basename=string()
+                  if not basename:break
+                  crc,preload,arc,offset,length,marker=struct.unpack_from('<IHHIIH',data,pos)
+                  assert marker==0xffff
+                  pos+=18
+                  prefix=data[pos:pos+preload]
+                  assert len(prefix)==preload
+                  pos+=preload
+                  name=(folder+'/' if folder!=' ' else '')+basename+'.'+ext
+                  if ext!='vcs' or not name.startswith('shaders/vfx/'):continue
+                  for family in selected_families:
+                    if name.startswith('shaders/vfx/'+family+'_'+target+'_') and name.endswith('.vcs'):
+                      found.append((name,crc,arc,offset,length,prefix))
+                      break
+            return found,end
+          indices=sorted(root.glob('game/**/shaders_'+target+'_dir.vpk'))
+          all_entries=[]
+          needed=set()
+          for index in indices:
+            values,tree_end=records(index.read_bytes())
+            print('SHADER_INDEX',index,'SELECTED',len(values),flush=True)
+            for name,crc,arc,offset,length,prefix in values:
+              all_entries.append((index,name,crc,arc,offset,length,prefix,tree_end))
+              if arc!=0x7fff:
+                needed.add(index.with_name('shaders_'+target+'_%03d.vpk'%arc))
+          requested=Path(os.environ['RUNNER_TEMP'])/'shader-filelist.txt'
+          requested.write_text(''.join(str(x.relative_to(root)).replace('\\','/')+'\n' for x in sorted(needed)))
+          meta=Path(os.environ['RUNNER_TEMP'])/'shader-index-records.json'
+          meta.write_text(json.dumps({
+            'target':target,'depot':os.environ['DEPOT'],
+            'indices':[str(x.relative_to(root)) for x in indices],
+            'archives':[str(x.relative_to(root)) for x in sorted(needed)],
+            'selected':len(all_entries)
+          },indent=2))
+          print('NEEDED_SOURCE_ARCHIVES',len(needed),flush=True)
+          if not all_entries:raise RuntimeError('no selected original CS2 compiled shaders in downloaded indices')
+          PY
+          python3 "$RUNNER_TEMP/extract_vcs.py"
+      - name: Download only physical shader archive chunks referenced by the chosen VCS stages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -s "$RUNNER_TEMP/shader-filelist.txt" ]]; then
+            timeout 1500 "$RUNNER_TEMP/depot-tool/DepotDownloader" \
+              -app 730 -depot "$DEPOT" -filelist "$RUNNER_TEMP/shader-filelist.txt" \
+              -dir "$RUNNER_TEMP/source" -max-downloads 4
+          fi
+      - name: Extract genuine byte-for-byte VCS stages with per-entry CRC32 and SHA256 verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> "$RUNNER_TEMP/extract_vcs.py" <<'PY'
+          output=Path(os.environ['RUNNER_TEMP'])/'bundle/cs2-base-resources'
+          output.mkdir(parents=True,exist_ok=True)
+          hashes={}
+          conflicts=[]
+          with (output/'SOURCE_VCS_SHA256SUMS.txt').open('w') as manifest:
+            for index,name,crc,arc,offset,length,prefix,tree_end in all_entries:
+              archive=index if arc==0x7fff else index.with_name('shaders_'+target+'_%03d.vpk'%arc)
+              if not archive.is_file():raise RuntimeError('missing physical VCS source '+str(archive))
+              with archive.open('rb') as handle:
+                handle.seek(tree_end+offset if arc==0x7fff else offset)
+                payload=prefix+handle.read(length)
+              if len(payload)!=len(prefix)+length or zlib.crc32(payload)!=crc:
+                raise RuntimeError('VPK missing bytes or original CRC mismatch: '+name)
+              sha=hashlib.sha256(payload).hexdigest()
+              if name in hashes:
+                if hashes[name]!=sha: conflicts.append((name,str(index),sha))
+                continue
+              hashes[name]=sha
+              destination=output/name
+              destination.parent.mkdir(parents=True,exist_ok=True)
+              destination.write_bytes(payload)
+              manifest.write(sha+'  '+name+'\n')
+          (output/'SOURCE_VCS_PROVENANCE.json').write_text(json.dumps({
+            'target':target,'depot':os.environ['DEPOT'],
+            'source_indices':[str(x.relative_to(root)) for x in indices],
+            'entry_count':len(hashes),'physical_archive_count':len(needed),
+            'collisions':conflicts,
+          },indent=2))
+          print('VERIFIED_SOURCE_VCS',target,len(hashes),
+                'BYTES',sum((output/name).stat().st_size for name in hashes),
+                'ALTERNATIVE_CONFLICTS',len(conflicts),flush=True)
+          assert hashes
+          PY
+          python3 "$RUNNER_TEMP/extract_vcs.py"
+      - name: Upload authenticated original shader data
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-original-vcs-${{ matrix.target }}
+          path: ${{ runner.temp }}/bundle/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+  workshop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Retrieve earlier source-verified original Workshop VPKs
+        uses: actions/download-artifact@v4
+        with:
+          name: cs2-workshop-3620630831-vpk
+          run-id: 38444954499
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/original
+      - name: Create four bounded transport parts (no VPK modifications)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/original"
+          find . -maxdepth 2 -type f -printf '%p %s bytes\n'
+          zip -q -0 "$RUNNER_TEMP/workshop-original.zip" ./*.vpk
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,hashlib
+          root=Path(os.environ['RUNNER_TEMP'])
+          src=root/'workshop-original.zip'
+          h=hashlib.sha256()
+          with src.open('rb') as stream:
+            for part in range(4):
+              target=root/f'workshop-part-{part:02}.bin'
+              with target.open('wb') as out:
+                remaining=200*1024*1024
+                while remaining:
+                  block=stream.read(min(4*1024*1024,remaining))
+                  if not block:break
+                  h.update(block)
+                  out.write(block)
+                  remaining-=len(block)
+              print('WORKSHOP_TRANSPORT_PART',target.name,target.stat().st_size)
+          assert sum((root/f'workshop-part-{i:02}.bin').stat().st_size for i in range(4))==src.stat().st_size
+          print('WORKSHOP_ORIGINAL_SHA256',h.hexdigest())
+          (root/'workshop-original.sha256').write_text(h.hexdigest()+'  workshop-original.zip\n')
+          PY
+      - name: Upload original Workshop part 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-workshop-local-part-00
+          path: ${{ runner.temp }}/workshop-part-00.bin
+          compression-level: 0
+          retention-days: 14
+      - name: Upload original Workshop part 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-workshop-local-part-01
+          path: ${{ runner.temp }}/workshop-part-01.bin
+          compression-level: 0
+          retention-days: 14
+      - name: Upload original Workshop part 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-workshop-local-part-02
+          path: ${{ runner.temp }}/workshop-part-02.bin
+          compression-level: 0
+          retention-days: 14
+      - name: Upload original Workshop part 3 and digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-workshop-local-part-03
+          path: |
+            ${{ runner.temp }}/workshop-part-03.bin
+            ${{ runner.temp }}/workshop-original.sha256
+          compression-level: 0
+          retention-days: 14
