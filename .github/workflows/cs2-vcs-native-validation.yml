@@ -131,3 +131,5 @@ jobs:
 # Direct source-verified lightmapped PS comparison sampler split and Naga roundtrip diagnostic
 
 # Re-run native source shader diagnostic after typed instruction cursor fix
+
+# Run typed correction manifest API for CS2 original Vulkan mixed comparison shader
