@@ -98,8 +98,11 @@ fn clone_type(
     head:&mut [u32;5],memo:&mut BTreeMap<u32,u32>,added:&mut Vec<Inst>,
 )->Result<u32,String>{
     if let Some(value)=memo.get(&id){return Ok(*value);}
-    let d=source.get(*defs.get(&id).ok_or("source sampled-image type not defined")?)
-        .ok_or("source sampled-image type index invalid")?;
+    let d=source.get(*defs.get(&id).ok_or_else(||format!(
+        "source sampled-image type id {id} not defined"
+    ))?).ok_or_else(||format!(
+        "source sampled-image type id {id} index invalid"
+    ))?;
     let mut out=d.clone();
     match out.op{
         25=>{
