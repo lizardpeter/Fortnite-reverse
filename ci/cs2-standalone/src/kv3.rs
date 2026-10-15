@@ -251,16 +251,46 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     // Compiled CS2 entity lumps often contain hundreds of *zero-length*
     // binary attributes. Their lengths still occupy the KV3 trailer lane.
     // Preserve these authored binary slots rather than rejecting the lump.
-    if blocks!=0 && binary_blob_bytes!=0 {
-        return Err(format!("KV3 nonempty external binary blobs ({blocks} blocks, {binary_blob_bytes} bytes) not yet supported"));
+    if blocks==0 && binary_blob_bytes!=0 {
+        return Err("KV3 has a binary payload without binary blob descriptors".into());
+    }
+    // The third v5 buffer is a separate compressed blob stream; the first two
+    // buffers contain the typed nodes and blob length descriptors. Source 2
+    // VCS v72 shaders use real nonempty blobs for shader properties, hashes,
+    // combo tables and variable metadata. Rejecting them loses the entire
+    // original compiled shader even when its KV3 prefix is valid.
+    if blocks>0 && binary_blob_bytes>MAX_PAYLOAD {
+        return Err("KV3 external blob bytes exceed size limit".into());
     }
     let consumed1=if compression==0 {u1}else{c1};
     let consumed2=if compression==0 {u2}else{c2};
     let end1=120usize.checked_add(consumed1).ok_or("KV3 extent overflow")?;
     let end2=end1.checked_add(consumed2).ok_or("KV3 extent overflow")?;
     if end2>bytes.len() {return Err("truncated KV3 compressed buffers".into());}
+    let consumed1=if compression==0 {u1}else{c1};
+    let consumed2=if compression==0 {u2}else{c2};
+    let remaining_compressed=compressed_total.checked_sub(consumed1)
+        .and_then(|v|v.checked_sub(consumed2))
+        .ok_or("KV3 advertised compressed buffers exceed total")?;
+    if blocks==0 && remaining_compressed!=0 {
+        return Err("KV3 has a compressed blob stream but no blob descriptors".into());
+    }
+    let end3=end2.checked_add(remaining_compressed)
+        .ok_or("KV3 binary blob offset overflow")?;
+    if end3>bytes.len() {return Err("KV3 binary blob stream is truncated".into());}
     let bytes1=decoded(compression,&bytes[120..end1],u1,c1)?;
     let bytes2=decoded(compression,&bytes[end1..end2],u2,c2)?;
+    let bytes3=if blocks==0 {Vec::new()} else {
+        decoded(compression,&bytes[end2..end3],binary_blob_bytes,remaining_compressed)?
+    };
+    // Real v5 Source2 resources append an outer trailer after the three
+    // compressed buffers. Permit header-only synthetic test fixtures that
+    // omit the optional outer marker, but never accept a different marker.
+    if bytes.len()>end3 {
+        if bytes.len()<end3+4 || uint(bytes,end3)?!=TRAILER {
+            return Err("KV3 outer blob trailer is invalid".into());
+        }
+    }
     let mut first=Lanes::new();
     let mut cursor=0;
     first.b1=Lane{bytes:bytes1.get(cursor..count1).ok_or("KV3 first bytes1 range")?,at:0};
@@ -312,23 +342,30 @@ pub fn decode(bytes:&[u8])->Result<Document,String>{
     let lengths_end=type_end.checked_add(blocks.checked_mul(4).ok_or("KV3 binary length lane overflow")?)
         .ok_or("KV3 length lane overflow")?;
     let lengths=bytes2.get(type_end..lengths_end).ok_or("truncated KV3 external blob lengths")?;
-    if blocks>0 {
-        if lengths.chunks_exact(4).any(|b|u32::from_le_bytes(b.try_into().unwrap())!=0) {
-            return Err("KV3 blob lengths declare nonzero values but no blob bytes exist".into());
-        }
+    let summed=lengths.chunks_exact(4).try_fold(0usize,|sum,bytes|{
+        sum.checked_add(u32::from_le_bytes(bytes.try_into().unwrap()) as usize)
+            .ok_or("KV3 external blob length sum overflow")
+    })?;
+    if summed!=binary_blob_bytes {
+        return Err(format!("KV3 external blob sizes total {summed}, expected {binary_blob_bytes}"));
     }
     let marker=uint(&bytes2,lengths_end)?;
     if marker!=TRAILER{return Err(format!("invalid KV3 trailer 0x{marker:08x}"));}
     let mut reader=Reader{
         types:Lane{bytes:type_bytes,at:0},names,
         main:second,auxiliary:first,objects,
-        blobs:Lane{bytes:&[],at:0}, lengths:Lane{bytes:lengths,at:0},
+        blobs:Lane{bytes:&bytes3,at:0}, lengths:Lane{bytes:lengths,at:0},
         visited:0,legacy_object_lengths:false,
     };
     let (kind,flag)=read_type(&mut reader)?;
     let root=read_value(&mut reader,kind,flag,false,0)?;
-    if reader.types.remaining()!=0 || reader.objects.remaining()!=0 {
-        return Err(format!("KV3 trailing types={} object lengths={}",reader.types.remaining(),reader.objects.remaining()));
+    if reader.types.remaining()!=0 || reader.objects.remaining()!=0 ||
+       reader.blobs.remaining()!=0 || reader.lengths.remaining()!=0 {
+        return Err(format!(
+            "KV3 trailing types={} object lengths={} blob data={} blob lengths={}",
+            reader.types.remaining(),reader.objects.remaining(),
+            reader.blobs.remaining(),reader.lengths.remaining()
+        ));
     }
     Ok(Document{
         header:Header{version:5,compression,format_id,count_types:types_count,
@@ -424,6 +461,92 @@ fn decode_v4(bytes:&[u8])->Result<Document,String>{
 #[cfg(test)]
 mod tests{
     use super::*;
+    /// Real compiled VCS v72 KV3 documents place nonempty binary members in
+    /// a third separately compressed buffer. Preserve the exact source blobs
+    /// rather than treating their presence as an unsupported shader version.
+    #[test]
+    fn v5_nonempty_external_shader_blob_roundtrip_and_bad_lengths(){
+        let strings=b"shader_blob\0";
+        let mut lane1=strings.to_vec();
+        lane1.resize(align(lane1.len(),4).unwrap(),0);
+        lane1.extend_from_slice(&1i32.to_le_bytes());
+        let mut lane2=Vec::new();
+        lane2.extend_from_slice(&1i32.to_le_bytes()); // object count
+        lane2.extend_from_slice(&0i32.to_le_bytes()); // property name ID
+        lane2.extend_from_slice(&[9,7]); // object containing binary
+        lane2.extend_from_slice(&3i32.to_le_bytes()); // blob size
+        lane2.extend_from_slice(&TRAILER.to_le_bytes());
+        let blob=[0x03,0x02,0x23];
+        let mut bytes=vec![0u8;120];
+        bytes[..4].copy_from_slice(&KV3_V5.to_le_bytes());
+        let set=|b:&mut Vec<u8>,at:usize,v:i32|b[at..at+4].copy_from_slice(&v.to_le_bytes());
+        set(&mut bytes,20,0);
+        set(&mut bytes,28,strings.len() as i32);
+        set(&mut bytes,32,1);
+        set(&mut bytes,40,2);
+        set(&mut bytes,48,(lane1.len()+lane2.len()) as i32);
+        set(&mut bytes,52,(lane1.len()+lane2.len()+blob.len()) as i32);
+        set(&mut bytes,56,1);
+        set(&mut bytes,60,3);
+        set(&mut bytes,72,lane1.len() as i32);
+        set(&mut bytes,80,lane2.len() as i32);
+        set(&mut bytes,96,1);
+        set(&mut bytes,104,2);
+        set(&mut bytes,108,1);
+        bytes.extend_from_slice(&lane1);
+        bytes.extend_from_slice(&lane2);
+        bytes.extend_from_slice(&blob);
+        bytes.extend_from_slice(&TRAILER.to_le_bytes());
+        let doc=decode(&bytes).expect("external Source2 binary blob");
+        assert_eq!(doc.header.binary_blob_bytes,3);
+        assert_eq!(doc.root.field("shader_blob"),Some(&Value::Blob(blob.to_vec())));
+        // Corrupted advertised binary extent must fail, never truncate silently.
+        let mut malformed=bytes;
+        malformed[60..64].copy_from_slice(&4u32.to_le_bytes());
+        assert!(decode(&malformed).is_err());
+    }
+    #[test]
+    fn v5_zstd_compressed_shader_blob_is_source_exact(){
+        // Distinctly compressed buffer1, buffer2, and external blob stream.
+        let strings=b"shader_blob\0";
+        let mut lane1=strings.to_vec();
+        lane1.resize(align(lane1.len(),4).unwrap(),0);
+        lane1.extend_from_slice(&1i32.to_le_bytes());
+        let mut lane2=Vec::new();
+        lane2.extend_from_slice(&1i32.to_le_bytes());
+        lane2.extend_from_slice(&0i32.to_le_bytes());
+        lane2.extend_from_slice(&[9,7]);
+        lane2.extend_from_slice(&4i32.to_le_bytes());
+        lane2.extend_from_slice(&TRAILER.to_le_bytes());
+        let blob=b"SPIR".to_vec();
+        let comp1=zstd::bulk::compress(&lane1,1).unwrap();
+        let comp2=zstd::bulk::compress(&lane2,1).unwrap();
+        let comp3=zstd::bulk::compress(&blob,1).unwrap();
+        let mut bytes=vec![0u8;120];
+        bytes[..4].copy_from_slice(&KV3_V5.to_le_bytes());
+        let set=|b:&mut Vec<u8>,at:usize,v:i32|b[at..at+4].copy_from_slice(&v.to_le_bytes());
+        set(&mut bytes,20,2);
+        set(&mut bytes,28,strings.len() as i32);
+        set(&mut bytes,32,1);
+        set(&mut bytes,40,2);
+        set(&mut bytes,48,(lane1.len()+lane2.len()) as i32);
+        set(&mut bytes,52,(comp1.len()+comp2.len()+comp3.len()) as i32);
+        set(&mut bytes,56,1);
+        set(&mut bytes,60,4);
+        set(&mut bytes,72,lane1.len() as i32);
+        set(&mut bytes,76,comp1.len() as i32);
+        set(&mut bytes,80,lane2.len() as i32);
+        set(&mut bytes,84,comp2.len() as i32);
+        set(&mut bytes,96,1);
+        set(&mut bytes,104,2);
+        set(&mut bytes,108,1);
+        bytes.extend_from_slice(&comp1);
+        bytes.extend_from_slice(&comp2);
+        bytes.extend_from_slice(&comp3);
+        bytes.extend_from_slice(&TRAILER.to_le_bytes());
+        let doc=decode(&bytes).unwrap();
+        assert_eq!(doc.root.field("shader_blob"),Some(&Value::Blob(blob)));
+    }
     #[test]
     fn uncompressed_v5_source_object(){
         // Strings: "model", "props/box.vmdl". One source object with a string.
