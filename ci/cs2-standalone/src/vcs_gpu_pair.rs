@@ -13,6 +13,7 @@ use crate::{
     vcs_spirv_relocate::{legalize_native_descriptor_types,SourceDescriptorRelocation},
     vcs_descriptor_contract::{self,NativeStageDescriptorContract},
     vcs_descriptor_types::{self,NativeResourceShape},
+    vcs_stage_io::{self,NativeStageInterface,NativeVaryingCompatibility},
 };
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
@@ -45,6 +46,11 @@ pub struct PreparedSourceGpuPipeline {
     pub vertex_relocations:Vec<SourceDescriptorRelocation>,
     pub pixel_relocations:Vec<SourceDescriptorRelocation>,
     pub source_contract:NativeStageDescriptorContract,
+    /// Actual source-compiled vertex attribute locations and numeric lane
+    /// types. Renderer MUST NOT assume generic PBR vertex stream ordering.
+    pub source_vertex_io:NativeStageInterface,
+    pub source_pixel_io:NativeStageInterface,
+    pub source_varying_abi:NativeVaryingCompatibility,
 }
 impl PreparedSourceGpuPipeline {
     /// A real shader pair may be prepared even if not all resources have
@@ -313,7 +319,28 @@ pub fn prepare_source_vulkan_pipeline(
             slot.source_variables.push((stage,desc.variable_id));
         }
     }
+    // Certify the original compiler's real vertex attribute and varying
+    // layout before constructing a universal Vulkan graphics pipeline.
+    // Descriptor-binding relocation changes no OpDecorate Location data.
+    let source_vertex_io=vcs_stage_io::reflect_original_stage_io(&vs.code)?;
+    let source_pixel_io=vcs_stage_io::reflect_original_stage_io(&ps.code)?;
+    let source_varying_abi=vcs_stage_io::match_original_vs_ps_io(
+        &source_vertex_io,&source_pixel_io)?;
+    if source_vertex_io.unresolved_inputs>0 ||
+        source_vertex_io.unresolved_outputs>0 ||
+        source_pixel_io.unresolved_inputs>0 ||
+        source_pixel_io.unresolved_outputs>0 ||
+        !source_varying_abi.varying_abi_closed(){
+        return Err(format!(
+            "original native Vulkan VS/PS interface cannot be admitted: missing pixel inputs {:?}, type mismatches {:?}, unresolved VS {}/{} PS {}/{}",
+            source_varying_abi.missing_pixel_inputs,
+            source_varying_abi.mismatched_pixel_inputs,
+            source_vertex_io.unresolved_inputs,source_vertex_io.unresolved_outputs,
+            source_pixel_io.unresolved_inputs,source_pixel_io.unresolved_outputs
+        ));
+    }
     Ok(PreparedSourceGpuPipeline{
+        source_vertex_io,source_pixel_io,source_varying_abi,
         vertex_spirv:vs.code,pixel_spirv:ps.code,
         vertex_compiler_hash:vs.compiler_hash,
         pixel_compiler_hash:ps.compiler_hash,
