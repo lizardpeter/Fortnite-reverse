@@ -117,3 +117,5 @@ jobs:
 # Certify Source2 original Vulkan prepared shader pair exposes its exact vertex attribute ABI
 
 # Source2 Naga original scalar uniform layout failure isolated separately from instruction lowering
+
+# Original CS2 Vulkan SPIR-V -> Naga universal IR -> WGSL -> executable Vulkan SPIR-V shader translation
