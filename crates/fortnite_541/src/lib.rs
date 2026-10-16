@@ -3,6 +3,7 @@
 //! The source catalog is read-only. It does not synthesize geometry, lighting,
 //! collision, materials, world spawns or map-readiness from filenames.
 pub mod pak;
+pub mod protector_varuint;
 pub mod uobject;
 pub mod properties;
 pub mod landscape;
