@@ -22,6 +22,10 @@ ROOTS = {
     "seven_bit_reader":0x5C61E26,
     "seven_bit_reader_caller":0x5D986DE,
     "known_text_store":0x5BD4B1B,
+    "guard_callee_nonzero_buffer":0x5C6361C,
+    "guard_callee_empty_buffer":0x13D841A,
+    "varuint_decode_finalization":0x5BF2A18,
+    "guard_counter_loop_exit":0x5C65CD0,
 }
 MAX_INSTRUCTIONS=512
 MAX_BYTES=1536
