@@ -223,6 +223,118 @@ def code_validation(pe,handle,base,section):
         "caution":"Static disassembly validity is not sufficient alone to prove game logic or execution."
     }
 
+def private_analysis_image(pe,handle,base,exe:Path,out:Path):
+    """Rebuild executable section RAW bytes from memory, privately.
+
+    Output is an analysis input for local Ghidra only. It is NOT claimed
+    executable/runnable. IAT, relocations, section permissions, and
+    protection runtime may still require extensive restoration.
+
+    NEVER upload this output to a public Actions artifact.
+    """
+    import pefile
+    from capstone import Cs,CS_ARCH_X86,CS_MODE_64
+    out=out.resolve()
+    # Fail closed if an Actions workspace could accidentally track the image.
+    workspace=os.environ.get("GITHUB_WORKSPACE")
+    if workspace and out.is_relative_to(Path(workspace).resolve()):
+        raise ValueError("Refusing to create a plaintext executable in GITHUB_WORKSPACE")
+    if out.exists():
+        raise FileExistsError("Private analysis image already exists; refusing overwrite")
+    original=exe.read_bytes()
+    image=bytearray(original)
+    section_stats=[]
+    total_changed=0
+    total_read=0
+    for section in pe.sections:
+        if not section.Characteristics&0x20000000:
+            continue
+        n=min(int(section.SizeOfRawData),int(section.Misc_VirtualSize))
+        if n<=0:continue
+        offset=int(section.PointerToRawData)
+        rva=int(section.VirtualAddress)
+        count_pages=0
+        unreadable=0
+        changed=0
+        read_bytes=0
+        for relative in range(0,n,PAGE_BYTES):
+            length=min(PAGE_BYTES,n-relative)
+            memory=read_remote(handle,base+rva+relative,length)
+            if memory is None:
+                unreadable+=1
+                continue
+            start=offset+relative
+            end=start+length
+            if end>len(image):
+                raise RuntimeError("Executable PE section extends beyond raw file")
+            changed+=sum(x!=y for x,y in zip(original[start:end],memory))
+            image[start:end]=memory
+            count_pages+=1
+            read_bytes+=length
+        section_stats.append({
+            "section_rva":hex(rva),
+            "bytes_in_original_executable_section":n,
+            "bytes_read_from_runtime":read_bytes,
+            "pages_recovered":count_pages,
+            "pages_unreadable":unreadable,
+            "bytes_changed_relative_to_disk":changed})
+        total_changed+=changed
+        total_read+=read_bytes
+    if total_read<1_000_000 or total_changed<100_000:
+        raise RuntimeError("Insufficient recovered code to create an honest analysis PE")
+    restored=pefile.PE(data=bytes(image),fast_load=True)
+    if restored.FILE_HEADER.Machine!=0x8664:
+        raise RuntimeError("Reconstructed PE header invalid")
+    if restored.FILE_HEADER.NumberOfSections!=pe.FILE_HEADER.NumberOfSections:
+        raise RuntimeError("PE section headers changed unexpectedly")
+    starts=probe_function_starts(pe,pe.sections[0],96)
+    # Section order is not guaranteed; select the largest executable section.
+    executable=[s for s in pe.sections if s.Characteristics&0x20000000]
+    if executable:
+        starts=probe_function_starts(pe,max(executable,key=lambda s:int(s.SizeOfRawData)),96)
+    md=Cs(CS_ARCH_X86,CS_MODE_64)
+    unusual={"hlt","ud2","iret","iretq","retf","in","out","cli","sti","int1"}
+    plausible={"push","sub","mov","lea","xor","jmp","nop","endbr64","cmp"}
+    scoring={"function_starts_sampled":len(starts),
+             "original_plausible_starts":0,
+             "restored_plausible_starts":0,
+             "original_unusual_instructions":0,
+             "restored_unusual_instructions":0}
+    for rva in starts:
+        before=pe.get_data(rva,192)
+        after=restored.get_data(rva,192)
+        ins_before=list(md.disasm(before,int(pe.OPTIONAL_HEADER.ImageBase)+rva))
+        ins_after=list(md.disasm(after,int(pe.OPTIONAL_HEADER.ImageBase)+rva))
+        scoring["original_plausible_starts"]+=bool(ins_before and ins_before[0].mnemonic in plausible)
+        scoring["restored_plausible_starts"]+=bool(ins_after and ins_after[0].mnemonic in plausible)
+        scoring["original_unusual_instructions"]+=sum(x.mnemonic in unusual for x in ins_before)
+        scoring["restored_unusual_instructions"]+=sum(x.mnemonic in unusual for x in ins_after)
+    if scoring["restored_plausible_starts"] <= scoring["original_plausible_starts"]:
+        raise RuntimeError("Private reconstruction has no verified improvement at original function starts")
+    out.parent.mkdir(parents=True,exist_ok=True)
+    partial=out.with_suffix(".partial")
+    try:
+        partial.write_bytes(image)
+        partial.replace(out)
+        if source_sha256(out)!=hashlib.sha256(image).hexdigest():
+            raise RuntimeError("Private reconstructed PE failed full byte-for-byte filesystem integrity check")
+    finally:
+        partial.unlink(missing_ok=True)
+    return {
+        "created_privately":True,
+        "input_kind":"runtime-mapped original machine-code bytes in original PE raw layout",
+        "output_kind":"analysis-only PE; not runnable retail replacement",
+        "size":len(image),
+        "source_imagebase":hex(int(pe.OPTIONAL_HEADER.ImageBase)),
+        "actual_process_imagebase":hex(base),
+        "reconstructed_sha256":hashlib.sha256(image).hexdigest(),
+        "total_executable_bytes_read":total_read,
+        "total_executable_bytes_changed_from_disk":total_changed,
+        "sections":section_stats,
+        "function_boundary_evidence":scoring,
+        "availability":"private temporary Windows runner only; not uploaded"
+    }
+
 def capture(pe,handle,base,rvas,snapshot):
     out={"stage":snapshot,"sections":[]}
     for section,rvases in rvas:
@@ -261,7 +373,7 @@ def capture(pe,handle,base,rvas,snapshot):
 def error_code():
     return C.get_last_error() if os.name=="nt" else -1
 
-def runtime_probe(pe,exe:Path,snap_delays):
+def runtime_probe(pe,exe:Path,snap_delays,private_image_out=None):
     if os.name!="nt":
         raise RuntimeError("Windows-only runtime proof; do not execute this elsewhere")
     startup=STARTUPINFOW()
@@ -316,6 +428,14 @@ def runtime_probe(pe,exe:Path,snap_delays):
         status=DWORD()
         kernel32.GetExitCodeProcess(info.hProcess,C.byref(status))
         report["running_after_last_sample"]=status.value==STILL_ACTIVE
+        if private_image_out is not None:
+            if status.value==STILL_ACTIVE and base is not None:
+                report["private_reconstruction"]=private_analysis_image(
+                    pe,info.hProcess,base,exe,private_image_out)
+            else:
+                report["private_reconstruction"]={
+                    "created_privately":False,
+                    "blocker":"Source process exited or original image unmapped"}
         report["execution_isolated"]="Windows firewall rule required before this script launched the process"
         return report
     finally:
@@ -352,6 +472,18 @@ def format_markdown(d):
                 +"unusual instructions disk/memory "
                 +str(q["disk_unusual_privileged_instruction_count"])+"/"
                 +str(q["memory_unusual_privileged_instruction_count"])+".",""]
+    r=d.get("private_reconstruction")
+    if r:
+        lines+=["## Private analysis-only PE reconstruction",
+            "Created: "+str(r.get("created_privately",False))]
+        if r.get("created_privately"):
+            lines+=["Recovered executable bytes: "+str(r["total_executable_bytes_read"]),
+                "Bytes different from original disk image: "+str(r["total_executable_bytes_changed_from_disk"]),
+                "Function-boundary evidence: "+str(r["function_boundary_evidence"]),
+                "Reconstructed image SHA-256: "+r["reconstructed_sha256"],
+                "Only aggregate proof was published; full image stayed temporary on Windows runner.",""]
+        else:
+            lines+=["Blocker: "+str(r.get("blocker","unknown")),""]
     lines+=["## Interpretation limits",
         "The Windows PE loader may apply relocations or write import pointers even without decryption.",
         "Sampled pages may miss code decrypted only on demand.",
@@ -370,6 +502,7 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--exe",type=Path)
     ap.add_argument("--out",type=Path)
+    ap.add_argument("--private-analysis-image",type=Path)
     ap.add_argument("--self-test",action="store_true")
     args=ap.parse_args()
     if args.self_test:
@@ -390,7 +523,7 @@ def main():
           "experiment":"bounded Windows CreateProcess suspended/resumed; no anti-cheat bypass",
           "max_wall_clock_seconds":MAX_RUNTIME_SEC}
     try:
-        diag["runtime"]=runtime_probe(pe,exe,[0.5,2.0,6.0])
+        diag["runtime"]=runtime_probe(pe,exe,[0.5,2.0,6.0],args.private_analysis_image)
     except Exception as e:
         diag["runtime"]={"spawned":None,"blocker":type(e).__name__+": "+str(e),"snapshots":[]}
     diag["experiment_seconds"]=round(time.monotonic()-t0,3)
