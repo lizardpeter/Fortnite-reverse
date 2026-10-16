@@ -1,0 +1,99 @@
+name: Fortnite 5.41 original executable authenticity audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-pe-authenticity.yml"
+      - "crates/fortnite_541/tools/audit_original_executable.py"
+      - "crates/fortnite_541/tools/probe_original_loader.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  inspect-authenticated-retail-pe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_URL: https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      SOURCE_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      AUDIT_BRANCH: re/fortnite541-pe-audit-report
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PE and x64 decoding libraries
+        run: |
+          set -euo pipefail
+          python -m pip install pefile==2024.8.26 capstone==5.0.6
+          python crates/fortnite_541/tools/audit_original_executable.py --self-test
+      - name: Download byte-perfect original EXE and verify SHA-256
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/retail" "$RUNNER_TEMP/audit"
+          curl --fail --location --retry 3 --connect-timeout 25 --max-time 300 \
+            "$SOURCE_URL" -o "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe"
+          echo "$SOURCE_SHA256  $RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
+          test "$(stat -c %s "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe")" = 97284496
+      - name: Inspect PE sections, entrypoint, imports and machine instructions
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/audit_original_executable.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_pe_audit.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_pe_audit.md"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_pe_audit.json"
+          r=json.loads(p.read_text())
+          assert r["source_sha256"]==os.environ["SOURCE_SHA256"]
+          assert r["file_size"]==97284496
+          assert r["headers"]["entry_section"]
+          assert r["pdata"]["valid_records"]>0
+          assert r["code_sample"]["sampled_ranges"]>0
+          print("SOURCE_AUTHENTICATED_RETAIL_PE_AUDIT_VERIFIED")
+          print((p.parent/"fortnite541_pe_audit.md").read_text())
+          PY
+      - name: Probe authenticated entrypoint and executable section regions
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/probe_original_loader.py --self-test
+          python crates/fortnite_541/tools/probe_original_loader.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.md"
+      - name: Commit structured report only, never original executable
+        if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite original PE audit"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin "$AUDIT_BRANCH" >/dev/null; then
+            git fetch origin "$AUDIT_BRANCH"
+            git checkout -B "$AUDIT_BRANCH" FETCH_HEAD
+          else
+            git fetch origin main
+            git checkout -B "$AUDIT_BRANCH" origin/main
+          fi
+          mkdir -p decompilation/fortnite541/pe_audit
+          cp "$RUNNER_TEMP/audit/"*.json "$RUNNER_TEMP/audit/"*.md decompilation/fortnite541/pe_audit/
+          git add decompilation/fortnite541/pe_audit
+          if ! git diff --cached --quiet; then
+            git commit -m "Audit: SHA-verified Fortnite 5.41 EXE PE structure"
+            git push origin "HEAD:refs/heads/$AUDIT_BRANCH"
+          fi
+      - name: Upload analysis artifact only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-authentic-exe-audit
+          path: ${{ runner.temp }}/audit/
+          retention-days: 30
+          if-no-files-found: warn
