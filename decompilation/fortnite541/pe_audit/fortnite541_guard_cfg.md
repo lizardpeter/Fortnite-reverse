@@ -17,6 +17,9 @@ Read-only static study of original SHA256-verified shipping EXE. Not an unpacker
 | shared_direct_callee (0x5d986de) | 10 | 0 | 5 | 0 | 1 |
 | shared_global_state_update (0x5bd4b1b) | 7 | 0 | 2 | 1 | 2 |
 | guard_shared_call_gate (0x1568966) | 2 | 1 | 0 | 0 | 2 |
+| executable_write_followon (0x5c4ce84) | 15 | 1 | 4 | 0 | 2 |
+| bytecode_byte_reader (0x5c61e26) | 24 | 0 | 4 | 0 | 1 |
+| handoff_second_stage (0x41522) | 8 | 1 | 2 | 0 | 2 |
 
 ## entry_call_handoff
 Root RVA: 0x4419
@@ -108,6 +111,27 @@ Static interpretation region: 0x1568966–0x1569966
 Calls: 0x5bc8859
 Resolved RIP-relative writes into executable section: 0
 Outbound preview targets: 0x5bc8859, 0x5c44120
+
+## executable_write_followon
+Root RVA: 0x5c4ce84
+Static interpretation region: 0x5c4ce84–0x5c4de84
+Calls: 0x5b0cf49
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x5b0cf49, 0x5cda17b
+
+## bytecode_byte_reader
+Root RVA: 0x5c61e26
+Static interpretation region: 0x5c61e26–0x5c62e26
+Calls: 
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x5bf2a18
+
+## handoff_second_stage
+Root RVA: 0x41522
+Static interpretation region: 0x41522–0x41609
+Calls: 0xd39d
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0xd39d, 0x5cdd5
 
 ## Limits
 An unknown-pointer memory store does not establish that program code is being decrypted. No runtime memory was inspected.
