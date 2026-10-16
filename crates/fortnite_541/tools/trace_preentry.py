@@ -46,6 +46,47 @@ def call_patterns(start, body, dest_lo, dest_hi):
             rows.append((offset,target))
     return rows
 
+def trace_direct_gate_chain(pe,data,base,md,start,max_hops=24):
+    """Conservative chain of short original x64 unconditional near-JMP gates.
+
+    No arbitrary fallthrough disassembly after jumps, and no speculation
+    across indirect branches or branches into non-executable regions.
+    """
+    hops=[];seen=set();current=start
+    for _ in range(max_hops):
+        if current in seen:
+            hops.append({"rva":hex(current),"stop":"cycle"})
+            break
+        seen.add(current)
+        sec=next((s for s in pe.sections if s.Characteristics&0x20000000
+                  and int(s.VirtualAddress)<=current<
+                    int(s.VirtualAddress)+int(s.SizeOfRawData)),None)
+        if sec is None:
+            hops.append({"rva":hex(current),"stop":"outside_initialized_executable_sections"})
+            break
+        raw=raw_at(pe,data,current,80)
+        ins=list(md.disasm(raw,base+current,count=12))
+        cur={"rva":hex(current),"source_hex_prefix":raw[:32].hex(),"insns":[]}
+        destination=None
+        for x in ins:
+            cur["insns"].append({"rva":hex(x.address-base),"hex":x.bytes.hex(),
+                  "op":x.mnemonic,"args":x.op_str})
+            if x.mnemonic=="jmp":
+                if x.operands and x.operands[0].type==2:
+                    destination=int(x.operands[0].imm)-base
+                else:cur["stop"]="indirect_jump"
+                break
+            if x.mnemonic.startswith("j") or x.mnemonic.startswith("ret") or x.mnemonic in ("call","int3","ud2","int1","hlt","in","out","retf"):
+                cur["stop"]="nonlinear_or_suspicious_instruction"
+                break
+        if destination is None and "stop" not in cur:
+            cur["stop"]="no_bounded_direct_jump"
+        if destination is not None:cur["direct_jump_target_rva"]=hex(destination)
+        hops.append(cur)
+        if destination is None:break
+        current=destination
+    return hops
+
 def instruction_preview(md, base, pe, data, rva, count=16):
     src=raw_at(pe,data,rva,256)
     return [
@@ -128,6 +169,7 @@ def run(path):
     first_hit_counts=Counter()
     special_targets=Counter()
     sample_evidence=[]
+    all_observed_E8=[]
     all_targets=Counter()
     signature=Counter()
     entrypoint_offsets=Counter()
@@ -152,6 +194,12 @@ def run(path):
             if offset==0:counts["E8_at_start_into_secondary"]+=1
             first_hit_counts[offset]+=1
             all_targets[target]+=1
+            if len(all_observed_E8)<100:
+                all_observed_E8.append({"start_rva":hex(start),"offset":offset,
+                  "callsite_rva":hex(start+offset),"target_rva":hex(target),
+                  "source_E8_bytes":body[offset:offset+5].hex(),
+                  "function_prefix_24":body[:24].hex(),
+                  "source_first_instructions":instruction_preview(md,base,pe,data,start,8)})
             if target==original_call:
                 special_targets[offset]+=1
                 if len(sample_evidence)<24:
@@ -188,6 +236,11 @@ def run(path):
        "E8_pattern_offset_histogram":dict(sorted(first_hit_counts.items())),
        "E8_into_known_trampoline_by_offset":dict(sorted(special_targets.items())),
        "call_pattern_examples":sample_evidence,
+       "all_E8_pattern_evidence":all_observed_E8,
+       "direct_jmp_gate_chains":{
+         "entry_aligned_path":trace_direct_gate_chain(pe,data,base,md,0x88664),
+         "entry_unaligned_path":trace_direct_gate_chain(pe,data,base,md,0x2DB999),
+         "common_secondary_call_target":trace_direct_gate_chain(pe,data,base,md,0x5BC8859)},
        "top_call_pattern_target_counts":frequent,
        "non_entrypoint_controls":dict(control_counts),
        "branch_targets_in_protected_section":direct_branch_targets,
@@ -222,6 +275,11 @@ def markdown(d):
     for x in d["top_call_pattern_target_counts"][:12]:
         head=x["first_target_instructions"]
         lines.append("| "+x["target_rva"]+" | "+str(x["raw_byte_pattern_hits"])+" | "+(head[0]["mnemonic"] if head else "<invalid>")+" |")
+    lines += ["","## Direct original x64 near-JMP gate chain"]
+    for label,chain in d["direct_jmp_gate_chains"].items():
+        lines.append("### "+label)
+        for hop in chain[:18]:
+            lines.append(hop["rva"]+" -> "+hop.get("direct_jump_target_rva",hop.get("stop","end")))
     lines += ["","## Interpretive limits",
       "A byte-pattern hit is not a verified instruction or executable call. The report compares original function starts against deterministic non-entrypoint controls and records the original source hashes. No plaintext reconstruction has been claimed.",
       "","See the JSON report for TLS callback snippets, protected branch targets, and frequency data."]
