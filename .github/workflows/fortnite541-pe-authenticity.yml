@@ -9,6 +9,8 @@ on:
       - "crates/fortnite_541/tools/probe_original_loader.py"
       - "crates/fortnite_541/tools/trace_preentry.py"
       - "crates/fortnite_541/tools/audit_guard_cfg.py"
+      - "crates/fortnite_541/tools/analyze_guard_semantics.py"
+      - "crates/fortnite_541/tools/microemu_original_varuint.py"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +34,7 @@ jobs:
       - name: Install PE and x64 decoding libraries
         run: |
           set -euo pipefail
-          python -m pip install pefile==2024.8.26 capstone==5.0.6
+          python -m pip install pefile==2024.8.26 capstone==5.0.6 unicorn==2.1.3
           python crates/fortnite_541/tools/audit_original_executable.py --self-test
       - name: Download byte-perfect original EXE and verify SHA-256
         run: |
@@ -42,6 +44,43 @@ jobs:
             "$SOURCE_URL" -o "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe"
           echo "$SOURCE_SHA256  $RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
           test "$(stat -c %s "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe")" = 97284496
+      - name: Verify native guard callee and 7-bit decoder semantic evidence
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/analyze_guard_semantics.py --self-test
+          python crates/fortnite_541/tools/analyze_guard_semantics.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_semantics.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_semantics.md"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_guard_semantics.json"
+          r=json.loads(p.read_text())
+          assert r["sha256_verified"]==os.environ["SOURCE_SHA256"]
+          assert r["roots"]["guard_call_target"]["entry_rva"]=="0x5b0cf49"
+          assert r["roots"]["guard_call_target"]["instruction_count"]>0
+          assert r["roots"]["seven_bit_reader"]["instruction_count"]>0
+          print("AUTHENTIC_GUARD_SEMANTICS_VERIFIED")
+          PY
+      - name: Micro-emulate original native x64 unsigned-varint loop
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/microemu_original_varuint.py --self-test
+          python crates/fortnite_541/tools/microemu_original_varuint.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_varuint_microemu.json"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_varuint_microemu.json"
+          r=json.loads(p.read_text())
+          assert r["source_sha256_verified"]==os.environ["SOURCE_SHA256"]
+          assert r["all_passed"]
+          assert len(r["vectors"])>=8
+          assert all(v["match"] for v in r["vectors"])
+          print("AUTHENTIC_ORIGINAL_X64_VARUINT_MICROEMU_VERIFIED")
+          PY
       - name: Inspect PE sections, entrypoint, imports and machine instructions
         run: |
           set -euo pipefail
