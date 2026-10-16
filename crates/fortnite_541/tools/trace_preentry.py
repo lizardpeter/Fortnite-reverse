@@ -64,8 +64,10 @@ def trace_direct_gate_chain(pe,data,base,md,start,max_hops=24):
         if sec is None:
             hops.append({"rva":hex(current),"stop":"outside_initialized_executable_sections"})
             break
-        raw=raw_at(pe,data,current,80)
-        ins=list(md.disasm(raw,base+current,count=12))
+        # 320 bytes permits the full XMM/GPR preservation wrapper to be
+        # inspected through RET rather than cutting it off after 12 insns.
+        raw=raw_at(pe,data,current,320)
+        ins=list(md.disasm(raw,base+current,count=70))
         cur={"rva":hex(current),"source_hex_prefix":raw[:32].hex(),"insns":[]}
         destination=None
         cur["direct_call_targets"]=[]
