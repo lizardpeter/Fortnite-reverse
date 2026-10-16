@@ -1,0 +1,1406 @@
+{
+  "sha256_verified": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "source_size": 97284496,
+  "roots": {
+    "guard_argument_setup": {
+      "entry_rva": "0x5c4ce84",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5c4d484",
+      "instruction_count": 15,
+      "truncated": false,
+      "call_count": 1,
+      "calls": [
+        {
+          "rva": "0x5c4cebe",
+          "kind": "direct",
+          "target_rva": "0x5b0cf49"
+        }
+      ],
+      "memory_write_count": 4,
+      "register_indirect_write_count": 0,
+      "rip_executable_write_count": 0,
+      "memory_writes": [
+        {
+          "rva": "0x5c4ce94",
+          "instruction": "mov",
+          "args": "dword ptr [rsp + 0x20], 4",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4cea0",
+          "instruction": "mov",
+          "args": "qword ptr [rsp + 0x28], rsi",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4cea5",
+          "instruction": "mov",
+          "args": "dword ptr [rsp + 0x30], 0",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4cead",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x48], rcx",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5c4ce84",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x68]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4ce88",
+          "instruction": "lea",
+          "args": "rdx, [rbp + 0x60]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4ce8c",
+          "instruction": "lea",
+          "args": "rcx, [rbp + 0x3c]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4ce90",
+          "instruction": "lea",
+          "args": "rbx, [rbp + 0x58]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4ce9c",
+          "instruction": "lea",
+          "args": "rsi, [rbp + 0x54]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c4ceb4",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x48]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [],
+      "bounded_control_edges": [
+        {
+          "from": "0x5c4cebe",
+          "to": "0x5c4cec3",
+          "kind": "call_fallthrough"
+        },
+        {
+          "from": "0x5c4cec3",
+          "to": "0x5cda17b",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x5b0cf49",
+        "0x5cda17b"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5c4ce84",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x68]",
+          "hex": "488b4568"
+        },
+        {
+          "rva": "0x5c4ce88",
+          "mnemonic": "lea",
+          "operands": "rdx, [rbp + 0x60]",
+          "hex": "488d5560"
+        },
+        {
+          "rva": "0x5c4ce8c",
+          "mnemonic": "lea",
+          "operands": "rcx, [rbp + 0x3c]",
+          "hex": "488d4d3c"
+        },
+        {
+          "rva": "0x5c4ce90",
+          "mnemonic": "lea",
+          "operands": "rbx, [rbp + 0x58]",
+          "hex": "488d5d58"
+        },
+        {
+          "rva": "0x5c4ce94",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rsp + 0x20], 4",
+          "hex": "c744242004000000"
+        },
+        {
+          "rva": "0x5c4ce9c",
+          "mnemonic": "lea",
+          "operands": "rsi, [rbp + 0x54]",
+          "hex": "488d7554"
+        },
+        {
+          "rva": "0x5c4cea0",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rsp + 0x28], rsi",
+          "hex": "4889742428"
+        },
+        {
+          "rva": "0x5c4cea5",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rsp + 0x30], 0",
+          "hex": "c744243000000000"
+        },
+        {
+          "rva": "0x5c4cead",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x48], rcx",
+          "hex": "48894d48"
+        },
+        {
+          "rva": "0x5c4ceb1",
+          "mnemonic": "mov",
+          "operands": "rcx, rax",
+          "hex": "4889c1"
+        },
+        {
+          "rva": "0x5c4ceb4",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x48]",
+          "hex": "488b4548"
+        },
+        {
+          "rva": "0x5c4ceb8",
+          "mnemonic": "mov",
+          "operands": "r8, rax",
+          "hex": "4989c0"
+        },
+        {
+          "rva": "0x5c4cebb",
+          "mnemonic": "mov",
+          "operands": "r9, rbx",
+          "hex": "4989d9"
+        },
+        {
+          "rva": "0x5c4cebe",
+          "mnemonic": "call",
+          "operands": "0x145b0cf49",
+          "hex": "e88600ecff"
+        },
+        {
+          "rva": "0x5c4cec3",
+          "mnemonic": "jmp",
+          "operands": "0x145cda17b",
+          "hex": "e9b3d20800"
+        }
+      ],
+      "stop_reasons": []
+    },
+    "guard_call_target": {
+      "entry_rva": "0x5b0cf49",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5b0d549",
+      "instruction_count": 20,
+      "truncated": false,
+      "call_count": 0,
+      "calls": [],
+      "memory_write_count": 7,
+      "register_indirect_write_count": 0,
+      "rip_executable_write_count": 0,
+      "memory_writes": [
+        {
+          "rva": "0x5b0cf53",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x50], rcx",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf57",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x58], rdx",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf5b",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x60], r8",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf5f",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x68], r9",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf67",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x28], rax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf74",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x30], rax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf7b",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 0x3c], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5b0cf4e",
+          "instruction": "lea",
+          "args": "rbp, [rsp + 0x20]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf63",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x68]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf6b",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x70]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf70",
+          "instruction": "add",
+          "args": "rax, qword ptr [rbp + 0x68]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf78",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x70]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf7e",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x28]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5b0cf82",
+          "instruction": "mov",
+          "args": "rdx, qword ptr [rbp + 0x30]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [],
+      "bounded_control_edges": [
+        {
+          "from": "0x5b0cf89",
+          "to": "0x5c6361c",
+          "kind": "conditional_branch"
+        },
+        {
+          "from": "0x5b0cf8f",
+          "to": "0x13d841a",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x13d841a",
+        "0x5c6361c"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5b0cf49",
+          "mnemonic": "push",
+          "operands": "rbp",
+          "hex": "55"
+        },
+        {
+          "rva": "0x5b0cf4a",
+          "mnemonic": "sub",
+          "operands": "rsp, 0x60",
+          "hex": "4883ec60"
+        },
+        {
+          "rva": "0x5b0cf4e",
+          "mnemonic": "lea",
+          "operands": "rbp, [rsp + 0x20]",
+          "hex": "488d6c2420"
+        },
+        {
+          "rva": "0x5b0cf53",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x50], rcx",
+          "hex": "48894d50"
+        },
+        {
+          "rva": "0x5b0cf57",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x58], rdx",
+          "hex": "48895558"
+        },
+        {
+          "rva": "0x5b0cf5b",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x60], r8",
+          "hex": "4c894560"
+        },
+        {
+          "rva": "0x5b0cf5f",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x68], r9",
+          "hex": "4c894d68"
+        },
+        {
+          "rva": "0x5b0cf63",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x68]",
+          "hex": "488b4568"
+        },
+        {
+          "rva": "0x5b0cf67",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x28], rax",
+          "hex": "48894528"
+        },
+        {
+          "rva": "0x5b0cf6b",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x70]",
+          "hex": "8b4570"
+        },
+        {
+          "rva": "0x5b0cf6e",
+          "mnemonic": "mov",
+          "operands": "eax, eax",
+          "hex": "89c0"
+        },
+        {
+          "rva": "0x5b0cf70",
+          "mnemonic": "add",
+          "operands": "rax, qword ptr [rbp + 0x68]",
+          "hex": "48034568"
+        },
+        {
+          "rva": "0x5b0cf74",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x30], rax",
+          "hex": "48894530"
+        },
+        {
+          "rva": "0x5b0cf78",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x70]",
+          "hex": "8b4570"
+        },
+        {
+          "rva": "0x5b0cf7b",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 0x3c], eax",
+          "hex": "89453c"
+        },
+        {
+          "rva": "0x5b0cf7e",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x28]",
+          "hex": "488b4528"
+        },
+        {
+          "rva": "0x5b0cf82",
+          "mnemonic": "mov",
+          "operands": "rdx, qword ptr [rbp + 0x30]",
+          "hex": "488b5530"
+        },
+        {
+          "rva": "0x5b0cf86",
+          "mnemonic": "cmp",
+          "operands": "rax, rdx",
+          "hex": "483bc2"
+        },
+        {
+          "rva": "0x5b0cf89",
+          "mnemonic": "jne",
+          "operands": "0x145c6361c",
+          "hex": "0f858d661500"
+        },
+        {
+          "rva": "0x5b0cf8f",
+          "mnemonic": "jmp",
+          "operands": "0x1413d841a",
+          "hex": "e986b48cfb"
+        }
+      ],
+      "stop_reasons": []
+    },
+    "guard_call_continuation": {
+      "entry_rva": "0x5cda17b",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5cda77b",
+      "instruction_count": 7,
+      "truncated": false,
+      "call_count": 0,
+      "calls": [],
+      "memory_write_count": 1,
+      "register_indirect_write_count": 0,
+      "rip_executable_write_count": 1,
+      "memory_writes": [
+        {
+          "rva": "0x5cda184",
+          "instruction": "mov",
+          "args": "dword ptr [rip - 0x57d75d0], eax",
+          "kind": "rip_executable_section",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": "0x502bba",
+          "target_section": ".text",
+          "target_writable_in_pe": false,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5cda17b",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x58]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5cda17e",
+          "instruction": "add",
+          "args": "eax, dword ptr [rip - 0x57d75ca]",
+          "kind": "rip_executable_section",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": "0x502bba",
+          "target_section": ".text",
+          "target_writable_in_pe": false,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5cda18a",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x3c]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [],
+      "bounded_control_edges": [
+        {
+          "from": "0x5cda190",
+          "to": "0x5c4ce84",
+          "kind": "conditional_branch"
+        },
+        {
+          "from": "0x5cda196",
+          "to": "0x5c65cd0",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x5c4ce84",
+        "0x5c65cd0"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5cda17b",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x58]",
+          "hex": "8b4558"
+        },
+        {
+          "rva": "0x5cda17e",
+          "mnemonic": "add",
+          "operands": "eax, dword ptr [rip - 0x57d75ca]",
+          "hex": "0305368a82fa"
+        },
+        {
+          "rva": "0x5cda184",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rip - 0x57d75d0], eax",
+          "hex": "8905308a82fa"
+        },
+        {
+          "rva": "0x5cda18a",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x3c]",
+          "hex": "8b453c"
+        },
+        {
+          "rva": "0x5cda18d",
+          "mnemonic": "cmp",
+          "operands": "eax, -1",
+          "hex": "83f8ff"
+        },
+        {
+          "rva": "0x5cda190",
+          "mnemonic": "jne",
+          "operands": "0x145c4ce84",
+          "hex": "0f85ee2cf7ff"
+        },
+        {
+          "rva": "0x5cda196",
+          "mnemonic": "jmp",
+          "operands": "0x145c65cd0",
+          "hex": "e935bbf8ff"
+        }
+      ],
+      "stop_reasons": []
+    },
+    "seven_bit_reader": {
+      "entry_rva": "0x5c61e26",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5c62426",
+      "instruction_count": 24,
+      "truncated": false,
+      "call_count": 0,
+      "calls": [],
+      "memory_write_count": 4,
+      "register_indirect_write_count": 1,
+      "rip_executable_write_count": 0,
+      "memory_writes": [
+        {
+          "rva": "0x5c61e3a",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 0x10], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e43",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 0xc], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e46",
+          "instruction": "add",
+          "args": "dword ptr [rbp + 8], 7",
+          "kind": "stack_frame",
+          "access": "read_write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e66",
+          "instruction": "mov",
+          "args": "qword ptr [rcx], rdx",
+          "kind": "register_indirect",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5c61e26",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x30]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e2a",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rax]",
+          "kind": "register_indirect",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e2d",
+          "instruction": "movzx",
+          "args": "eax, byte ptr [rax]",
+          "kind": "register_indirect",
+          "access": "read",
+          "width": 1,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e33",
+          "instruction": "mov",
+          "args": "edx, dword ptr [rbp + 8]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e3d",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x10]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e40",
+          "instruction": "add",
+          "args": "eax, dword ptr [rbp + 0xc]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e4a",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rbp + 0x30]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e4e",
+          "instruction": "mov",
+          "args": "rax, qword ptr [rax]",
+          "kind": "register_indirect",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e51",
+          "instruction": "movzx",
+          "args": "eax, byte ptr [rax]",
+          "kind": "register_indirect",
+          "access": "read",
+          "width": 1,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e57",
+          "instruction": "mov",
+          "args": "rdx, qword ptr [rbp + 0x30]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e5b",
+          "instruction": "mov",
+          "args": "rdx, qword ptr [rdx]",
+          "kind": "register_indirect",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5c61e62",
+          "instruction": "mov",
+          "args": "rcx, qword ptr [rbp + 0x30]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [
+        {
+          "rva": "0x5c61e30",
+          "mnemonic": "and",
+          "imm": "0x7f",
+          "operands": "eax, 0x7f"
+        },
+        {
+          "rva": "0x5c61e46",
+          "mnemonic": "add",
+          "imm": "0x7",
+          "operands": "dword ptr [rbp + 8], 7"
+        }
+      ],
+      "bounded_control_edges": [
+        {
+          "from": "0x5c61e6e",
+          "to": "0x5c61e26",
+          "kind": "conditional_branch"
+        },
+        {
+          "from": "0x5c61e74",
+          "to": "0x5bf2a18",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x5bf2a18"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5c61e26",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x30]",
+          "hex": "488b4530"
+        },
+        {
+          "rva": "0x5c61e2a",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rax]",
+          "hex": "488b00"
+        },
+        {
+          "rva": "0x5c61e2d",
+          "mnemonic": "movzx",
+          "operands": "eax, byte ptr [rax]",
+          "hex": "0fb600"
+        },
+        {
+          "rva": "0x5c61e30",
+          "mnemonic": "and",
+          "operands": "eax, 0x7f",
+          "hex": "83e07f"
+        },
+        {
+          "rva": "0x5c61e33",
+          "mnemonic": "mov",
+          "operands": "edx, dword ptr [rbp + 8]",
+          "hex": "8b5508"
+        },
+        {
+          "rva": "0x5c61e36",
+          "mnemonic": "mov",
+          "operands": "ecx, edx",
+          "hex": "89d1"
+        },
+        {
+          "rva": "0x5c61e38",
+          "mnemonic": "shl",
+          "operands": "eax, cl",
+          "hex": "d3e0"
+        },
+        {
+          "rva": "0x5c61e3a",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 0x10], eax",
+          "hex": "894510"
+        },
+        {
+          "rva": "0x5c61e3d",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x10]",
+          "hex": "8b4510"
+        },
+        {
+          "rva": "0x5c61e40",
+          "mnemonic": "add",
+          "operands": "eax, dword ptr [rbp + 0xc]",
+          "hex": "03450c"
+        },
+        {
+          "rva": "0x5c61e43",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 0xc], eax",
+          "hex": "89450c"
+        },
+        {
+          "rva": "0x5c61e46",
+          "mnemonic": "add",
+          "operands": "dword ptr [rbp + 8], 7",
+          "hex": "83450807"
+        },
+        {
+          "rva": "0x5c61e4a",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rbp + 0x30]",
+          "hex": "488b4530"
+        },
+        {
+          "rva": "0x5c61e4e",
+          "mnemonic": "mov",
+          "operands": "rax, qword ptr [rax]",
+          "hex": "488b00"
+        },
+        {
+          "rva": "0x5c61e51",
+          "mnemonic": "movzx",
+          "operands": "eax, byte ptr [rax]",
+          "hex": "0fb600"
+        },
+        {
+          "rva": "0x5c61e54",
+          "mnemonic": "movzx",
+          "operands": "eax, al",
+          "hex": "0fb6c0"
+        },
+        {
+          "rva": "0x5c61e57",
+          "mnemonic": "mov",
+          "operands": "rdx, qword ptr [rbp + 0x30]",
+          "hex": "488b5530"
+        },
+        {
+          "rva": "0x5c61e5b",
+          "mnemonic": "mov",
+          "operands": "rdx, qword ptr [rdx]",
+          "hex": "488b12"
+        },
+        {
+          "rva": "0x5c61e5e",
+          "mnemonic": "add",
+          "operands": "rdx, 1",
+          "hex": "4883c201"
+        },
+        {
+          "rva": "0x5c61e62",
+          "mnemonic": "mov",
+          "operands": "rcx, qword ptr [rbp + 0x30]",
+          "hex": "488b4d30"
+        },
+        {
+          "rva": "0x5c61e66",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rcx], rdx",
+          "hex": "488911"
+        },
+        {
+          "rva": "0x5c61e69",
+          "mnemonic": "cmp",
+          "operands": "eax, 0x80",
+          "hex": "3d80000000"
+        },
+        {
+          "rva": "0x5c61e6e",
+          "mnemonic": "jge",
+          "operands": "0x145c61e26",
+          "hex": "0f8db2ffffff"
+        },
+        {
+          "rva": "0x5c61e74",
+          "mnemonic": "jmp",
+          "operands": "0x145bf2a18",
+          "hex": "e99f0bf9ff"
+        }
+      ],
+      "stop_reasons": []
+    },
+    "seven_bit_reader_caller": {
+      "entry_rva": "0x5d986de",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5d98cde",
+      "instruction_count": 10,
+      "truncated": false,
+      "call_count": 0,
+      "calls": [],
+      "memory_write_count": 5,
+      "register_indirect_write_count": 0,
+      "rip_executable_write_count": 0,
+      "memory_writes": [
+        {
+          "rva": "0x5d986e8",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x30], rcx",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5d986ec",
+          "instruction": "mov",
+          "args": "qword ptr [rbp + 0x38], rdx",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5d986f2",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 8], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5d986f5",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 0xc], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5d986f8",
+          "instruction": "mov",
+          "args": "dword ptr [rbp], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5d986e3",
+          "instruction": "lea",
+          "args": "rbp, [rsp + 0x20]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 8,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [],
+      "bounded_control_edges": [
+        {
+          "from": "0x5d986fb",
+          "to": "0x5c61e26",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x5c61e26"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5d986de",
+          "mnemonic": "push",
+          "operands": "rbp",
+          "hex": "55"
+        },
+        {
+          "rva": "0x5d986df",
+          "mnemonic": "sub",
+          "operands": "rsp, 0x40",
+          "hex": "4883ec40"
+        },
+        {
+          "rva": "0x5d986e3",
+          "mnemonic": "lea",
+          "operands": "rbp, [rsp + 0x20]",
+          "hex": "488d6c2420"
+        },
+        {
+          "rva": "0x5d986e8",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x30], rcx",
+          "hex": "48894d30"
+        },
+        {
+          "rva": "0x5d986ec",
+          "mnemonic": "mov",
+          "operands": "qword ptr [rbp + 0x38], rdx",
+          "hex": "48895538"
+        },
+        {
+          "rva": "0x5d986f0",
+          "mnemonic": "xor",
+          "operands": "eax, eax",
+          "hex": "33c0"
+        },
+        {
+          "rva": "0x5d986f2",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 8], eax",
+          "hex": "894508"
+        },
+        {
+          "rva": "0x5d986f5",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 0xc], eax",
+          "hex": "89450c"
+        },
+        {
+          "rva": "0x5d986f8",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp], eax",
+          "hex": "894500"
+        },
+        {
+          "rva": "0x5d986fb",
+          "mnemonic": "jmp",
+          "operands": "0x145c61e26",
+          "hex": "e92697ecff"
+        }
+      ],
+      "stop_reasons": []
+    },
+    "known_text_store": {
+      "entry_rva": "0x5bd4b1b",
+      "entry_section": {
+        "name": ".text",
+        "rva": "0x5ae4000",
+        "executable": true,
+        "writable": false
+      },
+      "pdata_range": null,
+      "bound_end": "0x5bd511b",
+      "instruction_count": 7,
+      "truncated": false,
+      "call_count": 0,
+      "calls": [],
+      "memory_write_count": 2,
+      "register_indirect_write_count": 0,
+      "rip_executable_write_count": 1,
+      "memory_writes": [
+        {
+          "rva": "0x5bd4b1d",
+          "instruction": "mov",
+          "args": "dword ptr [rbp + 0x54], eax",
+          "kind": "stack_frame",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        },
+        {
+          "rva": "0x5bd4b20",
+          "instruction": "mov",
+          "args": "dword ptr [rip - 0x56d1f6c], eax",
+          "kind": "rip_executable_section",
+          "access": "write",
+          "width": 4,
+          "rip_target_rva": "0x502bba",
+          "target_section": ".text",
+          "target_writable_in_pe": false,
+          "iat_name": null
+        }
+      ],
+      "memory_reads": [
+        {
+          "rva": "0x5bd4b26",
+          "instruction": "mov",
+          "args": "eax, dword ptr [rbp + 0x3c]",
+          "kind": "stack_frame",
+          "access": "read",
+          "width": 4,
+          "rip_target_rva": null,
+          "target_section": null,
+          "target_writable_in_pe": null,
+          "iat_name": null
+        }
+      ],
+      "bit_operations": [],
+      "bounded_control_edges": [
+        {
+          "from": "0x5bd4b2c",
+          "to": "0x5c65cd0",
+          "kind": "conditional_branch"
+        },
+        {
+          "from": "0x5bd4b32",
+          "to": "0x5c4ce84",
+          "kind": "jump"
+        }
+      ],
+      "candidate_outbound_rvas": [
+        "0x5c4ce84",
+        "0x5c65cd0"
+      ],
+      "instruction_source": [
+        {
+          "rva": "0x5bd4b1b",
+          "mnemonic": "xor",
+          "operands": "eax, eax",
+          "hex": "33c0"
+        },
+        {
+          "rva": "0x5bd4b1d",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rbp + 0x54], eax",
+          "hex": "894554"
+        },
+        {
+          "rva": "0x5bd4b20",
+          "mnemonic": "mov",
+          "operands": "dword ptr [rip - 0x56d1f6c], eax",
+          "hex": "890594e092fa"
+        },
+        {
+          "rva": "0x5bd4b26",
+          "mnemonic": "mov",
+          "operands": "eax, dword ptr [rbp + 0x3c]",
+          "hex": "8b453c"
+        },
+        {
+          "rva": "0x5bd4b29",
+          "mnemonic": "cmp",
+          "operands": "eax, -1",
+          "hex": "83f8ff"
+        },
+        {
+          "rva": "0x5bd4b2c",
+          "mnemonic": "je",
+          "operands": "0x145c65cd0",
+          "hex": "0f849e110900"
+        },
+        {
+          "rva": "0x5bd4b32",
+          "mnemonic": "jmp",
+          "operands": "0x145c4ce84",
+          "hex": "e94d830700"
+        }
+      ],
+      "stop_reasons": []
+    }
+  },
+  "direct_child_callees": {},
+  "note": "Original on-disk structural analysis only; no runtime decrypted executable."
+}
