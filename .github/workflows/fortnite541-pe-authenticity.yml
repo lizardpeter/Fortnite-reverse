@@ -7,6 +7,7 @@ on:
       - ".github/workflows/fortnite541-pe-authenticity.yml"
       - "crates/fortnite_541/tools/audit_original_executable.py"
       - "crates/fortnite_541/tools/probe_original_loader.py"
+      - "crates/fortnite_541/tools/trace_preentry.py"
   workflow_dispatch:
 
 permissions:
@@ -69,6 +70,25 @@ jobs:
             --out "$RUNNER_TEMP/audit"
           test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.json"
           test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.md"
+      - name: Source-verify pre-entrypoint TLS and original function-trampoline census
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/trace_preentry.py --self-test
+          python crates/fortnite_541/tools/trace_preentry.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_preentry.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_preentry.md"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_preentry.json"
+          r=json.loads(p.read_text())
+          assert r["source_sha256_verified"]==os.environ["SOURCE_SHA256"]
+          assert r["total_unwind_ranges"]==291757
+          assert r["function_start_pattern_census"]["starts_examined"]>200000
+          assert r["entrypoint_call_target_rva"]=="0x5ae6509"
+          print("PREENTRY_ORIGINAL_PROVENANCE_VERIFIED")
+          PY
       - name: Commit structured report only, never original executable
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
