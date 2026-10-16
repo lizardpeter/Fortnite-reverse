@@ -1,0 +1,138 @@
+name: Fortnite 5.41 restored native lighting Ghidra
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-native-lighting.yml"
+      - "crates/fortnite_541/tools/verify_restored_lighting_xrefs.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-ghidra-native-lighting.yml"
+      - "crates/fortnite_541/tools/verify_restored_lighting_xrefs.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  recover-source-lighting:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 140
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ORIGINAL_SHA256: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+      RESTORED_SHA256: b2792fd5d7639a7277cd131ca50bdd898ff2b8721c66bc4ae0e8ebcd61652379
+      GHIDRA_URL: https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_12.1.4_build/ghidra_12.1.4_PUBLIC_20260921.zip
+      GHIDRA_SHA256: ddac49f903da9d5bac833e5cc79395098b9c33cfd3279be5f31bd00387d2d4db
+      DUMP_BRANCH: re/fortnite541-ghidra-restored
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Verify original and restored Fortnite 5.41 native code xrefs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/restored" "$RUNNER_TEMP/ghidra" "$RUNNER_TEMP/project" "$RUNNER_TEMP/native-lighting"
+          gh run download 38947743292 --repo "$GITHUB_REPOSITORY" --name fortnite541-restored-analysis-pe-38947743292 --dir "$RUNNER_TEMP/restored"
+          exe="$RUNNER_TEMP/restored/FortniteClient-Win64-Shipping-5.41-restored-analysis.exe"
+          echo "$RESTORED_SHA256  $exe" | sha256sum -c -
+          python3 - <<'PY'
+          import json,os,pathlib
+          m=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"restored/manifest.json").read_text())
+          assert m["original_sha256"]==os.environ["ORIGINAL_SHA256"]
+          assert m["restored_sha256"]==os.environ["RESTORED_SHA256"]
+          assert m["restored_size_bytes"]==97284496
+          PY
+          python3 crates/fortnite_541/tools/verify_restored_lighting_xrefs.py \
+            --exe "$exe" --targets crates/fortnite_541/ghidra/lighting_native_targets.tsv \
+            --out "$RUNNER_TEMP/native-lighting/verified_lighting_xrefs.json"
+          echo "RESTORED_EXE=$exe" >> "$GITHUB_ENV"
+
+      - name: Install SHA-verified official Ghidra 12.1.4
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --max-time 400 "$GHIDRA_URL" -o "$RUNNER_TEMP/ghidra.zip"
+          echo "$GHIDRA_SHA256  $RUNNER_TEMP/ghidra.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/ghidra.zip" -d "$RUNNER_TEMP/ghidra"
+          bin="$(find "$RUNNER_TEMP/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -n "$bin"
+          chmod +x "$bin"
+          echo "GHIDRA_BIN=$bin" >> "$GITHUB_ENV"
+
+      - name: Decompile authenticated original native TODM SkyDome GBuffer fog routines
+        shell: bash
+        run: |
+          set -euo pipefail
+          options=(-noanalysis)
+          if [[ "$GITHUB_EVENT_NAME" != "pull_request" ]]; then options=(-analysisTimeoutPerFile 5400); fi
+          "$GHIDRA_BIN" "$RUNNER_TEMP/project" Fortnite541NativeLighting \
+            -import "$RESTORED_EXE" "${options[@]}" \
+            -scriptPath "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra" \
+            -postScript Fortnite541Recover.java "$RUNNER_TEMP/native-lighting" \
+              "$GITHUB_WORKSPACE/crates/fortnite_541/ghidra/lighting_native_targets.tsv" "25" "split" \
+            -max-cpu 3 2>&1 | tee "$RUNNER_TEMP/native-lighting-ghidra.log"
+          grep -q FORTNITE541_GHIDRA_RECOVERY_COMPLETE "$RUNNER_TEMP/native-lighting-ghidra.log"
+          python3 - <<'PY'
+          import gzip,json,os,pathlib
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"native-lighting"
+          summary=json.loads((root/"recovery_summary.json").read_text())
+          output=list((root/"records").glob("*.jsonl.gz"))
+          assert len(output)==1,output
+          with gzip.open(output[0],"rt") as f: rows=[json.loads(x) for x in f if x.strip()]
+          src=pathlib.Path(os.environ["GITHUB_WORKSPACE"])/"crates/fortnite_541/ghidra/lighting_native_targets.tsv"
+          expected=[int(line.split("\t",1)[0]) for line in src.read_text().splitlines()]
+          assert len(rows)==len(expected)==14
+          assert [r["index"] for r in rows]==expected
+          assert summary["original_pdata_functions"]==291757
+          assert summary["recovered"]+summary["missing"]+summary["decompiler_failed"]==14
+          assert summary["recovered"]>0
+          assert all(r["status"]!="decompiled" or isinstance(r.get("c"),str) and r["c"].strip() for r in rows)
+          print("FORTNITE541_NATIVE_LIGHTING_GHIDRA_REAL_C_VERIFIED",summary)
+          PY
+
+      - name: Checkpoint target native C in restored-code Git branch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Fortnite native-lighting Ghidra"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp -r "$RUNNER_TEMP/native-lighting" "$RUNNER_TEMP/native-lighting-staging"
+          git fetch origin "$DUMP_BRANCH"
+          git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
+          mkdir -p decompilation/fortnite541_restored/native_lighting
+          cp -r "$RUNNER_TEMP/native-lighting-staging/." decompilation/fortnite541_restored/native_lighting/
+          git add decompilation/fortnite541_restored/native_lighting
+          if ! git diff --cached --quiet; then
+            git commit -m "Ghidra recovered original Fortnite native sky, TODM, fog and GBuffer C"
+            for i in 1 2 3 4 5; do
+              if git push origin "HEAD:refs/heads/$DUMP_BRANCH"; then break; fi
+              git fetch origin "$DUMP_BRANCH"
+              git rebase "origin/$DUMP_BRANCH"
+              if [[ "$i" == "5" ]]; then exit 1; fi
+              sleep "$i"
+            done
+          fi
+
+      - name: Keep actual recovered native pseudocode and verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-native-lighting-ghidra-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/native-lighting-ghidra.log
+            ${{ runner.temp }}/native-lighting/verified_lighting_xrefs.json
+            ${{ runner.temp }}/native-lighting/recovery_summary.json
+            ${{ runner.temp }}/native-lighting/records/*.jsonl.gz
+          retention-days: 90
+          if-no-files-found: warn
