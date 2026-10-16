@@ -71,6 +71,8 @@ jobs:
           $ruleIn = "fortnite541-proof-in-${{ github.run_id }}"
           $installed = @()
           $privateAnalysisPE = Join-Path $env:RUNNER_TEMP "fortnite541-private-analysis-only.exe"
+          $artifactFolder = Join-Path $env:RUNNER_TEMP "fortnite541-recovered-analysis"
+          $artifactPE = Join-Path $artifactFolder "FortniteClient-Win64-Shipping-5.41-restored-analysis.exe"
           try {
             New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -Action Block -Program $exe -Enabled True -Profile Any -ErrorAction Stop | Out-Null
             $installed += $ruleOut
@@ -81,9 +83,45 @@ jobs:
             }
             python crates/fortnite_541/tools/probe_windows_runtime_image.py --exe $exe --out $folder --private-analysis-image $privateAnalysisPE
             if ($LASTEXITCODE -ne 0) { throw "Windows runtime image comparison failed" }
+            $diagFile = Join-Path $folder "fortnite541_runtime_image_diff.json"
+            if (-not (Test-Path -LiteralPath $diagFile)) { throw "Missing reconstruction report" }
+            $diag = Get-Content -LiteralPath $diagFile -Raw | ConvertFrom-Json
+            $recon = $diag.runtime.private_reconstruction
+            if ($recon.created_privately -ne $true) { throw "No validated analysis PE" }
+            if ($recon.total_executable_bytes_changed_from_disk -lt 1000000) {
+              throw "Insufficient restored executable code"
+            }
+            if (-not (Test-Path -LiteralPath $privateAnalysisPE)) {
+              throw "Reconstructed PE unavailable"
+            }
+            New-Item -ItemType Directory -Force $artifactFolder | Out-Null
+            Copy-Item -LiteralPath $privateAnalysisPE -Destination $artifactPE -ErrorAction Stop
+            $actualHash = (Get-FileHash -LiteralPath $artifactPE -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualHash -ne [string]$recon.reconstructed_sha256) {
+              throw "Reconstructed PE hash mismatch"
+            }
+            if ((Get-Item -LiteralPath $artifactPE).Length -ne [int64]$recon.size) {
+              throw "Reconstructed PE size mismatch"
+            }
+            $manifest = [ordered]@{
+              build = "Fortnite 5.41"
+              original_sha256 = [string]$diag.source_sha256_verified
+              restored_sha256 = $actualHash
+              restored_size_bytes = [int64]$recon.size
+              restored_executable_bytes = [int64]$recon.total_executable_bytes_read
+              bytes_changed_from_disk = [int64]$recon.total_executable_bytes_changed_from_disk
+              source_image_base = [string]$recon.source_imagebase
+              mapped_image_base = [string]$recon.actual_process_imagebase
+              classification = "analysis-only PE; not independently runnable"
+              github_run_id = "$env:GITHUB_RUN_ID"
+              github_commit = "$env:GITHUB_SHA"
+              artifact_retention_days = 90
+            }
+            $manifest | ConvertTo-Json -Depth 8 |
+              Set-Content -LiteralPath (Join-Path $artifactFolder "manifest.json") -Encoding utf8
+            Write-Output "RESTORED_PE_STAGED; SHA256=$actualHash"
           } finally {
-            # Never leave decrypted original game code in the public runner's
-            # repository or artifact directory. Only aggregate JSON survives.
+            # Remove only the temporary working file; retain verified artifact copy.
             if (Test-Path $privateAnalysisPE) {
               Remove-Item -LiteralPath $privateAnalysisPE -Force -ErrorAction SilentlyContinue
             }
@@ -104,10 +142,20 @@ jobs:
           if ($d.runtime.private_reconstruction.total_executable_bytes_changed_from_disk -lt 1000000) {
             throw "Recovered image changed too little machine code to verify restoration"
           }
-          Write-Output "PRIVATE_ANALYSIS_PE_RECONSTRUCTION_VERIFIED; ORIGINAL_GAME_CODE_BYTES_NOT_UPLOADED"
+          Write-Output "RESTORED_ANALYSIS_PE_RECONSTRUCTION_VERIFIED; SAVED_AS_ACTIONS_ARTIFACT"
           Write-Output "WINDOWS_STARTUP_PROBE_COMPLETED; PROCESS_CREATED=$($d.runtime.spawned)"
 
-      - name: Upload only aggregate diagnostics, never executable or memory bytes
+      - name: Upload recovered Fortnite 5.41 analysis PE and manifest
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-restored-analysis-pe-${{ github.run_id }}
+          path: ${{ runner.temp }}/fortnite541-recovered-analysis/
+          retention-days: 90
+          if-no-files-found: error
+          compression-level: 6
+
+      - name: Upload reconstruction diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
