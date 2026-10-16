@@ -45,6 +45,20 @@ jobs:
           if ($actual -ne $expected) { throw "Original retail SHA-256 mismatch" }
           if ((Get-Item $exe).Length -ne 97284496) { throw "Retail file length mismatch" }
           Write-Output "AUTHENTIC_SOURCE_VERIFIED; SIZE=97284496"
+          # Stage original retail side-by-side DLL dependencies required by the
+          # Windows PE import table. Keep system API-set DLLs provided by OS.
+          $redistributables = @(
+            "dbghelp.dll", "MSVCP140.dll", "VCRUNTIME140.dll",
+            "XINPUT1_3.dll", "X3DAudio1_7.dll", "XAPOFX1_5.dll"
+          )
+          foreach ($dll in $redistributables) {
+            $dllUrl = "https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/$dll"
+            $dllPath = Join-Path $folder $dll
+            curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 60 $dllUrl -o $dllPath
+            if ($LASTEXITCODE -ne 0) { throw "Missing original retail DLL $dll" }
+            if ((Get-Item $dllPath).Length -lt 4096) { throw "Retail DLL unexpectedly empty: $dll" }
+          }
+          Write-Output "ORIGINAL_SIDE_BY_SIDE_DEPENDENCIES_STAGED: $($redistributables.Count)"
 
       - name: Network-blocked process startup and mapped-image comparison
         shell: pwsh
