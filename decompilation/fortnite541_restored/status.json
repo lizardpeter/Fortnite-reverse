@@ -1,18 +1,18 @@
 {
   "schema_version": 1,
   "original_pdata_functions": 291757,
-  "covered_records": 64384,
-  "coverage_percent": 22.06768,
-  "actually_decompiled": 64368,
-  "decompiled_percent_of_inventory": 22.062196,
-  "decompiler_failed": 15,
-  "missing_function": 1,
-  "unprocessed": 227373,
-  "unresolved_total": 16,
-  "shard_count": 35,
+  "covered_records": 96384,
+  "coverage_percent": 33.035711,
+  "actually_decompiled": 96356,
+  "decompiled_percent_of_inventory": 33.026114,
+  "decompiler_failed": 23,
+  "missing_function": 5,
+  "unprocessed": 195373,
+  "unresolved_total": 28,
+  "shard_count": 51,
   "pending_ranges": [
     [
-      64384,
+      96384,
       291757
     ]
   ]
