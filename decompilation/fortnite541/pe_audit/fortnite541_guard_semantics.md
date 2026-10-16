@@ -10,6 +10,10 @@ Source SHA-256 verified. Static analysis of original on-disk instructions; neith
 | seven_bit_reader (0x5c61e26) | 24 | 0 | 1 | 0 | 2 |
 | seven_bit_reader_caller (0x5d986de) | 10 | 0 | 0 | 0 | 0 |
 | known_text_store (0x5bd4b1b) | 7 | 0 | 0 | 1 | 0 |
+| guard_callee_nonzero_buffer (0x5c6361c) | 20 | 0 | 0 | 0 | 0 |
+| guard_callee_empty_buffer (0x13d841a) | 1 | 0 | 0 | 0 | 0 |
+| varuint_decode_finalization (0x5bf2a18) | 12 | 0 | 1 | 0 | 0 |
+| guard_counter_loop_exit (0x5c65cd0) | 5 | 0 | 0 | 0 | 0 |
 
 ## guard_argument_setup
 Original source RVA: 0x5c4ce84
@@ -43,6 +47,30 @@ Bit operations:
 
 ## known_text_store
 Original source RVA: 0x5bd4b1b
+Call targets: 
+Writes through register-indirect pointers: 0
+Bit operations: 
+
+## guard_callee_nonzero_buffer
+Original source RVA: 0x5c6361c
+Call targets: 
+Writes through register-indirect pointers: 0
+Bit operations: 
+
+## guard_callee_empty_buffer
+Original source RVA: 0x13d841a
+Call targets: 
+Writes through register-indirect pointers: 0
+Bit operations: 
+
+## varuint_decode_finalization
+Original source RVA: 0x5bf2a18
+Call targets: 
+Writes through register-indirect pointers: 1
+Bit operations: 
+
+## guard_counter_loop_exit
+Original source RVA: 0x5c65cd0
 Call targets: 
 Writes through register-indirect pointers: 0
 Bit operations: 
