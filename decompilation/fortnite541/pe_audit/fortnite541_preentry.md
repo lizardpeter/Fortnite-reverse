@@ -38,19 +38,28 @@ Deterministic non-entrypoint controls: {'samples': 10000, 'first_byte_0xE8': 46,
 ### entry_aligned_path
 0x88664 -> 0x2e3fd6
 0x2e3fd6 -> 0x5ae8981
-0x5ae8981 -> no_bounded_direct_jump
+0x5ae8981 -> 0x2ec52a
+0x2ec52a -> 0xc489ba
+0xc489ba -> 0x5c83d4e
+0x5c83d4e -> nonlinear_or_suspicious_instruction
 ### entry_unaligned_path
 0x2db999 -> 0x88664
 0x88664 -> 0x2e3fd6
 0x2e3fd6 -> 0x5ae8981
-0x5ae8981 -> no_bounded_direct_jump
+0x5ae8981 -> 0x2ec52a
+0x2ec52a -> 0xc489ba
+0xc489ba -> 0x5c83d4e
+0x5c83d4e -> nonlinear_or_suspicious_instruction
 ### common_secondary_call_target
-0x5bc8859 -> no_bounded_direct_jump
+0x5bc8859 -> nonlinear_or_suspicious_instruction
 ### handoff_call_target
 0x4419 -> nonlinear_or_suspicious_instruction
 ### primary_branch_after_handoff
 0x2e3fd6 -> 0x5ae8981
-0x5ae8981 -> no_bounded_direct_jump
+0x5ae8981 -> 0x2ec52a
+0x2ec52a -> 0xc489ba
+0xc489ba -> 0x5c83d4e
+0x5c83d4e -> nonlinear_or_suspicious_instruction
 
 ## Interpretive limits
 A byte-pattern hit is not a verified instruction or executable call. The report compares original function starts against deterministic non-entrypoint controls and records the original source hashes. No plaintext reconstruction has been claimed.
