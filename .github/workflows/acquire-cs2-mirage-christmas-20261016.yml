@@ -1,0 +1,93 @@
+name: Acquire CS2 Christmas Mirage original Workshop VPKs
+
+on:
+  push:
+    branches:
+      - assets/cs2-mirage-christmas-vpk-20261016
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workshop-acquisition:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Acquire original Workshop 3620635379 anonymously
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $id = '3620635379'
+          $root = Join-Path $env:RUNNER_TEMP 'cs2-mirage-christmas'
+          $data = Join-Path $root 'original-source'
+          $tools = Join-Path $root 'tools'
+          New-Item -ItemType Directory -Force -Path $data,$tools | Out-Null
+          $log = Join-Path $root 'acquisition-log.txt'
+          "CS2 app 730, publishedfile $id, anonymous access" | Set-Content -LiteralPath $log
+          $zip = Join-Path $tools 'DepotDownloader.zip'
+          $release = 'https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-windows-x64.zip'
+          Invoke-WebRequest -Uri $release -OutFile $zip
+          $depotHome = Join-Path $tools 'DepotDownloader'
+          Expand-Archive -LiteralPath $zip -DestinationPath $depotHome -Force
+          $exe = Join-Path $depotHome 'DepotDownloader.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw 'DepotDownloader executable missing from verified release path' }
+          "Attempt 1: SteamRE DepotDownloader published-file mode without username/password" | Tee-Object -FilePath $log -Append
+          & $exe -app 730 -pubfile $id -dir $data -max-downloads 4 2>&1 | Tee-Object -FilePath $log -Append
+          $depotExit = $LASTEXITCODE
+          "DepotDownloader exit code: $depotExit" | Tee-Object -FilePath $log -Append
+          $found = @(Get-ChildItem -LiteralPath $data -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 -and $_.Extension -in @('.vpk','.bsp') })
+          if ($depotExit -ne 0 -or $found.Count -eq 0) {
+            "Attempt 2: official SteamCMD workshop_download_item 730 $id anonymous" | Tee-Object -FilePath $log -Append
+            $steamHome = Join-Path $tools 'steamcmd'
+            New-Item -ItemType Directory -Force -Path $steamHome | Out-Null
+            $steamZip = Join-Path $tools 'steamcmd.zip'
+            Invoke-WebRequest -Uri 'https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip' -OutFile $steamZip
+            Expand-Archive -LiteralPath $steamZip -DestinationPath $steamHome -Force
+            $steamCmd = Join-Path $steamHome 'steamcmd.exe'
+            & $steamCmd '+login' 'anonymous' '+workshop_download_item' '730' $id '+quit' 2>&1 | Tee-Object -FilePath $log -Append
+            "SteamCMD exit code: $LASTEXITCODE" | Tee-Object -FilePath $log -Append
+            $foundElsewhere = @(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction SilentlyContinue | Where-Object {
+              $_.Length -gt 0 -and $_.Extension -in @('.vpk','.bsp') -and $_.FullName -notlike "$data*"
+            })
+            foreach ($file in $foundElsewhere) {
+              $target = Join-Path $data $file.Name
+              if (-not (Test-Path -LiteralPath $target)) { Copy-Item -LiteralPath $file.FullName -Destination $target }
+            }
+            $found = @(Get-ChildItem -LiteralPath $data -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Length -gt 0 -and $_.Extension -in @('.vpk','.bsp') })
+          }
+          if ($found.Count -eq 0) {
+            "Anonymous Workshop acquisition did not yield an original .vpk or .bsp. Check acquisition-log.txt artifact." | Tee-Object -FilePath $log -Append
+            exit 1
+          }
+          $files = @($found | Sort-Object FullName | ForEach-Object {
+            [ordered]@{
+              name = $_.Name
+              relative_path = [IO.Path]::GetRelativePath($data,$_.FullName).Replace('\','/')
+              bytes = $_.Length
+              sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            }
+          })
+          $manifest = [ordered]@{
+            workshop_id = $id
+            app_id = 730
+            source = 'original public Steam workshop item'
+            downloader = 'SteamRE DepotDownloader published-file or official SteamCMD, anonymous'
+            files = $files
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $root 'source-manifest.json') -Encoding utf8
+          $files | ForEach-Object { "$($_.name) $($_.bytes) bytes SHA256=$($_.sha256)" } | Tee-Object -FilePath $log -Append
+          "Acquired $($files.Count) original map file(s)" | Tee-Object -FilePath $log -Append
+      - name: Upload original Workshop map and manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cs2-mirage-christmas-original-workshop-3620635379
+          path: |
+            ${{ runner.temp }}/cs2-mirage-christmas/original-source/**/*.vpk
+            ${{ runner.temp }}/cs2-mirage-christmas/original-source/**/*.bsp
+            ${{ runner.temp }}/cs2-mirage-christmas/source-manifest.json
+            ${{ runner.temp }}/cs2-mirage-christmas/acquisition-log.txt
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 7
