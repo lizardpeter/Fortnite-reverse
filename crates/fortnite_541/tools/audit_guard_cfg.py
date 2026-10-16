@@ -198,6 +198,38 @@ def inspect_root(md,pe,root,label,imports,base):
         "caveat":"Paths are statically decoded from original disk bytes, not observed runtime execution."
     }
 
+
+def executable_write_evidence(pe,rows):
+    """Inspect original on-disk bytes at RIP-resolved executable write sites."""
+    from capstone import Cs,CS_ARCH_X86,CS_MODE_64
+    md=Cs(CS_ARCH_X86,CS_MODE_64)
+    base=int(pe.OPTIONAL_HEADER.ImageBase)
+    targets={}
+    for row in rows.values():
+        for item in row["writes"]:
+            if not item["rip_target_executable"] or not item["rip_resolved_target_rva"]:
+                continue
+            rva=int(item["rip_resolved_target_rva"],16)
+            s=load_section(pe,rva)
+            if not s:continue
+            raw=peek(pe,rva,48)
+            ins=[{"rva":hex(i.address-base),"op":i.mnemonic,"args":i.op_str}
+                 for i in md.disasm(raw,base+rva,count=7)]
+            key=hex(rva)
+            e=targets.setdefault(key,{"target_rva":key,
+                "section":s.Name.rstrip(b"\0").decode("ascii","replace"),
+                "section_writable":bool(s.Characteristics&0x80000000),
+                "section_executable":bool(s.Characteristics&0x20000000),
+                "original_target_first_32_bytes":raw[:32].hex(),
+                "target_pdata_owner":None,
+                "first_decoded_instructions_not_verified_code":ins,
+                "write_sites":[]})
+            owner=pdata_envelope(pe,rva)
+            e["target_pdata_owner"]=({"begin":hex(owner["begin"]),"end":hex(owner["end"])} if owner else None)
+            e["write_sites"].append({"source_rva":item["source_rva"],"op":item["op"],
+                                     "address_expr":item["address_expr"]})
+    return list(targets.values())
+
 def run(pe):
     from capstone import Cs,CS_ARCH_X86,CS_MODE_64
     md=Cs(CS_ARCH_X86,CS_MODE_64);md.detail=True
@@ -214,6 +246,7 @@ def run(pe):
         "candidate_roots":{label:hex(v) for label,v in ROOTS.items()},
         "import_slots_resolved":len(imports),
         "studies":studies,
+        "original_executable_write_targets":executable_write_evidence(pe,studies),
         "limits":[
             "No runtime memory was inspected, and no encrypted code was decrypted.",
             "A RIP-relative store to an executable section is a statically resolvable destination; dynamic writes are not provable statically.",
@@ -235,6 +268,11 @@ def markdown(report):
             "Calls: "+", ".join(x.get("import") or x.get("target_rva") or "unresolved" for x in row["calls"][:25]),
             "Resolved RIP-relative writes into executable section: "+str(row["source_writes_to_known_executable_image"]),
             "Outbound preview targets: "+", ".join(x["rva"] for x in row["outbound_targets"][:20])]
+    for x in report["original_executable_write_targets"]:
+        lines+=["","## RIP-resolved original executable-section store",
+            "Destination: "+x["target_rva"]+" | Writable in original PE: "+str(x["section_writable"]),
+            "Unwind owner: "+str(x["target_pdata_owner"]),
+            "Store instructions: "+", ".join(y["source_rva"] for y in x["write_sites"])]
     lines+=["","## Limits",
        "An unknown-pointer memory store does not establish that program code is being decrypted. No runtime memory was inspected.",
        "See the JSON file for independently sourced original instruction previews and followable control-flow edges."]
