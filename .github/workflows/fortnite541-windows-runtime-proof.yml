@@ -25,7 +25,7 @@ jobs:
       - name: Install read-only PE parser and self-test comparison harness
         shell: pwsh
         run: |
-          python -m pip install pefile==2024.8.26
+          python -m pip install pefile==2024.8.26 capstone==5.0.6
           if ($LASTEXITCODE -ne 0) { throw "Unable to install PE parser" }
           python crates/fortnite_541/tools/probe_windows_runtime_image.py --self-test
           if ($LASTEXITCODE -ne 0) { throw "Harness self-test failed" }
