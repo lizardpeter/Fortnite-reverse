@@ -230,7 +230,8 @@ def private_analysis_image(pe,handle,base,exe:Path,out:Path):
     executable/runnable. IAT, relocations, section permissions, and
     protection runtime may still require extensive restoration.
 
-    NEVER upload this output to a public Actions artifact.
+    The invoking workflow controls whether the analysis PE is retained as a
+    GitHub Actions artifact; integrity and provenance must always be checked.
     """
     import pefile
     from capstone import Cs,CS_ARCH_X86,CS_MODE_64
@@ -332,7 +333,7 @@ def private_analysis_image(pe,handle,base,exe:Path,out:Path):
         "total_executable_bytes_changed_from_disk":total_changed,
         "sections":section_stats,
         "function_boundary_evidence":scoring,
-        "availability":"private temporary Windows runner only; not uploaded"
+        "availability":"runner temporary file; the workflow may retain an authenticated Actions artifact"
     }
 
 def capture(pe,handle,base,rvas,snapshot):
@@ -448,7 +449,7 @@ def format_markdown(d):
     lines=["# Fortnite 5.41 offline mapped-image comparison","",
         "The exact source binary was verified by SHA-256 before inspection.",
         "The original binary was launched in a bounded, network-blocked Windows runner.",
-        "No executable bytes, decrypted pages, or memory dumps are published.","",
+        "No raw process-memory dump is published; the restored analysis PE can be preserved separately as a GitHub artifact.","",
         "**Process created:** "+str(d.get("spawned")),
         "**Blocker:** "+str(d.get("blocker","none")),
         "**Process status:** "+str(d.get("process_status",[])),""]
@@ -481,7 +482,7 @@ def format_markdown(d):
                 "Bytes different from original disk image: "+str(r["total_executable_bytes_changed_from_disk"]),
                 "Function-boundary evidence: "+str(r["function_boundary_evidence"]),
                 "Reconstructed image SHA-256: "+r["reconstructed_sha256"],
-                "Only aggregate proof was published; full image stayed temporary on Windows runner.",""]
+                "The workflow can stage the verified analysis PE as a separate artifact.",""]
         else:
             lines+=["Blocker: "+str(r.get("blocker","unknown")),""]
     lines+=["## Interpretation limits",
