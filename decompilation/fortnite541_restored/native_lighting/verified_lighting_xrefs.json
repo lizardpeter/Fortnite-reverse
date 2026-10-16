@@ -1,0 +1,275 @@
+{
+  "original_sha256": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "reconstructed_sha256": "b2792fd5d7639a7277cd131ca50bdd898ff2b8721c66bc4ae0e8ebcd61652379",
+  "total_original_pdata_functions": 291757,
+  "selected_native_functions": 14,
+  "contract": "real restored LEA RIP displacement into source string, exact .pdata owner",
+  "functions": [
+    {
+      "original_function_ordinal": 7595,
+      "function_rva": "0x00141d10",
+      "end_rva": "0x00141d6c",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00141d4a",
+          "string_rva": "0x03daebd0",
+          "source_strings": [
+            "DirectionalLight:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 7601,
+      "function_rva": "0x00141f50",
+      "end_rva": "0x00141fac",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00141f8a",
+          "string_rva": "0x03daec00",
+          "source_strings": [
+            "SkyLight:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 76314,
+      "function_rva": "0x00e75a90",
+      "end_rva": "0x00e76bfd",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00e762e2",
+          "string_rva": "0x03982f98",
+          "source_strings": [
+            "FortTimeOfDayManager:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 76315,
+      "function_rva": "0x00e76c00",
+      "end_rva": "0x00e76db1",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00e76d1d",
+          "string_rva": "0x03982f98",
+          "source_strings": [
+            "FortTimeOfDayManager:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 79223,
+      "function_rva": "0x00f018b0",
+      "end_rva": "0x00f02666",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00f01cf8",
+          "string_rva": "0x039cb508",
+          "source_strings": [
+            "SkyLight:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x00f01eb0",
+          "string_rva": "0x039cb848",
+          "source_strings": [
+            "SkyDome:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 2
+    },
+    {
+      "original_function_ordinal": 79548,
+      "function_rva": "0x00f0fe30",
+      "end_rva": "0x00f101e7",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00f10038",
+          "string_rva": "0x039ccb78",
+          "source_strings": [
+            "TimeOfDay:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x00f10155",
+          "string_rva": "0x039cd008",
+          "source_strings": [
+            "TimeOfDay:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x00f101b4",
+          "string_rva": "0x039cd030",
+          "source_strings": [
+            "TimeOfDay:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 3
+    },
+    {
+      "original_function_ordinal": 79779,
+      "function_rva": "0x00f1a775",
+      "end_rva": "0x00f1a7b8",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x00f1a794",
+          "string_rva": "0x039cddf8",
+          "source_strings": [
+            "SunAndMoonModelWorldPosition:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 121882,
+      "function_rva": "0x01536aa0",
+      "end_rva": "0x01536b42",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x01536adf",
+          "string_rva": "0x03dae0ba",
+          "source_strings": [
+            "FortTimeOfDayManager:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 132415,
+      "function_rva": "0x0175ef10",
+      "end_rva": "0x01796e27",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x017848f8",
+          "string_rva": "0x03e66080",
+          "source_strings": [
+            "SkyLight:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x01784a8d",
+          "string_rva": "0x03e660c0",
+          "source_strings": [
+            "SkyLight:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x01796c52",
+          "string_rva": "0x03e69510",
+          "source_strings": [
+            "SkyLight:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 3
+    },
+    {
+      "original_function_ordinal": 147226,
+      "function_rva": "0x01b49c30",
+      "end_rva": "0x01b49d14",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x01b49ce5",
+          "string_rva": "0x03f26008",
+          "source_strings": [
+            "ReflectionCapture:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 156317,
+      "function_rva": "0x01daa399",
+      "end_rva": "0x01daa614",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x01daa3fd",
+          "string_rva": "0x03f85d98",
+          "source_strings": [
+            "GBuffer:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x01daa499",
+          "string_rva": "0x03f85f08",
+          "source_strings": [
+            "GBuffer:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x01daa54a",
+          "string_rva": "0x03f85fb8",
+          "source_strings": [
+            "GBuffer:utf-16-le"
+          ]
+        },
+        {
+          "instruction_rva": "0x01daa5ab",
+          "string_rva": "0x03f861a8",
+          "source_strings": [
+            "GBuffer:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 4
+    },
+    {
+      "original_function_ordinal": 199450,
+      "function_rva": "0x0261b6c0",
+      "end_rva": "0x0261d441",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x0261c0a8",
+          "string_rva": "0x041bf958",
+          "source_strings": [
+            "WorldPositionOffset:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 216700,
+      "function_rva": "0x0297f4b0",
+      "end_rva": "0x0297f552",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x0297f4ef",
+          "string_rva": "0x042d20f2",
+          "source_strings": [
+            "ExponentialHeightFog:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    },
+    {
+      "original_function_ordinal": 216702,
+      "function_rva": "0x0297f600",
+      "end_rva": "0x0297f6a2",
+      "verified_original_code_references": [
+        {
+          "instruction_rva": "0x0297f63f",
+          "string_rva": "0x042d29d2",
+          "source_strings": [
+            "ExponentialHeightFog:utf-16-le"
+          ]
+        }
+      ],
+      "matching_instruction_count": 1
+    }
+  ]
+}
