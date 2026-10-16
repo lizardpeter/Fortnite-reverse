@@ -18,7 +18,11 @@ SIZE=97_284_496
 ROOTS={"entry_call_handoff":0x4419,
        "secondary_register_guard":0x5C83D4E,
        "secondary_shared_code":0x5BC8859,
-       "original_entrypoint":0x351CA98}
+       "original_entrypoint":0x351CA98,
+       "handoff_branch_body":0xBCF126,
+       "shared_code_branch_body":0x5C32A2A,
+       "secondary_guard_alignment_branch":0xEB6B64,
+       "secondary_guard_nonalign_branch":0x597BC9}
 MAX_INSTRUCTIONS=1150
 MAX_SPAN=4096
 MAX_OUTPUT_INSTRUCTIONS=220
