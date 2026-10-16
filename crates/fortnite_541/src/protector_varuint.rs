@@ -55,6 +55,33 @@ pub fn decode_u32_checked(input: &[u8]) -> Result<(u32, usize), ProtectedVaruint
     Err(ProtectedVaruintError::Unterminated)
 }
 
+/// Source-backed accumulator mutated after the decoded integer is read.
+///
+/// Original retail x64 at RVA 0x05BF2A18:
+///   value = *(u32 *)(output + 4) + decoded_varuint + *(u32 *)output;
+///   *(u32 *)output = value;
+///
+/// The semantic purpose of the two fields is NOT yet established; names
+/// avoid assuming they represent decryption keys or file offsets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GuardVaruintAccumulator {
+    pub current: u32,
+    pub bias: u32,
+}
+
+/// Consume one authentic source-format integer and update the native state.
+///
+/// Returns consumed input bytes; all arithmetic matches original x86 u32
+/// wrapping ADD behavior. This does not perform executable decryption.
+pub fn consume_and_accumulate_original(
+    input: &[u8],
+    state: &mut GuardVaruintAccumulator,
+) -> Result<usize, ProtectedVaruintError> {
+    let (decoded, consumed) = decode_original_wrapping(input)?;
+    state.current = state.bias.wrapping_add(decoded).wrapping_add(state.current);
+    Ok(consumed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{decode_original_wrapping, decode_u32_checked, ProtectedVaruintError as E};
@@ -98,6 +125,27 @@ mod tests {
     fn original_accumulator_addition_wrap_is_explicit() {
         let bytes = [0xff, 0xff, 0xff, 0xff, 0x8f, 1];
         assert_eq!(decode_original_wrapping(&bytes), Ok((7, 6)));
+    }
+
+    #[test]
+    fn source_confirmed_original_accumulator_update() {
+        use super::{consume_and_accumulate_original, GuardVaruintAccumulator};
+        let mut state = GuardVaruintAccumulator { current: 10, bias: 4 };
+        assert_eq!(consume_and_accumulate_original(&[5, 0xff], &mut state), Ok(1));
+        assert_eq!(state.current, 19);
+        assert_eq!(consume_and_accumulate_original(&[0x80, 1], &mut state), Ok(2));
+        assert_eq!(state.current, 151);
+        let unchanged = state;
+        assert_eq!(consume_and_accumulate_original(&[0x80], &mut state), Err(E::Unterminated));
+        assert_eq!(state, unchanged);
+    }
+
+    #[test]
+    fn accumulator_matches_native_u32_overflow() {
+        use super::{consume_and_accumulate_original, GuardVaruintAccumulator};
+        let mut state = GuardVaruintAccumulator { current: u32::MAX, bias: 2 };
+        assert_eq!(consume_and_accumulate_original(&[3], &mut state), Ok(1));
+        assert_eq!(state.current, 4);
     }
 
     #[test]
