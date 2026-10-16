@@ -1514,6 +1514,7 @@
             "args": "0x1402e3fd6"
           }
         ],
+        "direct_call_targets": [],
         "direct_jump_target_rva": "0x2e3fd6"
       },
       {
@@ -1525,9 +1526,92 @@
             "hex": "e83e04d2ff",
             "op": "call",
             "args": "0x140004419"
+          },
+          {
+            "rva": "0x2e3fdb",
+            "hex": "e9a1498005",
+            "op": "jmp",
+            "args": "0x145ae8981"
           }
         ],
-        "stop": "nonlinear_or_suspicious_instruction"
+        "direct_call_targets": [
+          "0x4419"
+        ],
+        "direct_jump_target_rva": "0x5ae8981"
+      },
+      {
+        "rva": "0x5ae8981",
+        "source_hex_prefix": "4803642408660f10042466440f1064241066440f1044242066440f1054243066",
+        "insns": [
+          {
+            "rva": "0x5ae8981",
+            "hex": "4803642408",
+            "op": "add",
+            "args": "rsp, qword ptr [rsp + 8]"
+          },
+          {
+            "rva": "0x5ae8986",
+            "hex": "660f100424",
+            "op": "movupd",
+            "args": "xmm0, xmmword ptr [rsp]"
+          },
+          {
+            "rva": "0x5ae898b",
+            "hex": "66440f10642410",
+            "op": "movupd",
+            "args": "xmm12, xmmword ptr [rsp + 0x10]"
+          },
+          {
+            "rva": "0x5ae8992",
+            "hex": "66440f10442420",
+            "op": "movupd",
+            "args": "xmm8, xmmword ptr [rsp + 0x20]"
+          },
+          {
+            "rva": "0x5ae8999",
+            "hex": "66440f10542430",
+            "op": "movupd",
+            "args": "xmm10, xmmword ptr [rsp + 0x30]"
+          },
+          {
+            "rva": "0x5ae89a0",
+            "hex": "660f10742440",
+            "op": "movupd",
+            "args": "xmm6, xmmword ptr [rsp + 0x40]"
+          },
+          {
+            "rva": "0x5ae89a6",
+            "hex": "66440f105c2450",
+            "op": "movupd",
+            "args": "xmm11, xmmword ptr [rsp + 0x50]"
+          },
+          {
+            "rva": "0x5ae89ad",
+            "hex": "66440f104c2460",
+            "op": "movupd",
+            "args": "xmm9, xmmword ptr [rsp + 0x60]"
+          },
+          {
+            "rva": "0x5ae89b4",
+            "hex": "66440f107c2470",
+            "op": "movupd",
+            "args": "xmm15, xmmword ptr [rsp + 0x70]"
+          },
+          {
+            "rva": "0x5ae89bb",
+            "hex": "66440f10b42480000000",
+            "op": "movupd",
+            "args": "xmm14, xmmword ptr [rsp + 0x80]"
+          },
+          {
+            "rva": "0x5ae89c5",
+            "hex": "66440f10ac2490000000",
+            "op": "movupd",
+            "args": "xmm13, xmmword ptr [rsp + 0x90]"
+          }
+        ],
+        "direct_call_targets": [],
+        "stop": "no_bounded_direct_jump"
       }
     ],
     "entry_unaligned_path": [
@@ -1548,6 +1632,7 @@
             "args": "0x140088664"
           }
         ],
+        "direct_call_targets": [],
         "direct_jump_target_rva": "0x88664"
       },
       {
@@ -1567,6 +1652,7 @@
             "args": "0x1402e3fd6"
           }
         ],
+        "direct_call_targets": [],
         "direct_jump_target_rva": "0x2e3fd6"
       },
       {
@@ -1578,9 +1664,92 @@
             "hex": "e83e04d2ff",
             "op": "call",
             "args": "0x140004419"
+          },
+          {
+            "rva": "0x2e3fdb",
+            "hex": "e9a1498005",
+            "op": "jmp",
+            "args": "0x145ae8981"
           }
         ],
-        "stop": "nonlinear_or_suspicious_instruction"
+        "direct_call_targets": [
+          "0x4419"
+        ],
+        "direct_jump_target_rva": "0x5ae8981"
+      },
+      {
+        "rva": "0x5ae8981",
+        "source_hex_prefix": "4803642408660f10042466440f1064241066440f1044242066440f1054243066",
+        "insns": [
+          {
+            "rva": "0x5ae8981",
+            "hex": "4803642408",
+            "op": "add",
+            "args": "rsp, qword ptr [rsp + 8]"
+          },
+          {
+            "rva": "0x5ae8986",
+            "hex": "660f100424",
+            "op": "movupd",
+            "args": "xmm0, xmmword ptr [rsp]"
+          },
+          {
+            "rva": "0x5ae898b",
+            "hex": "66440f10642410",
+            "op": "movupd",
+            "args": "xmm12, xmmword ptr [rsp + 0x10]"
+          },
+          {
+            "rva": "0x5ae8992",
+            "hex": "66440f10442420",
+            "op": "movupd",
+            "args": "xmm8, xmmword ptr [rsp + 0x20]"
+          },
+          {
+            "rva": "0x5ae8999",
+            "hex": "66440f10542430",
+            "op": "movupd",
+            "args": "xmm10, xmmword ptr [rsp + 0x30]"
+          },
+          {
+            "rva": "0x5ae89a0",
+            "hex": "660f10742440",
+            "op": "movupd",
+            "args": "xmm6, xmmword ptr [rsp + 0x40]"
+          },
+          {
+            "rva": "0x5ae89a6",
+            "hex": "66440f105c2450",
+            "op": "movupd",
+            "args": "xmm11, xmmword ptr [rsp + 0x50]"
+          },
+          {
+            "rva": "0x5ae89ad",
+            "hex": "66440f104c2460",
+            "op": "movupd",
+            "args": "xmm9, xmmword ptr [rsp + 0x60]"
+          },
+          {
+            "rva": "0x5ae89b4",
+            "hex": "66440f107c2470",
+            "op": "movupd",
+            "args": "xmm15, xmmword ptr [rsp + 0x70]"
+          },
+          {
+            "rva": "0x5ae89bb",
+            "hex": "66440f10b42480000000",
+            "op": "movupd",
+            "args": "xmm14, xmmword ptr [rsp + 0x80]"
+          },
+          {
+            "rva": "0x5ae89c5",
+            "hex": "66440f10ac2490000000",
+            "op": "movupd",
+            "args": "xmm13, xmmword ptr [rsp + 0x90]"
+          }
+        ],
+        "direct_call_targets": [],
+        "stop": "no_bounded_direct_jump"
       }
     ],
     "common_secondary_call_target": [
@@ -1661,6 +1830,157 @@
             "args": "rax, [rdx + rax]"
           }
         ],
+        "direct_call_targets": [],
+        "stop": "no_bounded_direct_jump"
+      }
+    ],
+    "handoff_call_target": [
+      {
+        "rva": "0x4419",
+        "source_hex_prefix": "554881ecb0000000488d6c2420c68580000000008b05b7c5000085c00f85ebac",
+        "insns": [
+          {
+            "rva": "0x4419",
+            "hex": "55",
+            "op": "push",
+            "args": "rbp"
+          },
+          {
+            "rva": "0x441a",
+            "hex": "4881ecb0000000",
+            "op": "sub",
+            "args": "rsp, 0xb0"
+          },
+          {
+            "rva": "0x4421",
+            "hex": "488d6c2420",
+            "op": "lea",
+            "args": "rbp, [rsp + 0x20]"
+          },
+          {
+            "rva": "0x4426",
+            "hex": "c6858000000000",
+            "op": "mov",
+            "args": "byte ptr [rbp + 0x80], 0"
+          },
+          {
+            "rva": "0x442d",
+            "hex": "8b05b7c50000",
+            "op": "mov",
+            "args": "eax, dword ptr [rip + 0xc5b7]"
+          },
+          {
+            "rva": "0x4433",
+            "hex": "85c0",
+            "op": "test",
+            "args": "eax, eax"
+          },
+          {
+            "rva": "0x4435",
+            "hex": "0f85ebacbc00",
+            "op": "jne",
+            "args": "0x140bcf126"
+          }
+        ],
+        "direct_call_targets": [],
+        "stop": "nonlinear_or_suspicious_instruction"
+      }
+    ],
+    "primary_branch_after_handoff": [
+      {
+        "rva": "0x2e3fd6",
+        "source_hex_prefix": "e83e04d2ffe9a14980058f17c583d3ca31899041910414745c7d7e7421c0ef5e",
+        "insns": [
+          {
+            "rva": "0x2e3fd6",
+            "hex": "e83e04d2ff",
+            "op": "call",
+            "args": "0x140004419"
+          },
+          {
+            "rva": "0x2e3fdb",
+            "hex": "e9a1498005",
+            "op": "jmp",
+            "args": "0x145ae8981"
+          }
+        ],
+        "direct_call_targets": [
+          "0x4419"
+        ],
+        "direct_jump_target_rva": "0x5ae8981"
+      },
+      {
+        "rva": "0x5ae8981",
+        "source_hex_prefix": "4803642408660f10042466440f1064241066440f1044242066440f1054243066",
+        "insns": [
+          {
+            "rva": "0x5ae8981",
+            "hex": "4803642408",
+            "op": "add",
+            "args": "rsp, qword ptr [rsp + 8]"
+          },
+          {
+            "rva": "0x5ae8986",
+            "hex": "660f100424",
+            "op": "movupd",
+            "args": "xmm0, xmmword ptr [rsp]"
+          },
+          {
+            "rva": "0x5ae898b",
+            "hex": "66440f10642410",
+            "op": "movupd",
+            "args": "xmm12, xmmword ptr [rsp + 0x10]"
+          },
+          {
+            "rva": "0x5ae8992",
+            "hex": "66440f10442420",
+            "op": "movupd",
+            "args": "xmm8, xmmword ptr [rsp + 0x20]"
+          },
+          {
+            "rva": "0x5ae8999",
+            "hex": "66440f10542430",
+            "op": "movupd",
+            "args": "xmm10, xmmword ptr [rsp + 0x30]"
+          },
+          {
+            "rva": "0x5ae89a0",
+            "hex": "660f10742440",
+            "op": "movupd",
+            "args": "xmm6, xmmword ptr [rsp + 0x40]"
+          },
+          {
+            "rva": "0x5ae89a6",
+            "hex": "66440f105c2450",
+            "op": "movupd",
+            "args": "xmm11, xmmword ptr [rsp + 0x50]"
+          },
+          {
+            "rva": "0x5ae89ad",
+            "hex": "66440f104c2460",
+            "op": "movupd",
+            "args": "xmm9, xmmword ptr [rsp + 0x60]"
+          },
+          {
+            "rva": "0x5ae89b4",
+            "hex": "66440f107c2470",
+            "op": "movupd",
+            "args": "xmm15, xmmword ptr [rsp + 0x70]"
+          },
+          {
+            "rva": "0x5ae89bb",
+            "hex": "66440f10b42480000000",
+            "op": "movupd",
+            "args": "xmm14, xmmword ptr [rsp + 0x80]"
+          },
+          {
+            "rva": "0x5ae89c5",
+            "hex": "66440f10ac2490000000",
+            "op": "movupd",
+            "args": "xmm13, xmmword ptr [rsp + 0x90]"
+          }
+        ],
+        "direct_call_targets": [],
         "stop": "no_bounded_direct_jump"
       }
     ]
