@@ -2,7 +2,7 @@ name: Fortnite 5.41 Ghidra restored-native full-function dump
 
 on:
   push:
-    branches: [feature/fortnite541-restored-ghidra-full]
+    branches: [main]
     paths:
       - ".github/workflows/fortnite541-ghidra-restored.yml"
       - "crates/fortnite_541/ghidra/Fortnite541FullDump.java"
@@ -36,7 +36,7 @@ permissions:
 jobs:
   original-win64-function-dump:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 350
     env:
       SOURCE_ARTIFACT_RUN: "38947743292"
       SOURCE_ARTIFACT_NAME: fortnite541-restored-analysis-pe-38947743292
@@ -104,7 +104,7 @@ jobs:
         shell: bash
         env:
           START: ${{ github.event_name == 'workflow_dispatch' && inputs.start_index || '0' }}
-          COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.function_count || '12' }}
+          COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.function_count || '128' }}
           DECOMP_TIMEOUT: ${{ github.event_name == 'workflow_dispatch' && inputs.timeout_seconds || '8' }}
           DO_ANALYSIS: ${{ github.event_name == 'push' && 'true' || (inputs.full_analysis && 'true' || 'false') }}
         run: |
