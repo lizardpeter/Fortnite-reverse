@@ -178,7 +178,7 @@ jobs:
           git fetch origin "$DUMP_BRANCH"
           git checkout -B "$DUMP_BRANCH" "origin/$DUMP_BRANCH"
           cp -r "$RUNNER_TEMP/shards/." decompilation/fortnite541_restored/
-          python3 "$RUNNER_TEMP/audit_ghidra_dump.py" --root decompilation/fortnite541
+          python3 "$RUNNER_TEMP/audit_ghidra_dump.py" --root decompilation/fortnite541_restored
           git add decompilation/fortnite541_restored
           test -n "$(git diff --cached --name-only)"
           git commit -m "Ghidra: batch of ${{ needs.plan-remaining-original-functions.outputs.workers }} parallel original 5.41 function shards"
