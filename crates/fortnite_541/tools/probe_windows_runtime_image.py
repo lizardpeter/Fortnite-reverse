@@ -316,6 +316,8 @@ def private_analysis_image(pe,handle,base,exe:Path,out:Path):
     try:
         partial.write_bytes(image)
         partial.replace(out)
+        if source_sha256(out)!=hashlib.sha256(image).hexdigest():
+            raise RuntimeError("Private reconstructed PE failed full byte-for-byte filesystem integrity check")
     finally:
         partial.unlink(missing_ok=True)
     return {
