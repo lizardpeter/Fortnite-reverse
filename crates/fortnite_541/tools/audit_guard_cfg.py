@@ -22,7 +22,12 @@ ROOTS={"entry_call_handoff":0x4419,
        "handoff_branch_body":0xBCF126,
        "shared_code_branch_body":0x5C32A2A,
        "secondary_guard_alignment_branch":0xEB6B64,
-       "secondary_guard_nonalign_branch":0x597BC9}
+       "secondary_guard_nonalign_branch":0x597BC9,
+       "handoff_indirect_caller":0x3D0C9,
+       "handoff_direct_callee":0x47794,
+       "shared_direct_callee":0x5D986DE,
+       "shared_global_state_update":0x5BD4B1B,
+       "guard_shared_call_gate":0x1568966}
 MAX_INSTRUCTIONS=1150
 MAX_SPAN=4096
 MAX_OUTPUT_INSTRUCTIONS=220
