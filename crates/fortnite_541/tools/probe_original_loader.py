@@ -68,6 +68,68 @@ def inspect(path):
     entry_raw=pe.get_data(entry,512)
     instructions=list(md.disasm(entry_raw,base+entry,count=80))
     entry_instructions=[{"rva":hex(i.address-base),"hex":i.bytes.hex(),"mnemonic":i.mnemonic,"operands":i.op_str} for i in instructions]
+    # The entrypoint's original near-CALL destination is a grounded loader anchor.
+    entry_calls=[]
+    targets=[]
+    for i in instructions[:12]:
+        if i.id==X86_INS_CALL and i.operands and i.operands[0].type==X86_OP_IMM:
+            target=int(i.operands[0].imm)-base
+            entry_calls.append(dict(source_rva=hex(i.address-base),target_rva=hex(target),
+                                    in_second_text=(target>=0x5ae4000)))
+            if target>=0:targets.append(target)
+    initial_loaders=[]
+    # Target-specific disassembly avoids treating encrypted bytes after the
+    # initial CALL as normal sequential executable instructions.
+    for target in targets[:4]:
+        sec=next((s for s in pe.sections if s.VirtualAddress<=target<s.VirtualAddress+max(s.Misc_VirtualSize,s.SizeOfRawData) and s.Characteristics&0x20000000),None)
+        if sec is None:continue
+        lower=int(sec.VirtualAddress)
+        upper=lower+int(sec.Misc_VirtualSize)
+        first=list(md.disasm(pe.get_data(target,1024),base+target,count=65))
+        # Conservative, bounded direct-edge exploration; never follow an
+        # unresolved indirect branch, outside-section edge or unknown bytes.
+        frontier=[target];seen=set();collected=[];out_calls=set()
+        stops=Counter()
+        while frontier and len(seen)<1200:
+            rva=frontier.pop()
+            if rva in seen or not lower<=rva<upper:continue
+            ins=list(md.disasm(pe.get_data(rva,15),base+rva,count=1))
+            if not ins or ins[0].address != base+rva:
+                stops["decode_failed"]+=1;continue
+            x=ins[0]
+            seen.add(rva)
+            if len(collected)<180:
+                collected.append(dict(rva=hex(rva),hex=x.bytes.hex(),op=x.mnemonic,args=x.op_str))
+            next_rva=rva+x.size
+            target_rva=None
+            if x.operands and x.operands[0].type==X86_OP_IMM and (x.id==X86_INS_CALL or x.mnemonic.startswith("j")):
+                target_rva=int(x.operands[0].imm)-base
+            if x.id==X86_INS_CALL:
+                if target_rva is not None:
+                    out_calls.add(target_rva)
+                    if lower<=target_rva<upper:frontier.append(target_rva)
+                else:stops["indirect_call"]+=1
+                frontier.append(next_rva)
+            elif x.mnemonic.startswith("ret") or x.mnemonic in ("int3","ud2","hlt"):
+                stops["terminal"]+=1
+            elif x.mnemonic=="jmp":
+                if target_rva is not None and lower<=target_rva<upper:
+                    frontier.append(target_rva)
+                else:stops["unresolved_jump"]+=1
+            elif x.mnemonic.startswith("j") or x.mnemonic.startswith("loop"):
+                if target_rva is not None and lower<=target_rva<upper:
+                    frontier.append(target_rva)
+                frontier.append(next_rva)
+            else:
+                frontier.append(next_rva)
+        initial_loaders.append(dict(entry_call_target_rva=hex(target),
+            executable_section_start=hex(lower),section_bytes=upper-lower,
+            first_target_instructions=[dict(rva=hex(x.address-base),hex=x.bytes.hex(),op=x.mnemonic,args=x.op_str) for x in first[:40]],
+            first_target_linear_decoded_bytes=sum(x.size for x in first),
+            cfg_unique_instructions=len(seen),cfg_stop_reasons=dict(stops),
+            cfg_source_instruction_sample=collected[:80],
+            cfg_direct_call_targets=[hex(x) for x in sorted(out_calls)[:60]],
+            cfg_direct_calls=len(out_calls),cfg_truncated=bool(frontier)))
     samples=[]
     ordinals=set(range(min(16,len(pdata))))
     ordinals.update(min(len(pdata)-1,int((i+.5)*len(pdata)/384)) for i in range(384))
@@ -100,6 +162,7 @@ def inspect(path):
         entry_section=(actual_section.Name.rstrip(b"\0").decode("ascii","replace") if actual_section else None),
         entry_first_32_bytes=entry_raw[:32].hex(),
         entry_disassembly=entry_instructions,
+        entrypoint_direct_calls=entry_calls,entrypoint_call_target_probes=initial_loaders,
         sections=sections,original_pdata_records=len(pdata),
         unwind_sampled_count=len(samples),sampled_90pct_decoded=sum(s["decode_fraction"]>=.9 for s in samples),
         median_sampled_decode_fraction=statistics.median(s["decode_fraction"] for s in samples),
@@ -121,6 +184,13 @@ def markdown(d):
     for s in d["sections"]:
         if s["executable"]:
             text.append(f"| {s['name']} ({s['rva']}) | {s['raw_bytes']:,} | {s['entropy']} | {s['window_median']} | {s['windows_over_795']}/{s['window_count']} | {s['windows_under_75']} |")
+    text+=["","## Original entrypoint direct CALL targets"]
+    for probe in d["entrypoint_call_target_probes"]:
+        text.append(f"Entry target {probe['entry_call_target_rva']}: {probe['cfg_unique_instructions']} entrypoint-reachable static x64 instructions within section {probe['executable_section_start']}; unique direct call destinations {probe['cfg_direct_calls']}.")
+        text.append("~~~asm")
+        for i in probe["first_target_instructions"][:22]:
+            text.append(f"{i['rva']} {i['hex']:<24} {i['op']} {i['args']}")
+        text.append("~~~")
     text+=["","## Authenticated entrypoint first 30 decoded x64 instructions","", "~~~asm"]
     for i in d["entry_disassembly"][:30]:
         text.append(f"{i['rva']} {i['hex']:<24} {i['mnemonic']} {i['operands']}")
