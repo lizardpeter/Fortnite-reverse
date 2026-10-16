@@ -1,0 +1,86 @@
+{
+  "source_sha256_verified": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
+  "original_loop_rva": "0x5c61e26",
+  "completion_rva": "0x5bf2a18",
+  "execution_mode": "isolated original x64 loop only: stops before successor block",
+  "all_passed": true,
+  "vectors": [
+    {
+      "test": "zero",
+      "input_hex": "00",
+      "expected_u32": 0,
+      "source_x64_result": 0,
+      "bytes_consumed": 1,
+      "x64_instructions": 24,
+      "match": true
+    },
+    {
+      "test": "one",
+      "input_hex": "01",
+      "expected_u32": 1,
+      "source_x64_result": 1,
+      "bytes_consumed": 1,
+      "x64_instructions": 24,
+      "match": true
+    },
+    {
+      "test": "single_max",
+      "input_hex": "7f",
+      "expected_u32": 127,
+      "source_x64_result": 127,
+      "bytes_consumed": 1,
+      "x64_instructions": 24,
+      "match": true
+    },
+    {
+      "test": "two_bytes",
+      "input_hex": "8001",
+      "expected_u32": 128,
+      "source_x64_result": 128,
+      "bytes_consumed": 2,
+      "x64_instructions": 47,
+      "match": true
+    },
+    {
+      "test": "three_bytes",
+      "input_hex": "e58e26",
+      "expected_u32": 624485,
+      "source_x64_result": 624485,
+      "bytes_consumed": 3,
+      "x64_instructions": 70,
+      "match": true
+    },
+    {
+      "test": "u32_max",
+      "input_hex": "ffffffff0f",
+      "expected_u32": 4294967295,
+      "source_x64_result": 4294967295,
+      "bytes_consumed": 5,
+      "x64_instructions": 116,
+      "match": true
+    },
+    {
+      "test": "read_until_stop",
+      "input_hex": "800055",
+      "expected_u32": 0,
+      "source_x64_result": 0,
+      "bytes_consumed": 2,
+      "x64_instructions": 47,
+      "match": true
+    },
+    {
+      "test": "original_x86_shift_wrap",
+      "input_hex": "808080808001",
+      "expected_u32": 8,
+      "source_x64_result": 8,
+      "bytes_consumed": 6,
+      "x64_instructions": 139,
+      "match": true
+    }
+  ],
+  "limits": [
+    "No game binary execution, decrypted executable or runtime memory inspection",
+    "Only standalone varuint loop behavior under synthetic inputs",
+    "The source x64 loop performs masked SHL and wrapping 32-bit addition"
+  ]
+}
