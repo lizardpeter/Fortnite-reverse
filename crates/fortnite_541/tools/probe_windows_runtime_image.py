@@ -37,6 +37,7 @@ if os.name=="nt":
     from ctypes import WinDLL
     kernel32=WinDLL("kernel32",use_last_error=True)
     psapi=WinDLL("psapi",use_last_error=True)
+    ntdll=WinDLL("ntdll",use_last_error=True)
     SIZE_T=C.c_size_t
     HANDLE=W.HANDLE
     LPVOID=C.c_void_p
@@ -55,6 +56,13 @@ if os.name=="nt":
     class PROCESS_INFORMATION(C.Structure):
         _fields_=[("hProcess",HANDLE),("hThread",HANDLE),
                   ("dwProcessId",DWORD),("dwThreadId",DWORD)]
+    class PROCESS_BASIC_INFORMATION(C.Structure):
+        _fields_=[("Reserved1",C.c_void_p),("PebBaseAddress",C.c_void_p),
+                  ("Reserved2",C.c_void_p*2),("UniqueProcessId",SIZE_T),
+                  ("Reserved3",C.c_void_p)]
+    ntdll.NtQueryInformationProcess.argtypes=[HANDLE,DWORD,C.c_void_p,
+                                              DWORD,C.POINTER(DWORD)]
+    ntdll.NtQueryInformationProcess.restype=W.LONG
     kernel32.CreateProcessW.argtypes=[
         W.LPCWSTR,W.LPWSTR,C.c_void_p,C.c_void_p,W.BOOL,
         DWORD,C.c_void_p,W.LPCWSTR,C.POINTER(STARTUPINFOW),
@@ -123,15 +131,29 @@ def read_remote(handle,address,length=PAGE_BYTES):
     return bytes(buf)
 
 def process_base(handle,expected_base):
+    """Locate child image without assuming loader module lists exist yet."""
+    # The loader's LDR module list is often not initialized while the first
+    # thread remains suspended. The kernel creates the PEB before user code.
+    pbi=PROCESS_BASIC_INFORMATION()
+    returned=DWORD()
+    status=ntdll.NtQueryInformationProcess(handle,0,C.byref(pbi),
+                                          C.sizeof(pbi),C.byref(returned))
+    if status==0 and pbi.PebBaseAddress:
+        ptr=read_remote(handle,int(pbi.PebBaseAddress)+0x10,8)
+        if ptr:
+            value=struct.unpack("<Q",ptr)[0]
+            if value and read_remote(handle,value,2)==b"MZ":
+                return value,"PEB_ImageBaseAddress_verified_MZ"
     modules=(HANDLE*512)()
     needed=DWORD()
     if psapi.EnumProcessModulesEx(handle,modules,C.sizeof(modules),C.byref(needed),3):
         if needed.value>=C.sizeof(HANDLE) and modules[0]:
-            return int(C.cast(modules[0],C.c_void_p).value),"EnumProcessModulesEx"
-    hdr=read_remote(handle,expected_base,2)
-    if hdr==b"MZ":
+            value=int(modules[0])
+            if read_remote(handle,value,2)==b"MZ":
+                return value,"EnumProcessModulesEx_verified_MZ"
+    if read_remote(handle,expected_base,2)==b"MZ":
         return expected_base,"expected_image_base_MZ_verified"
-    return None,"image_base_not_accessible"
+    return None,"PEB_and_module_list_not_accessible"
 
 def capture(pe,handle,base,rvas,snapshot):
     out={"stage":snapshot,"sections":[]}
@@ -187,15 +209,15 @@ def runtime_probe(pe,exe:Path,snap_delays):
     try:
         base,source=process_base(info.hProcess,int(pe.OPTIONAL_HEADER.ImageBase))
         report["image_base_source"]=source
-        if base is None:
-            report["blocker"]="Cannot identify mapped executable image before first thread resumes"
-            return report
         sections=[]
         for s in pe.sections:
             if s.Characteristics&0x20000000:
                 sections.append((s,sample_rvas(pe,s)))
         report["sampled_sections"]=len(sections)
-        report["snapshots"].append(capture(pe,info.hProcess,base,sections,"created_suspended"))
+        if base is not None:
+            report["snapshots"].append(capture(pe,info.hProcess,base,sections,"created_suspended"))
+        else:
+            report["baseline_missing"]="Cannot identify the mapped image while suspended"
         start=time.monotonic()
         result=kernel32.ResumeThread(info.hThread)
         if result==0xffffffff:
@@ -208,7 +230,13 @@ def runtime_probe(pe,exe:Path,snap_delays):
                 time.sleep(wait)
             status=DWORD()
             kernel32.GetExitCodeProcess(info.hProcess,C.byref(status))
-            report["snapshots"].append(capture(pe,info.hProcess,base,sections,f"after_{seconds}_seconds"))
+            if base is None:
+                base,source=process_base(info.hProcess,int(pe.OPTIONAL_HEADER.ImageBase))
+                report["image_base_source_after_resume"]=source
+            if base is not None:
+                report["snapshots"].append(capture(pe,info.hProcess,base,sections,f"after_{seconds}_seconds"))
+            else:
+                report["blocker"]="Image base unavailable in suspended and resumed process"
             report.setdefault("process_status",[]).append({
                 "elapsed_requested_seconds":seconds,
                 "process_exited":status.value!=STILL_ACTIVE,
