@@ -68,6 +68,7 @@ def trace_direct_gate_chain(pe,data,base,md,start,max_hops=24):
         ins=list(md.disasm(raw,base+current,count=12))
         cur={"rva":hex(current),"source_hex_prefix":raw[:32].hex(),"insns":[]}
         destination=None
+        cur["direct_call_targets"]=[]
         for x in ins:
             cur["insns"].append({"rva":hex(x.address-base),"hex":x.bytes.hex(),
                   "op":x.mnemonic,"args":x.op_str})
@@ -76,7 +77,13 @@ def trace_direct_gate_chain(pe,data,base,md,start,max_hops=24):
                     destination=int(x.operands[0].imm)-base
                 else:cur["stop"]="indirect_jump"
                 break
-            if x.mnemonic.startswith("j") or x.mnemonic.startswith("ret") or x.mnemonic in ("call","int3","ud2","int1","hlt","in","out","retf"):
+            if x.mnemonic=="call":
+                if x.operands and x.operands[0].type==2:
+                    cur["direct_call_targets"].append(hex(int(x.operands[0].imm)-base))
+                    continue
+                cur["stop"]="unresolved_indirect_call"
+                break
+            if x.mnemonic.startswith("j") or x.mnemonic.startswith("ret") or x.mnemonic in ("int3","ud2","int1","hlt","in","out","retf"):
                 cur["stop"]="nonlinear_or_suspicious_instruction"
                 break
         if destination is None and "stop" not in cur:
@@ -240,7 +247,9 @@ def run(path):
        "direct_jmp_gate_chains":{
          "entry_aligned_path":trace_direct_gate_chain(pe,data,base,md,0x88664),
          "entry_unaligned_path":trace_direct_gate_chain(pe,data,base,md,0x2DB999),
-         "common_secondary_call_target":trace_direct_gate_chain(pe,data,base,md,0x5BC8859)},
+         "common_secondary_call_target":trace_direct_gate_chain(pe,data,base,md,0x5BC8859),
+         "handoff_call_target":trace_direct_gate_chain(pe,data,base,md,0x4419),
+         "primary_branch_after_handoff":trace_direct_gate_chain(pe,data,base,md,0x2E3FD6)},
        "top_call_pattern_target_counts":frequent,
        "non_entrypoint_controls":dict(control_counts),
        "branch_targets_in_protected_section":direct_branch_targets,
