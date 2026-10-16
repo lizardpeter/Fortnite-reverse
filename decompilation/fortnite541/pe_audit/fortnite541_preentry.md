@@ -34,6 +34,17 @@ Deterministic non-entrypoint controls: {'samples': 10000, 'first_byte_0xE8': 46,
 | 0x5ee8754 | 1 | add |
 | 0x5e555cd | 1 | movabs |
 
+## Direct original x64 near-JMP gate chain
+### entry_aligned_path
+0x88664 -> 0x2e3fd6
+0x2e3fd6 -> nonlinear_or_suspicious_instruction
+### entry_unaligned_path
+0x2db999 -> 0x88664
+0x88664 -> 0x2e3fd6
+0x2e3fd6 -> nonlinear_or_suspicious_instruction
+### common_secondary_call_target
+0x5bc8859 -> no_bounded_direct_jump
+
 ## Interpretive limits
 A byte-pattern hit is not a verified instruction or executable call. The report compares original function starts against deterministic non-entrypoint controls and records the original source hashes. No plaintext reconstruction has been claimed.
 
