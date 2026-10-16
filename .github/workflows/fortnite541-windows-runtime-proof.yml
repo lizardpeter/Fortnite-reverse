@@ -1,0 +1,104 @@
+name: Fortnite 5.41 isolated Windows mapped-image comparison
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-windows-runtime-proof.yml"
+      - "crates/fortnite_541/tools/probe_windows_runtime_image.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-windows-process-image:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install read-only PE parser and self-test comparison harness
+        shell: pwsh
+        run: |
+          python -m pip install pefile==2024.8.26 capstone==5.0.6
+          if ($LASTEXITCODE -ne 0) { throw "Unable to install PE parser" }
+          python crates/fortnite_541/tools/probe_windows_runtime_image.py --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Harness self-test failed" }
+
+      - name: Download original EXE as raw bytes and verify SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $folder = Join-Path $env:RUNNER_TEMP "fortnite541-retail"
+          New-Item -ItemType Directory -Force $folder | Out-Null
+          $exe = Join-Path $folder "FortniteClient-Win64-Shipping.exe"
+          $url = "https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe"
+          curl.exe --fail --location --retry 3 --connect-timeout 25 --max-time 300 $url -o $exe
+          if ($LASTEXITCODE -ne 0) { throw "Cannot download original retail executable" }
+          $expected = "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108"
+          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Original retail SHA-256 mismatch" }
+          if ((Get-Item $exe).Length -ne 97284496) { throw "Retail file length mismatch" }
+          Write-Output "AUTHENTIC_SOURCE_VERIFIED; SIZE=97284496"
+          # Stage original retail side-by-side DLL dependencies required by the
+          # Windows PE import table. Keep system API-set DLLs provided by OS.
+          $redistributables = @(
+            "dbghelp.dll", "msvcp140.dll", "vcruntime140.dll",
+            "xinput1_3.dll", "X3DAudio1_7.dll", "XAPOFX1_5.dll"
+          )
+          foreach ($dll in $redistributables) {
+            $dllUrl = "https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/$dll"
+            $dllPath = Join-Path $folder $dll
+            curl.exe --fail --location --retry 3 --connect-timeout 20 --max-time 60 $dllUrl -o $dllPath
+            if ($LASTEXITCODE -ne 0) { throw "Missing original retail DLL $dll" }
+            if ((Get-Item $dllPath).Length -lt 4096) { throw "Retail DLL unexpectedly empty: $dll" }
+          }
+          Write-Output "ORIGINAL_SIDE_BY_SIDE_DEPENDENCIES_STAGED: $($redistributables.Count)"
+
+      - name: Network-blocked process startup and mapped-image comparison
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Join-Path $env:RUNNER_TEMP "fortnite541-retail\FortniteClient-Win64-Shipping.exe"
+          $folder = Join-Path $env:RUNNER_TEMP "fortnite541-runtime-evidence"
+          New-Item -ItemType Directory -Force $folder | Out-Null
+          $ruleOut = "fortnite541-proof-out-${{ github.run_id }}"
+          $ruleIn = "fortnite541-proof-in-${{ github.run_id }}"
+          $installed = @()
+          try {
+            New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -Action Block -Program $exe -Enabled True -Profile Any -ErrorAction Stop | Out-Null
+            $installed += $ruleOut
+            New-NetFirewallRule -DisplayName $ruleIn -Direction Inbound -Action Block -Program $exe -Enabled True -Profile Any -ErrorAction Stop | Out-Null
+            $installed += $ruleIn
+            if (-not (Get-NetFirewallRule -DisplayName $ruleOut -ErrorAction SilentlyContinue)) {
+              throw "Outbound firewall isolation not active; refusing to launch"
+            }
+            python crates/fortnite_541/tools/probe_windows_runtime_image.py --exe $exe --out $folder
+            if ($LASTEXITCODE -ne 0) { throw "Windows runtime image comparison failed" }
+          } finally {
+            foreach ($rule in $installed) {
+              Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
+            }
+          }
+          if (-not (Test-Path (Join-Path $folder "fortnite541_runtime_image_diff.json"))) {
+            throw "No runtime evidence produced"
+          }
+          $d = Get-Content (Join-Path $folder "fortnite541_runtime_image_diff.json") -Raw | ConvertFrom-Json
+          if ($d.source_sha256_verified -ne "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108") {
+            throw "Evidence source does not match original file"
+          }
+          Write-Output "WINDOWS_STARTUP_PROBE_COMPLETED; PROCESS_CREATED=$($d.runtime.spawned)"
+
+      - name: Upload only aggregate diagnostics, never executable or memory bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-windows-runtime-image-proof
+          path: ${{ runner.temp }}/fortnite541-runtime-evidence/
+          retention-days: 10
+          if-no-files-found: warn
