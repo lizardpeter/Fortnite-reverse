@@ -2,7 +2,8 @@
   "source_sha256_verified": "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108",
   "original_loop_rva": "0x5c61e26",
   "completion_rva": "0x5bf2a18",
-  "execution_mode": "isolated original x64 loop only: stops before successor block",
+  "postdecode_store_stop_rva": "0x5bf2a34",
+  "execution_mode": "isolated original x64 loop and immediate accumulator update: stops before branch dispatch",
   "all_passed": true,
   "vectors": [
     {
@@ -11,7 +12,9 @@
       "expected_u32": 0,
       "source_x64_result": 0,
       "bytes_consumed": 1,
-      "x64_instructions": 24,
+      "x64_instructions": 33,
+      "accumulated_u32": 14,
+      "postdecode_expected_u32": 14,
       "match": true
     },
     {
@@ -20,7 +23,9 @@
       "expected_u32": 1,
       "source_x64_result": 1,
       "bytes_consumed": 1,
-      "x64_instructions": 24,
+      "x64_instructions": 33,
+      "accumulated_u32": 15,
+      "postdecode_expected_u32": 15,
       "match": true
     },
     {
@@ -29,7 +34,9 @@
       "expected_u32": 127,
       "source_x64_result": 127,
       "bytes_consumed": 1,
-      "x64_instructions": 24,
+      "x64_instructions": 33,
+      "accumulated_u32": 141,
+      "postdecode_expected_u32": 141,
       "match": true
     },
     {
@@ -38,7 +45,9 @@
       "expected_u32": 128,
       "source_x64_result": 128,
       "bytes_consumed": 2,
-      "x64_instructions": 47,
+      "x64_instructions": 56,
+      "accumulated_u32": 142,
+      "postdecode_expected_u32": 142,
       "match": true
     },
     {
@@ -47,7 +56,9 @@
       "expected_u32": 624485,
       "source_x64_result": 624485,
       "bytes_consumed": 3,
-      "x64_instructions": 70,
+      "x64_instructions": 79,
+      "accumulated_u32": 624499,
+      "postdecode_expected_u32": 624499,
       "match": true
     },
     {
@@ -56,7 +67,9 @@
       "expected_u32": 4294967295,
       "source_x64_result": 4294967295,
       "bytes_consumed": 5,
-      "x64_instructions": 116,
+      "x64_instructions": 125,
+      "accumulated_u32": 13,
+      "postdecode_expected_u32": 13,
       "match": true
     },
     {
@@ -65,7 +78,9 @@
       "expected_u32": 0,
       "source_x64_result": 0,
       "bytes_consumed": 2,
-      "x64_instructions": 47,
+      "x64_instructions": 56,
+      "accumulated_u32": 14,
+      "postdecode_expected_u32": 14,
       "match": true
     },
     {
@@ -74,7 +89,9 @@
       "expected_u32": 8,
       "source_x64_result": 8,
       "bytes_consumed": 6,
-      "x64_instructions": 139,
+      "x64_instructions": 148,
+      "accumulated_u32": 22,
+      "postdecode_expected_u32": 22,
       "match": true
     }
   ],
