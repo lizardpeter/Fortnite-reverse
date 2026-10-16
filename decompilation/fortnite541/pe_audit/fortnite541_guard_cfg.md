@@ -133,6 +133,11 @@ Calls: 0xd39d
 Resolved RIP-relative writes into executable section: 0
 Outbound preview targets: 0xd39d, 0x5cdd5
 
+## RIP-resolved original executable-section store
+Destination: 0x502bba | Writable in original PE: False
+Unwind owner: None
+Store instructions: 0x5bd4b20
+
 ## Limits
 An unknown-pointer memory store does not establish that program code is being decrypted. No runtime memory was inspected.
 See the JSON file for independently sourced original instruction previews and followable control-flow edges.

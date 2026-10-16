@@ -3058,6 +3058,60 @@
       "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
     }
   },
+  "original_executable_write_targets": [
+    {
+      "target_rva": "0x502bba",
+      "section": ".text",
+      "section_writable": false,
+      "section_executable": true,
+      "original_target_first_32_bytes": "1c27fdbfcc3a98ec64308cd3d5f92fb62bf858e21eeaf8f37c8fcddaff342864",
+      "target_pdata_owner": null,
+      "first_decoded_instructions_not_verified_code": [
+        {
+          "rva": "0x502bba",
+          "op": "sbb",
+          "args": "al, 0x27"
+        },
+        {
+          "rva": "0x502bbc",
+          "op": "std",
+          "args": ""
+        },
+        {
+          "rva": "0x502bbd",
+          "op": "mov",
+          "args": "edi, 0xec983acc"
+        },
+        {
+          "rva": "0x502bc2",
+          "op": "xor",
+          "args": "byte ptr fs:[rbx + rdx*8 - 0x49d0062b], cl"
+        },
+        {
+          "rva": "0x502bca",
+          "op": "sub",
+          "args": "edi, eax"
+        },
+        {
+          "rva": "0x502bcc",
+          "op": "pop",
+          "args": "rax"
+        },
+        {
+          "rva": "0x502bcd",
+          "op": "loop",
+          "args": "0x140502bed"
+        }
+      ],
+      "write_sites": [
+        {
+          "source_rva": "0x5bd4b20",
+          "op": "mov",
+          "address_expr": "dword ptr [rip - 0x56d1f6c], eax"
+        }
+      ]
+    }
+  ],
   "limits": [
     "No runtime memory was inspected, and no encrypted code was decrypted.",
     "A RIP-relative store to an executable section is a statically resolvable destination; dynamic writes are not provable statically.",
