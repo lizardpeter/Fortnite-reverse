@@ -70,6 +70,7 @@ jobs:
           $ruleOut = "fortnite541-proof-out-${{ github.run_id }}"
           $ruleIn = "fortnite541-proof-in-${{ github.run_id }}"
           $installed = @()
+          $privateAnalysisPE = Join-Path $env:RUNNER_TEMP "fortnite541-private-analysis-only.exe"
           try {
             New-NetFirewallRule -DisplayName $ruleOut -Direction Outbound -Action Block -Program $exe -Enabled True -Profile Any -ErrorAction Stop | Out-Null
             $installed += $ruleOut
@@ -78,9 +79,14 @@ jobs:
             if (-not (Get-NetFirewallRule -DisplayName $ruleOut -ErrorAction SilentlyContinue)) {
               throw "Outbound firewall isolation not active; refusing to launch"
             }
-            python crates/fortnite_541/tools/probe_windows_runtime_image.py --exe $exe --out $folder
+            python crates/fortnite_541/tools/probe_windows_runtime_image.py --exe $exe --out $folder --private-analysis-image $privateAnalysisPE
             if ($LASTEXITCODE -ne 0) { throw "Windows runtime image comparison failed" }
           } finally {
+            # Never leave decrypted original game code in the public runner's
+            # repository or artifact directory. Only aggregate JSON survives.
+            if (Test-Path $privateAnalysisPE) {
+              Remove-Item -LiteralPath $privateAnalysisPE -Force -ErrorAction SilentlyContinue
+            }
             foreach ($rule in $installed) {
               Remove-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue
             }
@@ -92,6 +98,13 @@ jobs:
           if ($d.source_sha256_verified -ne "7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108") {
             throw "Evidence source does not match original file"
           }
+          if ($d.runtime.private_reconstruction.created_privately -ne $true) {
+            throw "No valid privately reconstructed analysis PE was produced"
+          }
+          if ($d.runtime.private_reconstruction.total_executable_bytes_changed_from_disk -lt 1000000) {
+            throw "Recovered image changed too little machine code to verify restoration"
+          }
+          Write-Output "PRIVATE_ANALYSIS_PE_RECONSTRUCTION_VERIFIED; ORIGINAL_GAME_CODE_BYTES_NOT_UPLOADED"
           Write-Output "WINDOWS_STARTUP_PROBE_COMPLETED; PROCESS_CREATED=$($d.runtime.spawned)"
 
       - name: Upload only aggregate diagnostics, never executable or memory bytes
