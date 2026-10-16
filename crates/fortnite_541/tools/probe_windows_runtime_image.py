@@ -155,6 +155,74 @@ def process_base(handle,expected_base):
         return expected_base,"expected_image_base_MZ_verified"
     return None,"PEB_and_module_list_not_accessible"
 
+def probe_function_starts(pe,section,limit=96):
+    """Sample only actual source unwind-index starts in the primary .text."""
+    sec_rva=int(section.VirtualAddress)
+    sec_end=sec_rva+int(section.SizeOfRawData)
+    exc=pe.OPTIONAL_HEADER.DATA_DIRECTORY[3]
+    raw=pe.get_data(exc.VirtualAddress,exc.Size)
+    starts=[]
+    for off in range(0,len(raw)-11,12):
+        start,end,unwind=struct.unpack_from("<III",raw,off)
+        if sec_rva<=start<sec_end-256 and start<end:
+            starts.append(start)
+    if not starts:
+        return []
+    return [starts[int((len(starts)-1)*i/(limit-1))] for i in range(limit)]
+
+def code_validation(pe,handle,base,section):
+    """Aggregate original x64 disassembly quality; NEVER serialize instructions."""
+    from capstone import Cs,CS_ARCH_X86,CS_MODE_64
+    md=Cs(CS_ARCH_X86,CS_MODE_64)
+    md.detail=False
+    rvas=probe_function_starts(pe,section)
+    original_fractions=[]
+    mapped_fractions=[]
+    original_unusual=[]
+    mapped_unusual=[]
+    original_prefixes=[]
+    mapped_prefixes=[]
+    changed=0
+    unreadable=0
+    unusual={"hlt","ud2","iret","iretd","iretq","retf","retfq",
+             "in","out","insb","insd","outsb","outsd","cli","sti","int1"}
+    plausible={"push","sub","mov","lea","xor","jmp","nop","endbr64","cmp"}
+    def inspect(buf,rva):
+        ins=list(md.disasm(buf,base+rva))
+        return (
+           round(sum(i.size for i in ins)/len(buf),4) if buf else 0,
+           sum(i.mnemonic in unusual for i in ins),
+           bool(ins and ins[0].mnemonic in plausible))
+    for rva in rvas:
+        disk=pe.get_data(rva,192)
+        mem=read_remote(handle,base+rva,192)
+        if mem is None or len(disk)!=192:
+            unreadable+=1
+            continue
+        changed+=mem!=disk
+        x=inspect(disk,rva)
+        y=inspect(mem,rva)
+        original_fractions.append(x[0])
+        mapped_fractions.append(y[0])
+        original_unusual.append(x[1])
+        mapped_unusual.append(y[1])
+        original_prefixes.append(x[2])
+        mapped_prefixes.append(y[2])
+    return {
+        "source":".pdata_starts_only",
+        "rvas_requested":len(rvas),
+        "rvas_readable":len(mapped_fractions),
+        "rvas_unreadable":unreadable,
+        "rvas_differing_from_disk":changed,
+        "median_disk_linear_disassembly_fraction":round(statistics.median(original_fractions),4) if original_fractions else None,
+        "median_memory_linear_disassembly_fraction":round(statistics.median(mapped_fractions),4) if mapped_fractions else None,
+        "disk_unusual_privileged_instruction_count":sum(original_unusual),
+        "memory_unusual_privileged_instruction_count":sum(mapped_unusual),
+        "disk_plausible_first_instruction_count":sum(original_prefixes),
+        "memory_plausible_first_instruction_count":sum(mapped_prefixes),
+        "caution":"Static disassembly validity is not sufficient alone to prove game logic or execution."
+    }
+
 def capture(pe,handle,base,rvas,snapshot):
     out={"stage":snapshot,"sections":[]}
     for section,rvases in rvas:
@@ -186,6 +254,7 @@ def capture(pe,handle,base,rvas,snapshot):
             "disk_entropy_median":round(statistics.median(disk_entropy),4) if disk_entropy else None,
             "ram_entropy_median":round(statistics.median(mem_entropy),4) if mem_entropy else None,
             "max_bytes_changed_in_one_page":max(diffs) if diffs else None,
+            "original_function_entry_instruction_quality":code_validation(pe,handle,base,section) if int(section.SizeOfRawData)>20_000_000 else None,
         })
     return out
 
@@ -270,6 +339,19 @@ def format_markdown(d):
         for s in snap["sections"]:
             lines.append(f"| {s['name']} | {s['samples_readable']}/{s['samples_requested']} | {s['windows_changed']} | {s['changed_bytes']} | {s['disk_entropy_median']} | {s['ram_entropy_median']} |")
         lines.append("")
+    for snap in d.get("snapshots",[]):
+        for s in snap["sections"]:
+            q=s.get("original_function_entry_instruction_quality")
+            if not q:continue
+            lines+=["**"+snap["stage"]+" native function-entrypoint test:** "
+                +str(q["rvas_readable"])+"/"+str(q["rvas_requested"])+" readable; "
+                +str(q["rvas_differing_from_disk"])+" modified; "
+                +"plausible first instruction disk/memory "
+                +str(q["disk_plausible_first_instruction_count"])+"/"
+                +str(q["memory_plausible_first_instruction_count"])+"; "
+                +"unusual instructions disk/memory "
+                +str(q["disk_unusual_privileged_instruction_count"])+"/"
+                +str(q["memory_unusual_privileged_instruction_count"])+".",""]
     lines+=["## Interpretation limits",
         "The Windows PE loader may apply relocations or write import pointers even without decryption.",
         "Sampled pages may miss code decrypted only on demand.",
