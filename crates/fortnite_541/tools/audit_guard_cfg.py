@@ -27,7 +27,10 @@ ROOTS={"entry_call_handoff":0x4419,
        "handoff_direct_callee":0x47794,
        "shared_direct_callee":0x5D986DE,
        "shared_global_state_update":0x5BD4B1B,
-       "guard_shared_call_gate":0x1568966}
+       "guard_shared_call_gate":0x1568966,
+       "executable_write_followon":0x5C4CE84,
+       "bytecode_byte_reader":0x5C61E26,
+       "handoff_second_stage":0x41522}
 MAX_INSTRUCTIONS=1150
 MAX_SPAN=4096
 MAX_OUTPUT_INSTRUCTIONS=220
