@@ -8,6 +8,7 @@ on:
       - "crates/fortnite_541/tools/audit_original_executable.py"
       - "crates/fortnite_541/tools/probe_original_loader.py"
       - "crates/fortnite_541/tools/trace_preentry.py"
+      - "crates/fortnite_541/tools/audit_guard_cfg.py"
   workflow_dispatch:
 
 permissions:
@@ -88,6 +89,24 @@ jobs:
           assert r["function_start_pattern_census"]["starts_examined"]>200000
           assert r["entrypoint_call_target_rva"]=="0x5ae6509"
           print("PREENTRY_ORIGINAL_PROVENANCE_VERIFIED")
+          PY
+      - name: Source-verified guarded CFG and original code-write evidence
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/audit_guard_cfg.py --self-test
+          python crates/fortnite_541/tools/audit_guard_cfg.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_cfg.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_cfg.md"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_guard_cfg.json"
+          d=json.loads(p.read_text())
+          assert d["source_sha256_verified"]==os.environ["SOURCE_SHA256"]
+          assert all(x["decoded_instruction_starts"]>0 for x in d["studies"].values())
+          assert d["candidate_roots"]["entry_call_handoff"]=="0x4419"
+          print("FORTNITE_GUARDED_CFG_PROVENANCE_VERIFIED")
           PY
       - name: Commit structured report only, never original executable
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
