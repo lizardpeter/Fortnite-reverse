@@ -12,6 +12,11 @@ Read-only static study of original SHA256-verified shipping EXE. Not an unpacker
 | shared_code_branch_body (0x5c32a2a) | 9 | 1 | 3 | 0 | 2 |
 | secondary_guard_alignment_branch (0xeb6b64) | 2 | 0 | 0 | 0 | 1 |
 | secondary_guard_nonalign_branch (0x597bc9) | 2 | 0 | 0 | 0 | 1 |
+| handoff_indirect_caller (0x3d0c9) | 6 | 1 | 0 | 0 | 2 |
+| handoff_direct_callee (0x47794) | 11 | 0 | 4 | 0 | 2 |
+| shared_direct_callee (0x5d986de) | 10 | 0 | 5 | 0 | 1 |
+| shared_global_state_update (0x5bd4b1b) | 7 | 0 | 2 | 1 | 2 |
+| guard_shared_call_gate (0x1568966) | 2 | 1 | 0 | 0 | 2 |
 
 ## entry_call_handoff
 Root RVA: 0x4419
@@ -68,6 +73,41 @@ Static interpretation region: 0x597bc9–0x598bc9
 Calls: 
 Resolved RIP-relative writes into executable section: 0
 Outbound preview targets: 0xeb6b64
+
+## handoff_indirect_caller
+Root RVA: 0x3d0c9
+Static interpretation region: 0x3d0c9–0x3db95
+Calls: 0x47794
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x41522, 0x47794
+
+## handoff_direct_callee
+Root RVA: 0x47794
+Static interpretation region: 0x47794–0x48794
+Calls: 
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x180d0, 0x5bd25
+
+## shared_direct_callee
+Root RVA: 0x5d986de
+Static interpretation region: 0x5d986de–0x5d996de
+Calls: 
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x5c61e26
+
+## shared_global_state_update
+Root RVA: 0x5bd4b1b
+Static interpretation region: 0x5bd4b1b–0x5bd5b1b
+Calls: 
+Resolved RIP-relative writes into executable section: 1
+Outbound preview targets: 0x5c4ce84, 0x5c65cd0
+
+## guard_shared_call_gate
+Root RVA: 0x1568966
+Static interpretation region: 0x1568966–0x1569966
+Calls: 0x5bc8859
+Resolved RIP-relative writes into executable section: 0
+Outbound preview targets: 0x5bc8859, 0x5c44120
 
 ## Limits
 An unknown-pointer memory store does not establish that program code is being decrypted. No runtime memory was inspected.

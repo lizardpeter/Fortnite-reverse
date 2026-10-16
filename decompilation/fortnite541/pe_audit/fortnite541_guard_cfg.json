@@ -11,7 +11,12 @@
     "handoff_branch_body": "0xbcf126",
     "shared_code_branch_body": "0x5c32a2a",
     "secondary_guard_alignment_branch": "0xeb6b64",
-    "secondary_guard_nonalign_branch": "0x597bc9"
+    "secondary_guard_nonalign_branch": "0x597bc9",
+    "handoff_indirect_caller": "0x3d0c9",
+    "handoff_direct_callee": "0x47794",
+    "shared_direct_callee": "0x5d986de",
+    "shared_global_state_update": "0x5bd4b1b",
+    "guard_shared_call_gate": "0x1568966"
   },
   "import_slots_resolved": 792,
   "studies": {
@@ -1448,6 +1453,891 @@
           "op": "jmp",
           "args": "0x140eb6b64",
           "bytes": "e994ef9100"
+        }
+      ],
+      "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
+    },
+    "handoff_indirect_caller": {
+      "label": "handoff_indirect_caller",
+      "root_rva": "0x3d0c9",
+      "section": ".text",
+      "source_region": {
+        "begin_rva": "0x3d0c9",
+        "end_rva": "0x3db95",
+        "bytes": 2764
+      },
+      "pdata_envelope": {
+        "begin_rva": "0x3cf4d",
+        "end_rva": "0x3db95"
+      },
+      "decoded_instruction_starts": 6,
+      "decoded_instruction_bytes": 23,
+      "truncated_by_limit": false,
+      "suspicious_stops": [],
+      "calls": [
+        {
+          "source_rva": "0x3d0d6",
+          "type": "direct",
+          "target_rva": "0x47794"
+        }
+      ],
+      "call_count": 1,
+      "writes": [],
+      "write_instruction_count": 0,
+      "source_writes_to_known_executable_image": 0,
+      "outbound_targets": [
+        {
+          "rva": "0x41522",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x41522",
+              "op": "mov",
+              "args": "dword ptr [rbp + 0x7c], eax"
+            },
+            {
+              "rva": "0x41525",
+              "op": "mov",
+              "args": "eax, dword ptr [rbp + 0x7c]"
+            },
+            {
+              "rva": "0x41528",
+              "op": "mov",
+              "args": "dword ptr [rbp + 0x74], eax"
+            },
+            {
+              "rva": "0x4152b",
+              "op": "mov",
+              "args": "rax, qword ptr [rbp + 0x58]"
+            },
+            {
+              "rva": "0x4152f",
+              "op": "lea",
+              "args": "rdx, [rbp + 0x70]"
+            },
+            {
+              "rva": "0x41533",
+              "op": "mov",
+              "args": "rcx, rax"
+            },
+            {
+              "rva": "0x41536",
+              "op": "call",
+              "args": "0x14000d39d"
+            }
+          ]
+        },
+        {
+          "rva": "0x47794",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x47794",
+              "op": "push",
+              "args": "rbp"
+            },
+            {
+              "rva": "0x47795",
+              "op": "sub",
+              "args": "rsp, 0x80"
+            },
+            {
+              "rva": "0x4779c",
+              "op": "lea",
+              "args": "rbp, [rsp + 0x20]"
+            },
+            {
+              "rva": "0x477a1",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x58], rsi"
+            },
+            {
+              "rva": "0x477a5",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x50], rbx"
+            },
+            {
+              "rva": "0x477a9",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x70], rcx"
+            },
+            {
+              "rva": "0x477ad",
+              "op": "mov",
+              "args": "dword ptr [rbp + 0x78], edx"
+            }
+          ]
+        }
+      ],
+      "outbound_target_count": 2,
+      "edge_count": 2,
+      "edges": [
+        {
+          "from": "0x3d0d6",
+          "to": "0x3d0db",
+          "kind": "call_return_fallthrough"
+        },
+        {
+          "from": "0x3d0db",
+          "to": "0x41522",
+          "kind": "direct_jump"
+        }
+      ],
+      "original_instruction_sample": [
+        {
+          "rva": "0x3d0c9",
+          "op": "mov",
+          "args": "rax, qword ptr [rbp + 0x58]",
+          "bytes": "488b4558"
+        },
+        {
+          "rva": "0x3d0cd",
+          "op": "mov",
+          "args": "edx, dword ptr [rbp + 4]",
+          "bytes": "8b5504"
+        },
+        {
+          "rva": "0x3d0d0",
+          "op": "add",
+          "args": "edx, -1",
+          "bytes": "83c2ff"
+        },
+        {
+          "rva": "0x3d0d3",
+          "op": "mov",
+          "args": "rcx, rax",
+          "bytes": "4889c1"
+        },
+        {
+          "rva": "0x3d0d6",
+          "op": "call",
+          "args": "0x140047794",
+          "bytes": "e8b9a60000"
+        },
+        {
+          "rva": "0x3d0db",
+          "op": "jmp",
+          "args": "0x140041522",
+          "bytes": "e942440000"
+        }
+      ],
+      "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
+    },
+    "handoff_direct_callee": {
+      "label": "handoff_direct_callee",
+      "root_rva": "0x47794",
+      "section": ".text",
+      "source_region": {
+        "begin_rva": "0x47794",
+        "end_rva": "0x48794",
+        "bytes": 4096
+      },
+      "pdata_envelope": null,
+      "decoded_instruction_starts": 11,
+      "decoded_instruction_bytes": 44,
+      "truncated_by_limit": false,
+      "suspicious_stops": [],
+      "calls": [],
+      "call_count": 0,
+      "writes": [
+        {
+          "source_rva": "0x477a1",
+          "op": "mov",
+          "address_expr": "qword ptr [rbp + 0x58], rsi",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x477a5",
+          "op": "mov",
+          "address_expr": "qword ptr [rbp + 0x50], rbx",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x477a9",
+          "op": "mov",
+          "address_expr": "qword ptr [rbp + 0x70], rcx",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x477ad",
+          "op": "mov",
+          "address_expr": "dword ptr [rbp + 0x78], edx",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        }
+      ],
+      "write_instruction_count": 4,
+      "source_writes_to_known_executable_image": 0,
+      "outbound_targets": [
+        {
+          "rva": "0x180d0",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x180d0",
+              "op": "xor",
+              "args": "eax, eax"
+            },
+            {
+              "rva": "0x180d2",
+              "op": "mov",
+              "args": "rbx, qword ptr [rbp + 0x50]"
+            },
+            {
+              "rva": "0x180d6",
+              "op": "mov",
+              "args": "rsi, qword ptr [rbp + 0x58]"
+            },
+            {
+              "rva": "0x180da",
+              "op": "lea",
+              "args": "rsp, [rbp + 0x60]"
+            },
+            {
+              "rva": "0x180de",
+              "op": "pop",
+              "args": "rbp"
+            },
+            {
+              "rva": "0x180df",
+              "op": "ret",
+              "args": ""
+            }
+          ]
+        },
+        {
+          "rva": "0x5bd25",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5bd25",
+              "op": "mov",
+              "args": "rax, qword ptr [rip + 0x5a866ac]"
+            },
+            {
+              "rva": "0x5bd2c",
+              "op": "mov",
+              "args": "rdx, qword ptr [rbp + 0x70]"
+            },
+            {
+              "rva": "0x5bd30",
+              "op": "lea",
+              "args": "rcx, [rbp]"
+            },
+            {
+              "rva": "0x5bd34",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x48], rcx"
+            },
+            {
+              "rva": "0x5bd38",
+              "op": "mov",
+              "args": "rcx, rdx"
+            },
+            {
+              "rva": "0x5bd3b",
+              "op": "mov",
+              "args": "rdx, qword ptr [rbp + 0x48]"
+            },
+            {
+              "rva": "0x5bd3f",
+              "op": "mov",
+              "args": "r8d, 0x30"
+            }
+          ]
+        }
+      ],
+      "outbound_target_count": 2,
+      "edge_count": 3,
+      "edges": [
+        {
+          "from": "0x477b5",
+          "to": "0x5bd25",
+          "kind": "conditional_taken"
+        },
+        {
+          "from": "0x477b5",
+          "to": "0x477bb",
+          "kind": "conditional_fallthrough"
+        },
+        {
+          "from": "0x477bb",
+          "to": "0x180d0",
+          "kind": "direct_jump"
+        }
+      ],
+      "original_instruction_sample": [
+        {
+          "rva": "0x47794",
+          "op": "push",
+          "args": "rbp",
+          "bytes": "55"
+        },
+        {
+          "rva": "0x47795",
+          "op": "sub",
+          "args": "rsp, 0x80",
+          "bytes": "4881ec80000000"
+        },
+        {
+          "rva": "0x4779c",
+          "op": "lea",
+          "args": "rbp, [rsp + 0x20]",
+          "bytes": "488d6c2420"
+        },
+        {
+          "rva": "0x477a1",
+          "op": "mov",
+          "args": "qword ptr [rbp + 0x58], rsi",
+          "bytes": "48897558"
+        },
+        {
+          "rva": "0x477a5",
+          "op": "mov",
+          "args": "qword ptr [rbp + 0x50], rbx",
+          "bytes": "48895d50"
+        },
+        {
+          "rva": "0x477a9",
+          "op": "mov",
+          "args": "qword ptr [rbp + 0x70], rcx",
+          "bytes": "48894d70"
+        },
+        {
+          "rva": "0x477ad",
+          "op": "mov",
+          "args": "dword ptr [rbp + 0x78], edx",
+          "bytes": "895578"
+        },
+        {
+          "rva": "0x477b0",
+          "op": "mov",
+          "args": "eax, dword ptr [rbp + 0x78]",
+          "bytes": "8b4578"
+        },
+        {
+          "rva": "0x477b3",
+          "op": "test",
+          "args": "eax, eax",
+          "bytes": "85c0"
+        },
+        {
+          "rva": "0x477b5",
+          "op": "jne",
+          "args": "0x14005bd25",
+          "bytes": "0f856a450100"
+        },
+        {
+          "rva": "0x477bb",
+          "op": "jmp",
+          "args": "0x1400180d0",
+          "bytes": "e91009fdff"
+        }
+      ],
+      "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
+    },
+    "shared_direct_callee": {
+      "label": "shared_direct_callee",
+      "root_rva": "0x5d986de",
+      "section": ".text",
+      "source_region": {
+        "begin_rva": "0x5d986de",
+        "end_rva": "0x5d996de",
+        "bytes": 4096
+      },
+      "pdata_envelope": null,
+      "decoded_instruction_starts": 10,
+      "decoded_instruction_bytes": 34,
+      "truncated_by_limit": false,
+      "suspicious_stops": [],
+      "calls": [],
+      "call_count": 0,
+      "writes": [
+        {
+          "source_rva": "0x5d986e8",
+          "op": "mov",
+          "address_expr": "qword ptr [rbp + 0x30], rcx",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x5d986ec",
+          "op": "mov",
+          "address_expr": "qword ptr [rbp + 0x38], rdx",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x5d986f2",
+          "op": "mov",
+          "address_expr": "dword ptr [rbp + 8], eax",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x5d986f5",
+          "op": "mov",
+          "address_expr": "dword ptr [rbp + 0xc], eax",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x5d986f8",
+          "op": "mov",
+          "address_expr": "dword ptr [rbp], eax",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        }
+      ],
+      "write_instruction_count": 5,
+      "source_writes_to_known_executable_image": 0,
+      "outbound_targets": [
+        {
+          "rva": "0x5c61e26",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5c61e26",
+              "op": "mov",
+              "args": "rax, qword ptr [rbp + 0x30]"
+            },
+            {
+              "rva": "0x5c61e2a",
+              "op": "mov",
+              "args": "rax, qword ptr [rax]"
+            },
+            {
+              "rva": "0x5c61e2d",
+              "op": "movzx",
+              "args": "eax, byte ptr [rax]"
+            },
+            {
+              "rva": "0x5c61e30",
+              "op": "and",
+              "args": "eax, 0x7f"
+            },
+            {
+              "rva": "0x5c61e33",
+              "op": "mov",
+              "args": "edx, dword ptr [rbp + 8]"
+            },
+            {
+              "rva": "0x5c61e36",
+              "op": "mov",
+              "args": "ecx, edx"
+            },
+            {
+              "rva": "0x5c61e38",
+              "op": "shl",
+              "args": "eax, cl"
+            }
+          ]
+        }
+      ],
+      "outbound_target_count": 1,
+      "edge_count": 1,
+      "edges": [
+        {
+          "from": "0x5d986fb",
+          "to": "0x5c61e26",
+          "kind": "direct_jump"
+        }
+      ],
+      "original_instruction_sample": [
+        {
+          "rva": "0x5d986de",
+          "op": "push",
+          "args": "rbp",
+          "bytes": "55"
+        },
+        {
+          "rva": "0x5d986df",
+          "op": "sub",
+          "args": "rsp, 0x40",
+          "bytes": "4883ec40"
+        },
+        {
+          "rva": "0x5d986e3",
+          "op": "lea",
+          "args": "rbp, [rsp + 0x20]",
+          "bytes": "488d6c2420"
+        },
+        {
+          "rva": "0x5d986e8",
+          "op": "mov",
+          "args": "qword ptr [rbp + 0x30], rcx",
+          "bytes": "48894d30"
+        },
+        {
+          "rva": "0x5d986ec",
+          "op": "mov",
+          "args": "qword ptr [rbp + 0x38], rdx",
+          "bytes": "48895538"
+        },
+        {
+          "rva": "0x5d986f0",
+          "op": "xor",
+          "args": "eax, eax",
+          "bytes": "33c0"
+        },
+        {
+          "rva": "0x5d986f2",
+          "op": "mov",
+          "args": "dword ptr [rbp + 8], eax",
+          "bytes": "894508"
+        },
+        {
+          "rva": "0x5d986f5",
+          "op": "mov",
+          "args": "dword ptr [rbp + 0xc], eax",
+          "bytes": "89450c"
+        },
+        {
+          "rva": "0x5d986f8",
+          "op": "mov",
+          "args": "dword ptr [rbp], eax",
+          "bytes": "894500"
+        },
+        {
+          "rva": "0x5d986fb",
+          "op": "jmp",
+          "args": "0x145c61e26",
+          "bytes": "e92697ecff"
+        }
+      ],
+      "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
+    },
+    "shared_global_state_update": {
+      "label": "shared_global_state_update",
+      "root_rva": "0x5bd4b1b",
+      "section": ".text",
+      "source_region": {
+        "begin_rva": "0x5bd4b1b",
+        "end_rva": "0x5bd5b1b",
+        "bytes": 4096
+      },
+      "pdata_envelope": null,
+      "decoded_instruction_starts": 7,
+      "decoded_instruction_bytes": 28,
+      "truncated_by_limit": false,
+      "suspicious_stops": [],
+      "calls": [],
+      "call_count": 0,
+      "writes": [
+        {
+          "source_rva": "0x5bd4b1d",
+          "op": "mov",
+          "address_expr": "dword ptr [rbp + 0x54], eax",
+          "rip_resolved_target_rva": null,
+          "rip_target_executable": false,
+          "target_section": null
+        },
+        {
+          "source_rva": "0x5bd4b20",
+          "op": "mov",
+          "address_expr": "dword ptr [rip - 0x56d1f6c], eax",
+          "rip_resolved_target_rva": "0x502bba",
+          "rip_target_executable": true,
+          "target_section": ".text"
+        }
+      ],
+      "write_instruction_count": 2,
+      "source_writes_to_known_executable_image": 1,
+      "outbound_targets": [
+        {
+          "rva": "0x5c4ce84",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5c4ce84",
+              "op": "mov",
+              "args": "rax, qword ptr [rbp + 0x68]"
+            },
+            {
+              "rva": "0x5c4ce88",
+              "op": "lea",
+              "args": "rdx, [rbp + 0x60]"
+            },
+            {
+              "rva": "0x5c4ce8c",
+              "op": "lea",
+              "args": "rcx, [rbp + 0x3c]"
+            },
+            {
+              "rva": "0x5c4ce90",
+              "op": "lea",
+              "args": "rbx, [rbp + 0x58]"
+            },
+            {
+              "rva": "0x5c4ce94",
+              "op": "mov",
+              "args": "dword ptr [rsp + 0x20], 4"
+            },
+            {
+              "rva": "0x5c4ce9c",
+              "op": "lea",
+              "args": "rsi, [rbp + 0x54]"
+            },
+            {
+              "rva": "0x5c4cea0",
+              "op": "mov",
+              "args": "qword ptr [rsp + 0x28], rsi"
+            }
+          ]
+        },
+        {
+          "rva": "0x5c65cd0",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5c65cd0",
+              "op": "mov",
+              "args": "eax, dword ptr [rip - 0x576311c]"
+            },
+            {
+              "rva": "0x5c65cd6",
+              "op": "mov",
+              "args": "edx, dword ptr [rip - 0x4cf3572]"
+            },
+            {
+              "rva": "0x5c65cdc",
+              "op": "cmp",
+              "args": "eax, edx"
+            },
+            {
+              "rva": "0x5c65cde",
+              "op": "jne",
+              "args": "0x140bcf6bd"
+            },
+            {
+              "rva": "0x5c65ce4",
+              "op": "jmp",
+              "args": "0x14129faf4"
+            }
+          ]
+        }
+      ],
+      "outbound_target_count": 2,
+      "edge_count": 3,
+      "edges": [
+        {
+          "from": "0x5bd4b2c",
+          "to": "0x5c65cd0",
+          "kind": "conditional_taken"
+        },
+        {
+          "from": "0x5bd4b2c",
+          "to": "0x5bd4b32",
+          "kind": "conditional_fallthrough"
+        },
+        {
+          "from": "0x5bd4b32",
+          "to": "0x5c4ce84",
+          "kind": "direct_jump"
+        }
+      ],
+      "original_instruction_sample": [
+        {
+          "rva": "0x5bd4b1b",
+          "op": "xor",
+          "args": "eax, eax",
+          "bytes": "33c0"
+        },
+        {
+          "rva": "0x5bd4b1d",
+          "op": "mov",
+          "args": "dword ptr [rbp + 0x54], eax",
+          "bytes": "894554"
+        },
+        {
+          "rva": "0x5bd4b20",
+          "op": "mov",
+          "args": "dword ptr [rip - 0x56d1f6c], eax",
+          "bytes": "890594e092fa"
+        },
+        {
+          "rva": "0x5bd4b26",
+          "op": "mov",
+          "args": "eax, dword ptr [rbp + 0x3c]",
+          "bytes": "8b453c"
+        },
+        {
+          "rva": "0x5bd4b29",
+          "op": "cmp",
+          "args": "eax, -1",
+          "bytes": "83f8ff"
+        },
+        {
+          "rva": "0x5bd4b2c",
+          "op": "je",
+          "args": "0x145c65cd0",
+          "bytes": "0f849e110900"
+        },
+        {
+          "rva": "0x5bd4b32",
+          "op": "jmp",
+          "args": "0x145c4ce84",
+          "bytes": "e94d830700"
+        }
+      ],
+      "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
+    },
+    "guard_shared_call_gate": {
+      "label": "guard_shared_call_gate",
+      "root_rva": "0x1568966",
+      "section": ".text",
+      "source_region": {
+        "begin_rva": "0x1568966",
+        "end_rva": "0x1569966",
+        "bytes": 4096
+      },
+      "pdata_envelope": null,
+      "decoded_instruction_starts": 2,
+      "decoded_instruction_bytes": 10,
+      "truncated_by_limit": false,
+      "suspicious_stops": [],
+      "calls": [
+        {
+          "source_rva": "0x1568966",
+          "type": "direct",
+          "target_rva": "0x5bc8859"
+        }
+      ],
+      "call_count": 1,
+      "writes": [],
+      "write_instruction_count": 0,
+      "source_writes_to_known_executable_image": 0,
+      "outbound_targets": [
+        {
+          "rva": "0x5bc8859",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5bc8859",
+              "op": "push",
+              "args": "rbp"
+            },
+            {
+              "rva": "0x5bc885a",
+              "op": "sub",
+              "args": "rsp, 0xc0"
+            },
+            {
+              "rva": "0x5bc8861",
+              "op": "lea",
+              "args": "rbp, [rsp + 0x40]"
+            },
+            {
+              "rva": "0x5bc8866",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x78], rsi"
+            },
+            {
+              "rva": "0x5bc886a",
+              "op": "mov",
+              "args": "qword ptr [rbp + 0x70], rbx"
+            },
+            {
+              "rva": "0x5bc886e",
+              "op": "mov",
+              "args": "dword ptr [rbp + 0x90], ecx"
+            },
+            {
+              "rva": "0x5bc8874",
+              "op": "lea",
+              "args": "rax, [rip + 0x14a524]"
+            }
+          ]
+        },
+        {
+          "rva": "0x5c44120",
+          "section": ".text",
+          "section_executable": true,
+          "preview": [
+            {
+              "rva": "0x5c44120",
+              "op": "add",
+              "args": "rsp, qword ptr [rsp + 8]"
+            },
+            {
+              "rva": "0x5c44125",
+              "op": "movupd",
+              "args": "xmm0, xmmword ptr [rsp]"
+            },
+            {
+              "rva": "0x5c4412a",
+              "op": "movupd",
+              "args": "xmm12, xmmword ptr [rsp + 0x10]"
+            },
+            {
+              "rva": "0x5c44131",
+              "op": "movupd",
+              "args": "xmm8, xmmword ptr [rsp + 0x20]"
+            },
+            {
+              "rva": "0x5c44138",
+              "op": "movupd",
+              "args": "xmm10, xmmword ptr [rsp + 0x30]"
+            },
+            {
+              "rva": "0x5c4413f",
+              "op": "movupd",
+              "args": "xmm6, xmmword ptr [rsp + 0x40]"
+            },
+            {
+              "rva": "0x5c44145",
+              "op": "movupd",
+              "args": "xmm11, xmmword ptr [rsp + 0x50]"
+            }
+          ]
+        }
+      ],
+      "outbound_target_count": 2,
+      "edge_count": 2,
+      "edges": [
+        {
+          "from": "0x1568966",
+          "to": "0x156896b",
+          "kind": "call_return_fallthrough"
+        },
+        {
+          "from": "0x156896b",
+          "to": "0x5c44120",
+          "kind": "direct_jump"
+        }
+      ],
+      "original_instruction_sample": [
+        {
+          "rva": "0x1568966",
+          "op": "call",
+          "args": "0x145bc8859",
+          "bytes": "e8eefe6504"
+        },
+        {
+          "rva": "0x156896b",
+          "op": "jmp",
+          "args": "0x145c44120",
+          "bytes": "e9b0b76d04"
         }
       ],
       "caveat": "Paths are statically decoded from original disk bytes, not observed runtime execution."
