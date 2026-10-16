@@ -48,8 +48,8 @@ jobs:
           # Stage original retail side-by-side DLL dependencies required by the
           # Windows PE import table. Keep system API-set DLLs provided by OS.
           $redistributables = @(
-            "dbghelp.dll", "MSVCP140.dll", "VCRUNTIME140.dll",
-            "XINPUT1_3.dll", "X3DAudio1_7.dll", "XAPOFX1_5.dll"
+            "dbghelp.dll", "msvcp140.dll", "vcruntime140.dll",
+            "xinput1_3.dll", "X3DAudio1_7.dll", "XAPOFX1_5.dll"
           )
           foreach ($dll in $redistributables) {
             $dllUrl = "https://r2.houseofkublai.com/Fortnite/5.41/FortniteGame/Binaries/Win64/$dll"
