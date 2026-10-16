@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/fortnite541-pe-authenticity.yml"
       - "crates/fortnite_541/tools/audit_original_executable.py"
+      - "crates/fortnite_541/tools/probe_original_loader.py"
   workflow_dispatch:
 
 permissions:
@@ -59,6 +60,15 @@ jobs:
           print("SOURCE_AUTHENTICATED_RETAIL_PE_AUDIT_VERIFIED")
           print((p.parent/"fortnite541_pe_audit.md").read_text())
           PY
+      - name: Probe authenticated entrypoint and executable section regions
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/probe_original_loader.py --self-test
+          python crates/fortnite_541/tools/probe_original_loader.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_loader_probe.md"
       - name: Commit structured report only, never original executable
         if: success() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
