@@ -261,7 +261,8 @@ def format_markdown(d):
         "The original binary was launched in a bounded, network-blocked Windows runner.",
         "No executable bytes, decrypted pages, or memory dumps are published.","",
         "**Process created:** "+str(d.get("spawned")),
-        "**Blocker:** "+str(d.get("blocker","none")),""]
+        "**Blocker:** "+str(d.get("blocker","none")),
+        "**Process status:** "+str(d.get("process_status",[])),""]
     for snap in d.get("snapshots",[]):
         lines+=["## "+snap["stage"],"",
            "| PE section | Windows read | Pages changed from disk | Changed bytes | Median on-disk entropy | Median memory entropy |",
