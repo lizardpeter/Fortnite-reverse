@@ -49,6 +49,482 @@
       "operands": "dl, byte ptr [rax - 0x57f2eef3]"
     }
   ],
+  "entrypoint_direct_calls": [
+    {
+      "source_rva": "0x351ca9c",
+      "target_rva": "0x5ae6509",
+      "in_second_text": true
+    }
+  ],
+  "entrypoint_call_target_probes": [
+    {
+      "entry_call_target_rva": "0x5ae6509",
+      "executable_section_start": "0x5ae4000",
+      "section_bytes": 5177856,
+      "first_target_instructions": [
+        {
+          "rva": "0x5ae6509",
+          "hex": "56",
+          "op": "push",
+          "args": "rsi"
+        },
+        {
+          "rva": "0x5ae650a",
+          "hex": "50",
+          "op": "push",
+          "args": "rax"
+        },
+        {
+          "rva": "0x5ae650b",
+          "hex": "4155",
+          "op": "push",
+          "args": "r13"
+        },
+        {
+          "rva": "0x5ae650d",
+          "hex": "53",
+          "op": "push",
+          "args": "rbx"
+        },
+        {
+          "rva": "0x5ae650e",
+          "hex": "57",
+          "op": "push",
+          "args": "rdi"
+        },
+        {
+          "rva": "0x5ae650f",
+          "hex": "4150",
+          "op": "push",
+          "args": "r8"
+        },
+        {
+          "rva": "0x5ae6511",
+          "hex": "52",
+          "op": "push",
+          "args": "rdx"
+        },
+        {
+          "rva": "0x5ae6512",
+          "hex": "4157",
+          "op": "push",
+          "args": "r15"
+        },
+        {
+          "rva": "0x5ae6514",
+          "hex": "4152",
+          "op": "push",
+          "args": "r10"
+        },
+        {
+          "rva": "0x5ae6516",
+          "hex": "4154",
+          "op": "push",
+          "args": "r12"
+        },
+        {
+          "rva": "0x5ae6518",
+          "hex": "4156",
+          "op": "push",
+          "args": "r14"
+        },
+        {
+          "rva": "0x5ae651a",
+          "hex": "4153",
+          "op": "push",
+          "args": "r11"
+        },
+        {
+          "rva": "0x5ae651c",
+          "hex": "4151",
+          "op": "push",
+          "args": "r9"
+        },
+        {
+          "rva": "0x5ae651e",
+          "hex": "51",
+          "op": "push",
+          "args": "rcx"
+        },
+        {
+          "rva": "0x5ae651f",
+          "hex": "488da42400ffffff",
+          "op": "lea",
+          "args": "rsp, [rsp - 0x100]"
+        },
+        {
+          "rva": "0x5ae6527",
+          "hex": "660f110424",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp], xmm0"
+        },
+        {
+          "rva": "0x5ae652c",
+          "hex": "66440f11642410",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x10], xmm12"
+        },
+        {
+          "rva": "0x5ae6533",
+          "hex": "66440f11442420",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x20], xmm8"
+        },
+        {
+          "rva": "0x5ae653a",
+          "hex": "66440f11542430",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x30], xmm10"
+        },
+        {
+          "rva": "0x5ae6541",
+          "hex": "660f11742440",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x40], xmm6"
+        },
+        {
+          "rva": "0x5ae6547",
+          "hex": "66440f115c2450",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x50], xmm11"
+        },
+        {
+          "rva": "0x5ae654e",
+          "hex": "66440f114c2460",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x60], xmm9"
+        },
+        {
+          "rva": "0x5ae6555",
+          "hex": "66440f117c2470",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x70], xmm15"
+        },
+        {
+          "rva": "0x5ae655c",
+          "hex": "66440f11b42480000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x80], xmm14"
+        },
+        {
+          "rva": "0x5ae6566",
+          "hex": "66440f11ac2490000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x90], xmm13"
+        },
+        {
+          "rva": "0x5ae6570",
+          "hex": "660f118c24a0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xa0], xmm1"
+        },
+        {
+          "rva": "0x5ae6579",
+          "hex": "660f119424b0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xb0], xmm2"
+        },
+        {
+          "rva": "0x5ae6582",
+          "hex": "660f11bc24c0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xc0], xmm7"
+        },
+        {
+          "rva": "0x5ae658b",
+          "hex": "660f11a424d0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xd0], xmm4"
+        },
+        {
+          "rva": "0x5ae6594",
+          "hex": "660f11ac24e0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xe0], xmm5"
+        },
+        {
+          "rva": "0x5ae659d",
+          "hex": "660f119c24f0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xf0], xmm3"
+        },
+        {
+          "rva": "0x5ae65a6",
+          "hex": "6a10",
+          "op": "push",
+          "args": "0x10"
+        },
+        {
+          "rva": "0x5ae65a8",
+          "hex": "48f7c40f000000",
+          "op": "test",
+          "args": "rsp, 0xf"
+        },
+        {
+          "rva": "0x5ae65af",
+          "hex": "0f85af205afa",
+          "op": "jne",
+          "args": "0x140088664"
+        },
+        {
+          "rva": "0x5ae65b5",
+          "hex": "e9df537ffa",
+          "op": "jmp",
+          "args": "0x1402db999"
+        },
+        {
+          "rva": "0x5ae65ba",
+          "hex": "53",
+          "op": "push",
+          "args": "rbx"
+        },
+        {
+          "rva": "0x5ae65bb",
+          "hex": "4153",
+          "op": "push",
+          "args": "r11"
+        },
+        {
+          "rva": "0x5ae65bd",
+          "hex": "4151",
+          "op": "push",
+          "args": "r9"
+        },
+        {
+          "rva": "0x5ae65bf",
+          "hex": "4156",
+          "op": "push",
+          "args": "r14"
+        },
+        {
+          "rva": "0x5ae65c1",
+          "hex": "4150",
+          "op": "push",
+          "args": "r8"
+        }
+      ],
+      "first_target_linear_decoded_bytes": 316,
+      "cfg_unique_instructions": 35,
+      "cfg_stop_reasons": {
+        "unresolved_jump": 1
+      },
+      "cfg_source_instruction_sample": [
+        {
+          "rva": "0x5ae6509",
+          "hex": "56",
+          "op": "push",
+          "args": "rsi"
+        },
+        {
+          "rva": "0x5ae650a",
+          "hex": "50",
+          "op": "push",
+          "args": "rax"
+        },
+        {
+          "rva": "0x5ae650b",
+          "hex": "4155",
+          "op": "push",
+          "args": "r13"
+        },
+        {
+          "rva": "0x5ae650d",
+          "hex": "53",
+          "op": "push",
+          "args": "rbx"
+        },
+        {
+          "rva": "0x5ae650e",
+          "hex": "57",
+          "op": "push",
+          "args": "rdi"
+        },
+        {
+          "rva": "0x5ae650f",
+          "hex": "4150",
+          "op": "push",
+          "args": "r8"
+        },
+        {
+          "rva": "0x5ae6511",
+          "hex": "52",
+          "op": "push",
+          "args": "rdx"
+        },
+        {
+          "rva": "0x5ae6512",
+          "hex": "4157",
+          "op": "push",
+          "args": "r15"
+        },
+        {
+          "rva": "0x5ae6514",
+          "hex": "4152",
+          "op": "push",
+          "args": "r10"
+        },
+        {
+          "rva": "0x5ae6516",
+          "hex": "4154",
+          "op": "push",
+          "args": "r12"
+        },
+        {
+          "rva": "0x5ae6518",
+          "hex": "4156",
+          "op": "push",
+          "args": "r14"
+        },
+        {
+          "rva": "0x5ae651a",
+          "hex": "4153",
+          "op": "push",
+          "args": "r11"
+        },
+        {
+          "rva": "0x5ae651c",
+          "hex": "4151",
+          "op": "push",
+          "args": "r9"
+        },
+        {
+          "rva": "0x5ae651e",
+          "hex": "51",
+          "op": "push",
+          "args": "rcx"
+        },
+        {
+          "rva": "0x5ae651f",
+          "hex": "488da42400ffffff",
+          "op": "lea",
+          "args": "rsp, [rsp - 0x100]"
+        },
+        {
+          "rva": "0x5ae6527",
+          "hex": "660f110424",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp], xmm0"
+        },
+        {
+          "rva": "0x5ae652c",
+          "hex": "66440f11642410",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x10], xmm12"
+        },
+        {
+          "rva": "0x5ae6533",
+          "hex": "66440f11442420",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x20], xmm8"
+        },
+        {
+          "rva": "0x5ae653a",
+          "hex": "66440f11542430",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x30], xmm10"
+        },
+        {
+          "rva": "0x5ae6541",
+          "hex": "660f11742440",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x40], xmm6"
+        },
+        {
+          "rva": "0x5ae6547",
+          "hex": "66440f115c2450",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x50], xmm11"
+        },
+        {
+          "rva": "0x5ae654e",
+          "hex": "66440f114c2460",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x60], xmm9"
+        },
+        {
+          "rva": "0x5ae6555",
+          "hex": "66440f117c2470",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x70], xmm15"
+        },
+        {
+          "rva": "0x5ae655c",
+          "hex": "66440f11b42480000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x80], xmm14"
+        },
+        {
+          "rva": "0x5ae6566",
+          "hex": "66440f11ac2490000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0x90], xmm13"
+        },
+        {
+          "rva": "0x5ae6570",
+          "hex": "660f118c24a0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xa0], xmm1"
+        },
+        {
+          "rva": "0x5ae6579",
+          "hex": "660f119424b0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xb0], xmm2"
+        },
+        {
+          "rva": "0x5ae6582",
+          "hex": "660f11bc24c0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xc0], xmm7"
+        },
+        {
+          "rva": "0x5ae658b",
+          "hex": "660f11a424d0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xd0], xmm4"
+        },
+        {
+          "rva": "0x5ae6594",
+          "hex": "660f11ac24e0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xe0], xmm5"
+        },
+        {
+          "rva": "0x5ae659d",
+          "hex": "660f119c24f0000000",
+          "op": "movupd",
+          "args": "xmmword ptr [rsp + 0xf0], xmm3"
+        },
+        {
+          "rva": "0x5ae65a6",
+          "hex": "6a10",
+          "op": "push",
+          "args": "0x10"
+        },
+        {
+          "rva": "0x5ae65a8",
+          "hex": "48f7c40f000000",
+          "op": "test",
+          "args": "rsp, 0xf"
+        },
+        {
+          "rva": "0x5ae65af",
+          "hex": "0f85af205afa",
+          "op": "jne",
+          "args": "0x140088664"
+        },
+        {
+          "rva": "0x5ae65b5",
+          "hex": "e9df537ffa",
+          "op": "jmp",
+          "args": "0x1402db999"
+        }
+      ],
+      "cfg_direct_call_targets": [],
+      "cfg_direct_calls": 0,
+      "cfg_truncated": false
+    }
+  ],
   "sections": [
     {
       "name": ".text",
