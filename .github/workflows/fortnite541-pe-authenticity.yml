@@ -9,6 +9,7 @@ on:
       - "crates/fortnite_541/tools/probe_original_loader.py"
       - "crates/fortnite_541/tools/trace_preentry.py"
       - "crates/fortnite_541/tools/audit_guard_cfg.py"
+      - "crates/fortnite_541/tools/analyze_guard_semantics.py"
   workflow_dispatch:
 
 permissions:
@@ -42,6 +43,25 @@ jobs:
             "$SOURCE_URL" -o "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe"
           echo "$SOURCE_SHA256  $RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" | sha256sum -c -
           test "$(stat -c %s "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe")" = 97284496
+      - name: Verify native guard callee and 7-bit decoder semantic evidence
+        run: |
+          set -euo pipefail
+          python crates/fortnite_541/tools/analyze_guard_semantics.py --self-test
+          python crates/fortnite_541/tools/analyze_guard_semantics.py \
+            --exe "$RUNNER_TEMP/retail/FortniteClient-Win64-Shipping.exe" \
+            --out "$RUNNER_TEMP/audit"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_semantics.json"
+          test -s "$RUNNER_TEMP/audit/fortnite541_guard_semantics.md"
+          python - <<'PY'
+          import json,os,pathlib
+          p=pathlib.Path(os.environ["RUNNER_TEMP"])/"audit"/"fortnite541_guard_semantics.json"
+          r=json.loads(p.read_text())
+          assert r["sha256_verified"]==os.environ["SOURCE_SHA256"]
+          assert r["roots"]["guard_call_target"]["entry_rva"]=="0x5b0cf49"
+          assert r["roots"]["guard_call_target"]["instruction_count"]>0
+          assert r["roots"]["seven_bit_reader"]["instruction_count"]>0
+          print("AUTHENTIC_GUARD_SEMANTICS_VERIFIED")
+          PY
       - name: Inspect PE sections, entrypoint, imports and machine instructions
         run: |
           set -euo pipefail
