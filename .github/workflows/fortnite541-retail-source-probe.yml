@@ -1,0 +1,120 @@
+name: Fortnite 5.41 original retail file probe (public runner)
+
+on:
+  workflow_dispatch:
+    inputs:
+      relative_path:
+        description: "Original public R2 relative path under Fortnite/5.41/"
+        type: string
+        required: true
+        default: "Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe"
+      expected_sha256:
+        description: "Optional pin for authorized retail asset SHA-256"
+        type: string
+        required: false
+        default: ""
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-retail-source-probe.yml"
+      - "crates/fortnite_541/tools/probe_retail_source_file.py"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-retail-source-probe.yml"
+      - "crates/fortnite_541/tools/probe_retail_source_file.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fortnite541-retail-source-probe-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  original-retail-evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SOURCE_PATH: ${{ inputs.relative_path || 'Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe' }}
+      EXPECTED_SHA256: ${{ inputs.expected_sha256 || '' }}
+      SOURCE_ROOT: https://r2.houseofkublai.com
+      CANONICAL_EXE: Fortnite/5.41/FortniteGame/Binaries/Win64/FortniteClient-Win64-Shipping.exe
+      CANONICAL_SHA: 7a1805869283ffa74df400d9e32dda4a1b6c07ebb0e0a1ce027ee846a18bd108
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate read-only source and Python probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile crates/fortnite_541/tools/probe_retail_source_file.py
+          python3 - <<'PY'
+          import hashlib, pathlib, sys, tempfile
+          sys.path.insert(0, "crates/fortnite_541/tools")
+          import probe_retail_source_file as probe
+          with tempfile.TemporaryDirectory() as d:
+              path = pathlib.Path(d)/"mock.bin"
+              data = b"DXBC" + b"\x00"*255 + b"DXBC"
+              path.write_bytes(data)
+              report = probe.inspect(path,"test-fixture",hashlib.sha256(data).hexdigest())
+              assert report["container_signatures_seen"]["DXBC"] == 2
+              assert report["pe"] is None
+              assert report["size_bytes"] == len(data)
+              try:
+                  probe.inspect(path,"test-fixture","0"*64)
+              except ValueError:
+                  pass
+              else:
+                  raise AssertionError("incorrect source hash admitted")
+          print("FORTNITE541_PUBLIC_SOURCE_PROBE_SELF_TEST_PASS")
+          PY
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import os, pathlib, re, urllib.parse
+          path=os.environ["SOURCE_PATH"]
+          root=pathlib.PurePosixPath(path)
+          if not path.startswith("Fortnite/5.41/") or ".." in root.parts:
+              raise ValueError("only original Fortnite 5.41 public source directory is permitted")
+          if not re.fullmatch(r"[A-Za-z0-9_./-]+",path):
+              raise ValueError("not a safe original source file relative path")
+          sha=os.environ.get("EXPECTED_SHA256","").strip()
+          if path == os.environ["CANONICAL_EXE"] and not sha:
+              sha=os.environ["CANONICAL_SHA"]
+          if sha and not re.fullmatch(r"[0-9a-fA-F]{64}",sha):
+              raise ValueError("expected sha256 must be 64 hex digits")
+          print("SOURCE_URL="+os.environ["SOURCE_ROOT"]+"/"+urllib.parse.quote(path,safe="/"))
+          print("PROBE_SHA="+sha)
+          PY
+
+      - name: Download bounded authorized source (never execute)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/retail-probe"
+          curl --fail --location --silent --show-error --retry 3 \
+            --proto '=https' --proto-redir '=https' \
+            --connect-timeout 25 --max-time 900 \
+            --max-filesize 536870912 \
+            "$SOURCE_URL" -o "$RUNNER_TEMP/retail-probe/source.file"
+          test -s "$RUNNER_TEMP/retail-probe/source.file"
+          test "$(stat -c%s "$RUNNER_TEMP/retail-probe/source.file")" -le 536870912
+
+      - name: Fingerprint PE, section entropy, DXBC and retail container signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/probe_retail_source_file.py \
+            --input "$RUNNER_TEMP/retail-probe/source.file" \
+            --relative-path "$SOURCE_PATH" \
+            --expected-sha256 "$PROBE_SHA" \
+            --output "$RUNNER_TEMP/retail-probe/analysis.json"
+          python3 -m json.tool "$RUNNER_TEMP/retail-probe/analysis.json" > /dev/null
+
+      - name: Upload audit report only (no raw retail files)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-retail-metadata-probe-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/retail-probe/analysis.json
+          retention-days: 30
+          if-no-files-found: warn
