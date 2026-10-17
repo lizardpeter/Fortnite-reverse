@@ -6,7 +6,7 @@ on:
       scope:
         description: "Which original retail asset family to download and probe"
         type: choice
-        options: [all, terrain, sky]
+        options: [all, terrain, sky, foliage]
         default: all
         required: true
   push:
@@ -16,6 +16,7 @@ on:
       - "crates/fortnite_541/tools/fetch_remote_541_dependencies.py"
       - "crates/fortnite_541/tools/probe_remote_541_paks.py"
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
   pull_request:
@@ -25,6 +26,7 @@ on:
       - "crates/fortnite_541/tools/fetch_remote_541_dependencies.py"
       - "crates/fortnite_541/tools/probe_remote_541_paks.py"
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
 
@@ -145,3 +147,45 @@ jobs:
         if: always()
         shell: bash
         run: rm -rf "$RUNNER_TEMP/fortnite541-sky"
+
+  foliage-original:
+    needs: parser-smoke
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.scope == 'all' || inputs.scope == 'foliage')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch exactly the original hidden grass material and mesh inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fortnite541-foliage" "$RUNNER_TEMP/fortnite541-foliage-report"
+          python3 crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
+            --scope foliage --destination "$RUNNER_TEMP/fortnite541-foliage" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-foliage-report/download.log"
+      - name: Audit authored UE4 grass material ancestry, alpha and mesh contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_foliage_material_probe -- "$RUNNER_TEMP/fortnite541-foliage" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-foliage-report/foliage-source.log"
+      - name: Publish source checksums only; never the original foliage assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/report_public_asset_probe.py \
+            --scope foliage --source-root "$RUNNER_TEMP/fortnite541-foliage" \
+            --output "$RUNNER_TEMP/fortnite541-foliage-report/verified-inventory.json"
+      - name: Upload authenticated source metadata only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-foliage-probes-${{ github.run_id }}
+          path: ${{ runner.temp }}/fortnite541-foliage-report/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Delete the temporary original retail foliage packages
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/fortnite541-foliage"
