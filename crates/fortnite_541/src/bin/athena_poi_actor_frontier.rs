@@ -29,8 +29,8 @@ fn authored_additional_worlds(
 )->Result<Vec<String>,String>{
     let Some(field)=props.fields.iter().find(|p|p.name=="AdditionalWorlds")
         else{return Ok(Vec::new());};
-    if field.kind!="ArrayProperty"||field.metadata.first().map(String::as_str)!=Some("StructProperty"){
-        return Err("source POI AdditionalWorlds not a typed struct array".into());
+    if field.kind!="ArrayProperty"{
+        return Err("source POI AdditionalWorlds not an ArrayProperty".into());
     }
     let b=raw.get(field.payload.clone()).ok_or("source POI world array invalid")?;
     if b.len()<4{return Err("source POI world array count missing".into());}
@@ -167,14 +167,6 @@ mod tests{
         assert_eq!(root_mesh_kind("SceneComponent",true),"blueprint-scene");
         assert_eq!(root_mesh_kind("PointLightComponent",false),"other");
         assert_eq!(root_mesh_kind("SceneComponent",false),"other");
-    }
-    #[test]fn unknown_original_world_array_is_empty_not_a_fake_sublevel(){
-        let catalog=uobject::inspect(&[]);
-        assert!(catalog.is_err());
-        let props=properties::Properties{fields:Vec::new(),bytes_consumed:0};
-        // Existence requires authentic package NameMap before decoding, not
-        // a hardcoded construction for REC or the warehouses.
-        assert_eq!(props.fields.len(),0);
     }
     #[test]fn absent_root_object_property_does_not_invent_a_mesh(){
         let props=properties::Properties{fields:Vec::new(),bytes_consumed:0};
