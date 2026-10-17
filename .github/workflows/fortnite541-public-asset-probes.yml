@@ -6,7 +6,7 @@ on:
       scope:
         description: "Which original retail asset family to download and probe"
         type: choice
-        options: [all, terrain, sky, foliage]
+        options: [all, terrain, sky, foliage, poi]
         default: all
         required: true
   push:
@@ -18,6 +18,7 @@ on:
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_poi_actor_frontier.rs"
       - "crates/fortnite_541/src/texture.rs"
       - "crates/fortnite_541/src/material.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
@@ -31,6 +32,7 @@ on:
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_poi_actor_frontier.rs"
       - "crates/fortnite_541/src/texture.rs"
       - "crates/fortnite_541/src/material.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
@@ -202,3 +204,37 @@ jobs:
         if: always()
         shell: bash
         run: rm -rf "$RUNNER_TEMP/fortnite541-foliage"
+
+  poi-detail-original:
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.scope == 'all' || inputs.scope == 'poi')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: SHA1-verify three unresolved Athena POI worlds
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fortnite541-poi" "$RUNNER_TEMP/fortnite541-poi-report"
+          python3 crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
+            --scope poi --destination "$RUNNER_TEMP/fortnite541-poi" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-poi-report/verified-original-umaps.log"
+      - name: Inventory retail REC Warehouses and Pueblo actor classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_poi_actor_frontier -- "$RUNNER_TEMP/fortnite541-poi" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-poi-report/poi-actor-frontier.log"
+      - name: Publish actor identity reports, never original map bytes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FORTNITE_541_AUTHENTIC_POI_ACTOR_FRONTIER
+          path: ${{ runner.temp }}/fortnite541-poi-report/
+          if-no-files-found: warn
+      - name: Delete original retail UWorld assets from runner
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/fortnite541-poi"
+

@@ -53,6 +53,19 @@ TARGETS = [
 ]
 # Exact original runtime source identities from the hidden Athena grass census.
 # Separate from SkyDome, so each public runner only fetches its own targets.
+# The three original Athena high-detail regions that still retained
+# their retail HLOD proxy in the user's last measured runtime:
+# REC 13/16, Warehouses 17/20, Pueblo 58/65. Source UWorlds are NOT guessed;
+# exact package paths were read from original LF_Athena_POI AdditionalWorlds.
+POI_DETAIL_TARGETS = [
+    "/Athena/Maps/POI/Athena_POI_REC_001.umap",
+    "/Athena/Maps/POI/Athena_POI_REC_001.uexp",
+    "/Athena/Maps/POI/Athena_POI_Warehouses_003.umap",
+    "/Athena/Maps/POI/Athena_POI_Warehouses_003.uexp",
+    "/Athena/Maps/POI/Athena_POI_Pueblo_001.umap",
+    "/Athena/Maps/POI/Athena_POI_Pueblo_001.uexp",
+]
+
 FOLIAGE_TARGETS = [
     "/Athena/Environments/Landscape/Foliage/MI_Athena_Grass_TopoColor.uasset",
     "/Athena/Environments/Landscape/Foliage/MI_Athena_Grass_TopoColor.uexp",
