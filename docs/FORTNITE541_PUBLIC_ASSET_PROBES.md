@@ -19,6 +19,11 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
   TextureSample input packages. athena_remote_source_probe audits cooked
   expression nodes, retained dependencies and missing authored graph edges.
   This is an admission frontier report, not an executable cloud shader.
+- A separate foliage job fetches the exact source UStaticMesh and material
+  packages behind 230,583 invisible Athena grass instances observed in the
+  runtime report. It inventories source parent materials, tagged BlendMode,
+  OpacityMask and related links, and shader graph dependencies. Decoding a
+  masked source contract does not mean a Vulkan alpha shader is executable.
 - The raw original retail packages are downloaded only into runner temporary
   storage and removed after the probes. No original .uasset, .uexp, .ubulk,
   .umap, full PAK or retail EXE is committed or uploaded as a workflow artifact.
@@ -28,7 +33,7 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
 ## Run
 
 In Fortnite-reverse, choose Actions > Fortnite 5.41 public retail asset
-probe lab > Run workflow. Select scope terrain, sky or all.
+probe lab > Run workflow. Select scope terrain, sky, foliage or all.
 
 Merging updates to this workflow starts both real asset families. PRs only
 run public-parser smoke tests, so source downloads do not recur for every
