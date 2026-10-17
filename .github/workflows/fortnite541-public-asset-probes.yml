@@ -17,6 +17,7 @@ on:
       - "crates/fortnite_541/tools/probe_remote_541_paks.py"
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
   pull_request:
@@ -27,6 +28,7 @@ on:
       - "crates/fortnite_541/tools/probe_remote_541_paks.py"
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
+      - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
 
@@ -170,6 +172,13 @@ jobs:
           cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
             --bin athena_foliage_material_probe -- "$RUNNER_TEMP/fortnite541-foliage" \
             2>&1 | tee "$RUNNER_TEMP/fortnite541-foliage-report/foliage-source.log"
+      - name: Decode original grass BC alpha channels, never guess material opacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_foliage_alpha_probe -- "$RUNNER_TEMP/fortnite541-foliage" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-foliage-report/foliage-alpha-census.log"
       - name: Publish source checksums only; never the original foliage assets
         shell: bash
         run: |
