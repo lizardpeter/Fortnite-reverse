@@ -69,6 +69,12 @@ class SourceProbeMetadataTests(unittest.TestCase):
             "Environments/Foliage/Materials/M_FieldGrassMatching",
             "Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor",
             "Environments/Foliage/Meshes/S_WavyGrass_01",
+            "Athena/Environments/Landscape/Foliage/M_Athena_Grass_Master",
+            "Environments/Foliage/Textures/T_FieldGrass_01_M",
+            "Environments/Foliage/Textures/T_SwirlNoise_N",
+            "Environments/Foliage/Textures/T_WavyGrass_01",
+            "Environments/Foliage/Textures/T_WavyGrass_01_N",
+            "Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D",
         ):
             self.assertIn(base + ".uasset", names)
             self.assertIn(base + ".uexp", names)
