@@ -18,6 +18,7 @@ on:
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
+      - "crates/fortnite_541/src/texture.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
   pull_request:
@@ -29,6 +30,7 @@ on:
       - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_material_probe.rs"
       - "crates/fortnite_541/src/bin/athena_foliage_alpha_probe.rs"
+      - "crates/fortnite_541/src/texture.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
 

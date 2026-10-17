@@ -109,11 +109,12 @@ fn probe(root:&PathBuf,name:&str)->Result<(),String>{
         return Err(format!("{name}: expected exactly one original Texture2D, got {}",candidates.len()));
     }
     let entry=candidates[0];
-    let (format,width,height,coverage)=match texture::first_mip_bc(
+    let (format,width,height,platform,first_mip,coverage)=match texture::first_mip_bc(
         &catalog,&header,&exports,&bulk,entry
     ){
         Ok(mip)=>(
             format!("{:?}",mip.format),mip.width,mip.height,
+            [mip.platform_width,mip.platform_height],mip.first_resident_mip,
             bc_coverage(mip.blocks,mip.width,mip.height,mip.format)?
         ),
         Err(bc_reason)=>match texture::first_mip_bgra8(
@@ -121,6 +122,7 @@ fn probe(root:&PathBuf,name:&str)->Result<(),String>{
         ){
             Ok(mip)=>(
                 "PF_B8G8R8A8".into(),mip.width,mip.height,
+                [mip.width,mip.height],0,
                 bgra_coverage(mip.bgra8,mip.width,mip.height)?
             ),
             Err(rgb_reason)=>{
@@ -132,8 +134,9 @@ fn probe(root:&PathBuf,name:&str)->Result<(),String>{
             },
         }
     };
-    println!("AUTHORED_FOLIAGE_ORIGINAL_ALPHA_CENSUS source={name} format={format} size={}x{} alpha_zero={} alpha_partial={} alpha_full={} source_alpha_below_default_one_third={} total={} alpha_is_not_proven_OpacityMask=true",
-        width,height,coverage.zero,coverage.partial,coverage.full,
+    println!("AUTHORED_FOLIAGE_ORIGINAL_ALPHA_CENSUS source={name} format={format} resident={}x{} platform={}x{} original_first_resident_mip={} alpha_zero={} alpha_partial={} alpha_full={} source_alpha_below_default_one_third={} total={} alpha_is_not_proven_OpacityMask=true",
+        width,height,platform[0],platform[1],first_mip,
+        coverage.zero,coverage.partial,coverage.full,
         coverage.below_ue_default_clip,coverage.total);
     Ok(())
 }

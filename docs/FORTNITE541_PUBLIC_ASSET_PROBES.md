@@ -32,6 +32,9 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
   values from the exact retained retail texture payloads, counting zero,
   partial and full coverage without copying pixels to its reports. Unsupported
   original mip layouts are explicitly unresolved, not treated as opaque.
+  The authenticated external BC parser tracks both UE4 platform maximum
+  dimensions and the actually resident first mip (which can be smaller for
+  valid cooked grass textures). It never stretches a source mip to full size.
   These alpha counts are deliberately not interpreted as material OpacityMask:
   source shader graph and the selected runtime sampler must still prove that.
 
