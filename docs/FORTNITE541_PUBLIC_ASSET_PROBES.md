@@ -28,6 +28,13 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
   `M_Athena_Grass_Master` parent and five source-identified Texture2D inputs
   of `M_FieldGrassMatching`; parent and function dependencies are logged for
   subsequent universal shader closure without guessing transparency.
+  The real-source foliage job also scans BC1/BC3 and BGRA top-mip alpha
+  values from the exact retained retail texture payloads, counting zero,
+  partial and full coverage without copying pixels to its reports. Unsupported
+  original mip layouts are explicitly unresolved, not treated as opaque.
+  These alpha counts are deliberately not interpreted as material OpacityMask:
+  source shader graph and the selected runtime sampler must still prove that.
+
 - The raw original retail packages are downloaded only into runner temporary
   storage and removed after the probes. No original .uasset, .uexp, .ubulk,
   .umap, full PAK or retail EXE is committed or uploaded as a workflow artifact.
