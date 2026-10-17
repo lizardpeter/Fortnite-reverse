@@ -62,6 +62,20 @@ FOLIAGE_TARGETS = [
     "/Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor.uexp",
     "/Environments/Foliage/Meshes/S_WavyGrass_01.uasset",
     "/Environments/Foliage/Meshes/S_WavyGrass_01.uexp",
+    # Exact original first-hop parent and five authored TextureSample inputs,
+    # proven by the previous public real-source foliage job.
+    "/Athena/Environments/Landscape/Foliage/M_Athena_Grass_Master.uasset",
+    "/Athena/Environments/Landscape/Foliage/M_Athena_Grass_Master.uexp",
+    "/Environments/Foliage/Textures/T_FieldGrass_01_M.uasset",
+    "/Environments/Foliage/Textures/T_FieldGrass_01_M.uexp",
+    "/Environments/Foliage/Textures/T_SwirlNoise_N.uasset",
+    "/Environments/Foliage/Textures/T_SwirlNoise_N.uexp",
+    "/Environments/Foliage/Textures/T_WavyGrass_01.uasset",
+    "/Environments/Foliage/Textures/T_WavyGrass_01.uexp",
+    "/Environments/Foliage/Textures/T_WavyGrass_01_N.uasset",
+    "/Environments/Foliage/Textures/T_WavyGrass_01_N.uexp",
+    "/Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D.uasset",
+    "/Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D.uexp",
 ]
 
 def curl(args: list[str], *, timeout: int=30) -> bytes:
