@@ -90,6 +90,16 @@ FOLIAGE_TARGETS = [
     "/WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled.uexp",
     "/WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData.uasset",
     "/WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData.uexp",
+    # Second-hop dynamic shader identities from the authenticated wind and
+    # terrain color function census, not inferred from names or nearby hashes.
+    "/Athena/Environments/Landscape/Textures/T_Athena_Terrain_Biome_M.uasset",
+    "/Athena/Environments/Landscape/Textures/T_Athena_Terrain_Biome_M.uexp",
+    "/Athena/Environments/Landscape/Textures/T_Athena_Terrain_CombinedColors_01.uasset",
+    "/Athena/Environments/Landscape/Textures/T_Athena_Terrain_CombinedColors_01.uexp",
+    "/WaterAndWind/MaterialFunctions/InternalSampleWindTexture.uasset",
+    "/WaterAndWind/MaterialFunctions/InternalSampleWindTexture.uexp",
+    "/WaterAndWind/Textures/VectorOffset_RT2.uasset",
+    "/WaterAndWind/Textures/VectorOffset_RT2.uexp",
 ]
 
 def curl(args: list[str], *, timeout: int=30) -> bytes:
