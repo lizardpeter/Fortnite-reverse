@@ -24,6 +24,10 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
   runtime report. It inventories source parent materials, tagged BlendMode,
   OpacityMask and related links, and shader graph dependencies. Decoding a
   masked source contract does not mean a Vulkan alpha shader is executable.
+  Following the first successful retail probe, it also stages the exact
+  `M_Athena_Grass_Master` parent and five source-identified Texture2D inputs
+  of `M_FieldGrassMatching`; parent and function dependencies are logged for
+  subsequent universal shader closure without guessing transparency.
 - The raw original retail packages are downloaded only into runner temporary
   storage and removed after the probes. No original .uasset, .uexp, .ubulk,
   .umap, full PAK or retail EXE is committed or uploaded as a workflow artifact.
