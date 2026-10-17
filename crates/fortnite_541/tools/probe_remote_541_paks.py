@@ -76,6 +76,20 @@ FOLIAGE_TARGETS = [
     "/Environments/Foliage/Textures/T_WavyGrass_01_N.uexp",
     "/Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D.uasset",
     "/Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D.uexp",
+    # Exact game-owned material functions identified by the previous
+    # source-authenticated grass master and field material graph audits.
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_AthenaFoliagePlayerInteract.uasset",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_AthenaFoliagePlayerInteract.uexp",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_Athena_BiomeMask.uasset",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_Athena_BiomeMask.uexp",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_Athena_TerrainColorMatch.uasset",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_Athena_TerrainColorMatch.uexp",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_StormMask.uasset",
+    "/Athena/Environments/Landscape/MaterialFunctions/MF_StormMask.uexp",
+    "/WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled.uasset",
+    "/WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled.uexp",
+    "/WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData.uasset",
+    "/WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData.uexp",
 ]
 
 def curl(args: list[str], *, timeout: int=30) -> bytes:
