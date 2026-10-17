@@ -21,6 +21,67 @@ fn object_ref(fields:&properties::Properties,raw:&[u8],key:&str)
     let bytes=raw.get(p.payload.clone()).ok_or("object ref outside source export")?;
     Ok(Some(i32::from_le_bytes(bytes.try_into().unwrap())))
 }
+/// Parse exact UE4 FSoftObjectPath array bytes from original actor tags.
+/// The pair of FNames belongs to the authentic source NameMap; no inferred
+/// world names or generated POI location IDs are ever accepted.
+fn authored_additional_worlds(
+    cat:&uobject::PackageCatalog,props:&properties::Properties,raw:&[u8],
+)->Result<Vec<String>,String>{
+    let Some(field)=props.fields.iter().find(|p|p.name=="AdditionalWorlds")
+        else{return Ok(Vec::new());};
+    if field.kind!="ArrayProperty"{
+        return Err("source POI AdditionalWorlds not an ArrayProperty".into());
+    }
+    let b=raw.get(field.payload.clone()).ok_or("source POI world array invalid")?;
+    if b.len()<4{return Err("source POI world array count missing".into());}
+    let n=u32::from_le_bytes(b[..4].try_into().unwrap()) as usize;
+    if n>32||b.len()!=4+n*12{
+        return Err("source POI FSoftObjectPath elements exceed exact original array".into());
+    }
+    let mut result=Vec::new();
+    for i in 0..n{
+        let pos=4+i*12;
+        let id=u32::from_le_bytes(b[pos..pos+4].try_into().unwrap()) as usize;
+        let number=u32::from_le_bytes(b[pos+4..pos+8].try_into().unwrap());
+        let sub=i32::from_le_bytes(b[pos+8..pos+12].try_into().unwrap());
+        if number!=0||sub!=0{return Err("source POI numbered/subobject world edge unsupported".into());}
+        let name=cat.names.get(id).ok_or("source AdditionalWorlds FName outside NameMap")?;
+        if !name.starts_with("/Game/"){return Err("source POI nested world not under /Game".into());}
+        result.push(name.clone());
+    }
+    Ok(result)
+}
+fn audit_foundation(
+    cat:&uobject::PackageCatalog,h:&[u8],x:&[u8],
+    short:&str,actor_name:&str,actor_class:&str,
+    props:&properties::Properties,raw:&[u8],
+)->Result<(),String>{
+    if !matches!(actor_class,
+        "/Game/Athena/Environments/Blueprints/LF_7x12_GenericPlot::LF_7x12_GenericPlot_C"|
+        "/Script/FortniteGame::BuildingFoundation3x3"|
+        "/Script/FortniteGame::BuildingFoundation5x5"){return Ok(());}
+    let list=props.fields.iter().map(|f|format!("{}:{}",f.name,f.kind)).collect::<Vec<_>>();
+    let world_edges=authored_additional_worlds(cat,props,raw)?;
+    let mut authored_children=Vec::new();
+    for (i,c) in cat.exports.iter().enumerate(){
+        if cat.source_object_path((i+1) as i32).ok().is_some_and(|id|
+            id.starts_with(&format!("{actor_name}::"))) {
+            let kind=cat.export_class_name(c).unwrap_or("");
+            if kind.ends_with("Component"){
+                let data=cat.export_data(h,x,c)?;
+                let fields=properties::scan(cat,data)?;
+                let mesh=object_ref(&fields,data,"StaticMesh")?
+                    .filter(|id|*id!=0)
+                    .map(|id|cat.source_object_path(id))
+                    .transpose()?;
+                authored_children.push(format!("{kind}::{mesh:?}"));
+            }
+        }
+    }
+    println!("ORIGINAL_541_FOUNDATION_SOURCE_CONTRACT {short} class={actor_class} actor={actor_name} tagged_fields={list:?} direct_additional_worlds={world_edges:?} owned_child_components={authored_children:?}");
+    Ok(())
+}
+
 fn root_mesh_kind(kind:&str,game_blueprint:bool)->&'static str{
     match kind{
         "StaticMeshComponent"=>"static",
@@ -53,6 +114,7 @@ fn inspect(root:&PathBuf,name:&str,short:&str)->Result<(),String>{
         if component.outer_index!=(i+1) as i32{continue;}
         let actor_class=cat.source_object_path(actor.class_index)?;
         let actor_name=cat.source_object_path((i+1) as i32)?;
+        audit_foundation(&cat,&h,&x,short,&actor_name,&actor_class,&props,raw)?;
         let game_blueprint=actor_class.starts_with("/Game/")&&
             actor_class.rsplit_once("::").is_some_and(|(_,name)|name.ends_with("_C"));
         let comp_kind=cat.export_class_name(component).unwrap_or("");
