@@ -9,6 +9,24 @@ const WORLDS:[(&str,&str);3]=[
     ("Warehouses","Athena_POI_Warehouses_003"),
     ("Pueblo","Athena_POI_Pueblo_001"),
 ];
+// Exact original LF_7x12_GenericPlot / BuildingFoundation AdditionalWorlds
+// FSoftObjectPath identities, retrieved from the authenticated source
+// UMaps. Do not use these as a substitute for the actual cooked UWorlds.
+const NESTED_WORLDS:[(&str,&str);13]=[
+    ("REC01","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_001"),
+    ("REC02","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_002"),
+    ("REC03","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_003"),
+    ("IND02","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_IND_002"),
+    ("IND03","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_IND_003"),
+    ("DCE01","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_DCE_001"),
+    ("P3a","Athena/Maps/Buildings/3x3/Athena_ARID_3x3_Pueblo_a"),
+    ("P3b","Athena/Maps/Buildings/3x3/Athena_ARID_3x3_Pueblo_b"),
+    ("P3c","Athena/Maps/Buildings/3x3/Athena_ARID_3x3_Pueblo_c"),
+    ("P5a","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_a"),
+    ("P5b","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_b"),
+    ("P5c","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_c"),
+    ("P5d","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_d"),
+];
 #[derive(Clone,Copy,Debug,Default)]
 struct Counts{direct:usize,inherited:usize,scene_root:usize,other:usize,proxies:usize}
 fn object_ref(fields:&properties::Properties,raw:&[u8],key:&str)
@@ -90,7 +108,12 @@ fn root_mesh_kind(kind:&str,game_blueprint:bool)->&'static str{
     }
 }
 fn inspect(root:&PathBuf,name:&str,short:&str)->Result<(),String>{
-    let path=root.join("FortniteGame/Content/Athena/Maps/POI").join(name);
+    let path=if name.starts_with("Athena/Maps/Buildings/"){
+        root.join("FortniteGame/Content").join(name)
+    }else{
+        root.join("FortniteGame/Content/Athena/Maps/POI").join(name)
+    };
+    let is_nested=name.starts_with("Athena/Maps/Buildings/");
     let h=fs::read(path.with_extension("umap"))
         .map_err(|e|format!("original {name}.umap missing: {e}"))?;
     let x=fs::read(path.with_extension("uexp"))
@@ -126,19 +149,25 @@ fn inspect(root:&PathBuf,name:&str,short:&str)->Result<(),String>{
                     Some(mesh_ref) if mesh_ref!=0=>{
                         let original=cat.source_object_path(mesh_ref)?;
                         totals.direct+=1;
-                        println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=direct_mesh source={original}");
+                        if !is_nested{
+                            println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=direct_mesh source={original}");
+                        }
                     },
                     _=>{
                         totals.inherited+=1;
                         *missing_classes.entry(actor_class.clone()).or_default()+=1;
-                        println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=inherited_missing_local_mesh component_class={comp_kind}");
+                        if !is_nested{
+                            println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=inherited_missing_local_mesh component_class={comp_kind}");
+                        }
                     },
                 }
             },
             "blueprint-scene"=>{
                 totals.scene_root+=1;
                 *scene_root_classes.entry(actor_class.clone()).or_default()+=1;
-                println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=blueprint_scene_root component_class={comp_kind}");
+                if !is_nested{
+                    println!("ORIGINAL_541_POI_ACTOR_SOURCE {short} class={actor_class} actor={actor_name} kind=blueprint_scene_root component_class={comp_kind}");
+                }
             },
             _=>totals.other+=1,
         }
@@ -151,6 +180,9 @@ fn run()->Result<(),String>{
     let root=PathBuf::from(env::args_os().nth(1).ok_or(
         "usage: athena_poi_actor_frontier VERIFIED_SOURCE_ROOT")?);
     for (short,name) in WORLDS{inspect(&root,name,short)?;}
+    for (short,name) in NESTED_WORLDS{
+        inspect(&root,name,short)?;
+    }
     Ok(())
 }
 fn main()->ExitCode{
