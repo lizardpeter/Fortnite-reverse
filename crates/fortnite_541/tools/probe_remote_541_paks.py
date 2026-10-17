@@ -92,6 +92,21 @@ POI_DETAIL_TARGETS = [
     "/Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_c.uexp",
     "/Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_d.umap",
     "/Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_d.uexp",
+    # Seven original second-level BuildingFoundation AdditionalWorlds
+    "/Athena/Maps/Buildings/5x5/Athena_SUB_5x5_GasStation_b.umap",
+    "/Athena/Maps/Buildings/5x5/Athena_SUB_5x5_GasStation_b.uexp",
+    "/Athena/Maps/Buildings/5x5/Athena_URB_5x5_Pool_a.umap",
+    "/Athena/Maps/Buildings/5x5/Athena_URB_5x5_Pool_a.uexp",
+    "/Athena/Maps/Buildings/5x5/Athena_SUB_5x5_Park_c.umap",
+    "/Athena/Maps/Buildings/5x5/Athena_SUB_5x5_Park_c.uexp",
+    "/Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_h.umap",
+    "/Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_h.uexp",
+    "/Athena/Maps/Buildings/5x5/Athena_IND_5x5_Factory_g.umap",
+    "/Athena/Maps/Buildings/5x5/Athena_IND_5x5_Factory_g.uexp",
+    "/Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_a.umap",
+    "/Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_a.uexp",
+    "/Athena/Maps/Buildings/5x5/Athena_IND_5x5_SubStation_b.umap",
+    "/Athena/Maps/Buildings/5x5/Athena_IND_5x5_SubStation_b.uexp",
 ]
 
 FOLIAGE_TARGETS = [
