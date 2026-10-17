@@ -12,7 +12,7 @@ const WORLDS:[(&str,&str);3]=[
 // Exact original LF_7x12_GenericPlot / BuildingFoundation AdditionalWorlds
 // FSoftObjectPath identities, retrieved from the authenticated source
 // UMaps. Do not use these as a substitute for the actual cooked UWorlds.
-const NESTED_WORLDS:[(&str,&str);13]=[
+const NESTED_WORLDS:[(&str,&str);20]=[
     ("REC01","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_001"),
     ("REC02","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_002"),
     ("REC03","Athena/Maps/Buildings/7x12/Athena_POI_GenericPlot_REC_003"),
@@ -26,6 +26,13 @@ const NESTED_WORLDS:[(&str,&str);13]=[
     ("P5b","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_b"),
     ("P5c","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_c"),
     ("P5d","Athena/Maps/Buildings/5x5/Athena_ARID_5x5_Pueblo_d"),
+    ("GAS","Athena/Maps/Buildings/5x5/Athena_SUB_5x5_GasStation_b"),
+    ("POOL","Athena/Maps/Buildings/5x5/Athena_URB_5x5_Pool_a"),
+    ("PARK","Athena/Maps/Buildings/5x5/Athena_SUB_5x5_Park_c"),
+    ("WHOUSEH","Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_h"),
+    ("FACTORY","Athena/Maps/Buildings/5x5/Athena_IND_5x5_Factory_g"),
+    ("WHOUSEA","Athena/Maps/Buildings/3x3/Athena_IND_3x3_Warehouse_a"),
+    ("SUBSTATION","Athena/Maps/Buildings/5x5/Athena_IND_5x5_SubStation_b"),
 ];
 #[derive(Clone,Copy,Debug,Default)]
 struct Counts{direct:usize,inherited:usize,scene_root:usize,other:usize,proxies:usize}
