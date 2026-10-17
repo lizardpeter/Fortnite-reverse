@@ -1,0 +1,141 @@
+name: Fortnite 5.41 public retail asset probe lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: "Which original retail asset family to download and probe"
+        type: choice
+        options: [all, terrain, sky]
+        default: all
+        required: true
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-public-asset-probes.yml"
+      - "crates/fortnite_541/tools/report_public_asset_probe.py"
+      - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/fortnite541-public-asset-probes.yml"
+      - "crates/fortnite_541/tools/report_public_asset_probe.py"
+      - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fortnite541-public-probes-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  parser-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public tools; never checkout private Rust-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            crates/fortnite_541/tools/fetch_athena_541.py \
+            crates/fortnite_541/tools/probe_remote_541_paks.py \
+            crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
+            crates/fortnite_541/tools/report_public_asset_probe.py
+          PYTHONPATH=crates/fortnite_541/tools python3 -m unittest discover \
+            -s crates/fortnite_541/tools/tests \
+            -p test_public_asset_probe_report.py -v
+          cargo test --manifest-path crates/fortnite_541/Cargo.toml --all-targets
+          cargo check --manifest-path crates/fortnite_541/Cargo.toml --all-targets
+
+  terrain-original:
+    needs: parser-smoke
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.scope == 'all' || inputs.scope == 'terrain')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: SHA1-verified original Athena heightfield and terrain materials
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fortnite541-terrain" "$RUNNER_TEMP/fortnite541-terrain-report"
+          python3 crates/fortnite_541/tools/fetch_athena_541.py \
+            --all-landscape --with-terrain-materials \
+            --destination "$RUNNER_TEMP/fortnite541-terrain" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-terrain-report/download.log"
+      - name: Verify original landscape geometry and material graph nodes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/fortnite541-terrain"
+          report="$RUNNER_TEMP/fortnite541-terrain-report"
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_surface_probe -- "$root" 2>&1 | tee "$report/landscape.log"
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_material_graph_probe -- "$root" 2>&1 | tee "$report/material-graph.log"
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_material_dependencies -- "$root" 2>&1 | tee "$report/material-dependencies.log"
+      - name: Publish only metadata and source-validation results
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/report_public_asset_probe.py \
+            --scope terrain --source-root "$RUNNER_TEMP/fortnite541-terrain" \
+            --output "$RUNNER_TEMP/fortnite541-terrain-report/verified-inventory.json"
+      - name: Upload reports only; no copyrighted game packages
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-terrain-probes-${{ github.run_id }}
+          path: ${{ runner.temp }}/fortnite541-terrain-report/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Delete temporary original game packages
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/fortnite541-terrain"
+
+  sky-and-time-of-day-original:
+    needs: parser-smoke
+    if: github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.scope == 'all' || inputs.scope == 'sky')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate original split PAK indices and fetch selected sky/TODM assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/fortnite541-sky" "$RUNNER_TEMP/fortnite541-sky-report"
+          python3 crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
+            --destination "$RUNNER_TEMP/fortnite541-sky" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-sky-report/download.log"
+      - name: Decode real UE4 sky, weather and material properties
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --release --manifest-path crates/fortnite_541/Cargo.toml \
+            --bin athena_remote_source_probe -- "$RUNNER_TEMP/fortnite541-sky" \
+            2>&1 | tee "$RUNNER_TEMP/fortnite541-sky-report/sky-materials.log"
+      - name: Publish only authenticated retail dependency inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 crates/fortnite_541/tools/report_public_asset_probe.py \
+            --scope sky --source-root "$RUNNER_TEMP/fortnite541-sky" \
+            --output "$RUNNER_TEMP/fortnite541-sky-report/verified-inventory.json"
+      - name: Upload logs and verified metadata, never retail game files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortnite541-original-sky-probes-${{ github.run_id }}
+          path: ${{ runner.temp }}/fortnite541-sky-report/
+          retention-days: 30
+          if-no-files-found: warn
+      - name: Remove original extracted sky and TODM content
+        if: always()
+        shell: bash
+        run: rm -rf "$RUNNER_TEMP/fortnite541-sky"
