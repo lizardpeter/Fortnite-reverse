@@ -137,12 +137,38 @@ pub enum OriginalBcFormat {
 }
 #[derive(Debug, Clone)]
 pub struct OriginalBcTopMip<'a> {
+    /// Actual source-resident first mip dimensions; do not upscale to the
+    /// platform maximum extent or fabricate absent higher-resolution mips.
     pub width: u32,
     pub height: u32,
+    pub platform_width:u32,
+    pub platform_height:u32,
+    pub first_resident_mip:u32,
     pub format: OriginalBcFormat,
     pub flags: u32,
     pub source_bulk_offset: usize,
     pub blocks: &'a [u8],
+}
+/// Original UE4 platform Width/Height may describe higher mips that were
+/// NOT cooked into this asset. Accept only a proven uniform power-of-two
+/// first-resident mip downshift in both axes. Never rescale original pixels.
+fn original_first_resident_mip(
+    platform_width:u32,platform_height:u32,width:u32,height:u32,
+)->Result<u32,String>{
+    if platform_width==0||platform_height==0||width==0||height==0||
+        platform_width>8192||platform_height>8192||
+        platform_width%width!=0||platform_height%height!=0 {
+        return Err("source original platform/resident mip extents are invalid".into());
+    }
+    let sx=platform_width/width;
+    let sy=platform_height/height;
+    if sx!=sy||!sx.is_power_of_two(){
+        return Err(format!(
+            "source original platform mip shift mismatched: {}x{} vs resident {}x{}",
+            platform_width,platform_height,width,height
+        ));
+    }
+    Ok(sx.trailing_zeros())
 }
 pub fn first_mip_bc<'a>(
     catalog:&PackageCatalog,
@@ -178,13 +204,16 @@ pub fn first_mip_bc<'a>(
     let mip_width=u32_at(cooked,flags_offset+20)?;
     let mip_height=u32_at(cooked,flags_offset+24)?;
     let mip_depth=u32_at(cooked,flags_offset+28)?;
-    if width==0||height==0||width>8192||height>8192
-        ||width!=mip_width||height!=mip_height||depth!=1||mip_depth!=1{
-        return Err("original BC texture top mip extent is invalid".into());
+    if depth!=1||mip_depth!=1 {
+        return Err("original BC texture source mip is not 2D".into());
     }
+    let first_resident_mip=original_first_resident_mip(width,height,mip_width,mip_height)?;
     let bsize=match fmt {OriginalBcFormat::Bc1=>8,OriginalBcFormat::Bc3=>16};
-    let expected=(width.div_ceil(4) as usize)
-        .checked_mul(height.div_ceil(4) as usize)
+    // BC blocks occupy the *actual* first resident mip, not the maximum
+    // original UTexture2D platform SizeX/SizeY. This distinction fixes
+    // valid original foliage Texture2Ds with FirstMip > 0.
+    let expected=(mip_width.div_ceil(4) as usize)
+        .checked_mul(mip_height.div_ceil(4) as usize)
         .and_then(|n|n.checked_mul(bsize))
         .ok_or("original BC texture mip bytes overflow")?;
     if expected>MAX_MIP_BYTES||size!=expected||count!=expected{
@@ -201,13 +230,25 @@ pub fn first_mip_bc<'a>(
     let blocks=companion_ubulk.get(start..end)
         .ok_or("original BC top mip does not fit authenticated external .ubulk")?;
     Ok(OriginalBcTopMip{
-        width,height,format:fmt,flags,source_bulk_offset:start,blocks,
+        width:mip_width,height:mip_height,
+        platform_width:width,platform_height:height,
+        first_resident_mip,format:fmt,flags,source_bulk_offset:start,blocks,
     })
 }
 
 #[cfg(test)]
 mod bc_mip_tests{
     use super::*;
+    #[test]fn original_cooked_grass_resident_mip_preserves_source_extent(){
+        assert_eq!(original_first_resident_mip(2048,2048,1024,1024),Ok(1));
+        assert_eq!(original_first_resident_mip(2048,2048,512,512),Ok(2));
+        assert_eq!(original_first_resident_mip(1024,512,1024,512),Ok(0));
+        assert_eq!(original_first_resident_mip(1024,512,512,256),Ok(1));
+        assert!(original_first_resident_mip(2048,2048,1024,512).is_err());
+        assert!(original_first_resident_mip(1920,1080,640,360).is_err());
+        assert!(original_first_resident_mip(128,128,0,128).is_err());
+        assert!(original_first_resident_mip(512,512,1024,1024).is_err());
+    }
     #[test]fn original_bc_block_sizes_are_distinct(){
         assert_eq!((2048u32.div_ceil(4)*2048u32.div_ceil(4)*8) as usize,2097152);
         assert_eq!((2048u32.div_ceil(4)*2048u32.div_ceil(4)*16) as usize,4194304);
