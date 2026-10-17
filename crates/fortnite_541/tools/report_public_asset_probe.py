@@ -89,7 +89,7 @@ def summarize(root: pathlib.Path, scope: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=pathlib.Path, required=True)
-    parser.add_argument("--scope", choices=("terrain", "sky"), required=True)
+    parser.add_argument("--scope", choices=("terrain", "sky", "foliage"), required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     args = parser.parse_args()
     report = summarize(args.source_root, args.scope)
