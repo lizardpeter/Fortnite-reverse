@@ -13,12 +13,18 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/fortnite541-public-asset-probes.yml"
+      - "crates/fortnite_541/tools/fetch_remote_541_dependencies.py"
+      - "crates/fortnite_541/tools/probe_remote_541_paks.py"
+      - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/fortnite541-public-asset-probes.yml"
+      - "crates/fortnite_541/tools/fetch_remote_541_dependencies.py"
+      - "crates/fortnite_541/tools/probe_remote_541_paks.py"
+      - "crates/fortnite_541/src/bin/athena_remote_source_probe.rs"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
       - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
 
@@ -113,7 +119,7 @@ jobs:
           python3 crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
             --destination "$RUNNER_TEMP/fortnite541-sky" \
             2>&1 | tee "$RUNNER_TEMP/fortnite541-sky-report/download.log"
-      - name: Decode real UE4 sky, weather and material properties
+      - name: Audit real SkyDome master shader graph, source textures, time-of-day and material properties
         shell: bash
         run: |
           set -euo pipefail

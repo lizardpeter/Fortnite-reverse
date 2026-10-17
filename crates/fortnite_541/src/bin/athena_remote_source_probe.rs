@@ -2,7 +2,7 @@
 //! packages recovered remotely from public split PAKs. Never reconstructs
 //! invented sun/sky values or draws via a game-specific renderer.
 use std::{collections::BTreeMap,env,fs,path::PathBuf,process::ExitCode};
-use fortnite_541_importer::{properties,texture,uobject};
+use fortnite_541_importer::{material,properties,texture,uobject};
 const TARGETS:&[&str]=&[
     "TimeOfDay/TODM/BR/TODM_BR",
     "Environments/World/Backgrounds/Transylvania/Meshes/TRV_Skybox_Mountain_04",
@@ -136,6 +136,55 @@ fn inspect(root:&PathBuf,path:&str)->Result<(),String>{
     println!("AUTHENTICATED_FORTNITE_ASSET_CENSUS package={path} export_count={} relevant_properties_objects={findings} class_counts={classes:?}",cat.exports.len());
     Ok(())
 }
+/// Probe the *actual* cooked master, not just the daylight MIC colour
+/// values. Cooked-out expression operators remain explicit unresolved links;
+/// this metadata audit does not invent executable cloud / sun shader math.
+fn inspect_original_skydome_master(root:&PathBuf)->Result<(),String>{
+    let source="Packages/Fortress_Sky/SkyDome/Master/M_SkyDome";
+    let base=root.join("FortniteGame/Content").join(source);
+    let header=fs::read(base.with_extension("uasset"))
+        .map_err(|e|format!("original SkyDome master uasset not staged: {e}"))?;
+    let body=fs::read(base.with_extension("uexp"))
+        .map_err(|e|format!("original SkyDome master uexp not staged: {e}"))?;
+    let catalog=uobject::inspect(&header)?;
+    let graph=material::inspect(&catalog,&header,&body);
+    if graph.expressions.is_empty() {
+        return Err("authenticated SkyDome master has no decodable material expressions".into());
+    }
+    let mut linked=0usize;
+    let mut surviving=0usize;
+    let mut stripped=std::collections::BTreeSet::new();
+    let mut texture_refs=std::collections::BTreeSet::new();
+    for node in &graph.expressions {
+        for input in &node.expression_inputs {
+            if input.target==0 { continue; }
+            linked+=1;
+            if input.target>0 { surviving+=1; }
+            else { stripped.insert(input.source_path.clone()); }
+        }
+        if node.class_name=="MaterialExpressionTextureSample"
+            ||node.class_name=="MaterialExpressionTextureSampleParameter2D" {
+            for dependency in &node.references {
+                if dependency.property=="Texture" {
+                    texture_refs.insert(dependency.source_path.clone());
+                }
+            }
+        }
+    }
+    println!("AUTHORED_SKYDOME_MASTER_GRAPH source={} expressions={} classes={:?} linked_expression_inputs={} positive_export_links={} external_or_stripped_links={} distinct_stripped_operator_identities={} exact_source_texture_refs={} parser_unresolved={}",
+        source,graph.expressions.len(),graph.class_counts,linked,surviving,
+        linked.saturating_sub(surviving),stripped.len(),texture_refs.len(),graph.unresolved.len());
+    for identity in &texture_refs{
+        println!("AUTHORED_SKYDOME_ORIGINAL_TEXTURE_REFERENCE {identity}");
+    }
+    for identity in stripped.iter().take(40){
+        println!("AUTHORED_SKYDOME_SOURCE_GRAPH_FRONTIER stripped_or_external={identity}");
+    }
+    for issue in graph.unresolved.iter().take(20){
+        println!("AUTHORED_SKYDOME_TAGGED_PARSE_FRONTIER {issue}");
+    }
+    Ok(())
+}
 fn run()->Result<(),String>{
     let root=PathBuf::from(env::args_os().nth(1).ok_or("usage: athena_remote_source_probe VERIFIED_REMOTE_SOURCE_ROOT")?);
     for path in TARGETS{inspect(&root,path)?;}
@@ -147,6 +196,9 @@ fn run()->Result<(),String>{
         "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Eve_M_SkyDome_Inst_Basic01",
         "Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01",
     ];
+    // Executable shader admission remains a private universal-engine step.
+    // The public runner independently verifies its retail shader DAG inputs.
+    inspect_original_skydome_master(&root)?;
     for path in additional{
         let base=root.join("FortniteGame/Content").join(path);
         if base.with_extension("uasset").exists() &&base.with_extension("uexp").exists(){

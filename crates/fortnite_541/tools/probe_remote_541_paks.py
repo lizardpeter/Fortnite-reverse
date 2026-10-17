@@ -36,6 +36,20 @@ TARGETS = [
     "/Packages/Fortress_Sky/SkyDome/MaterialInstances/SkyDomeBasic01/Night_M_SkyDome_Inst_Basic01.uexp",
     "/Athena/Prototype/Terrain/LF_AthenaClouds_Inst.uasset",
     "/Athena/Prototype/Terrain/LF_AthenaClouds_Inst.uexp",
+    # Actual original cooked SkyDome master graph and five source-authored
+    # TextureSample UObjects. Do not substitute or guess shader outputs.
+    "/Packages/Fortress_Sky/SkyDome/Master/M_SkyDome.uasset",
+    "/Packages/Fortress_Sky/SkyDome/Master/M_SkyDome.uexp",
+    "/Packages/Fortress_Sky/Materials/FinalCloudNormalAndHeightMap.uasset",
+    "/Packages/Fortress_Sky/Materials/FinalCloudNormalAndHeightMap.uexp",
+    "/Packages/Fortress_Sky/SkyDome/Master/T_SkyDome_Stars_Sharp.uasset",
+    "/Packages/Fortress_Sky/SkyDome/Master/T_SkyDome_Stars_Sharp.uexp",
+    "/Packages/Fortress_Sky/Textures/Galaxy_Background.uasset",
+    "/Packages/Fortress_Sky/Textures/Galaxy_Background.uexp",
+    "/Packages/Fortress_Sky/Textures/Galaxy_Background_Tiling.uasset",
+    "/Packages/Fortress_Sky/Textures/Galaxy_Background_Tiling.uexp",
+    "/VisualThreatManager/StormVisuals/LargeClouds/T_StormCloudDetail01_M.uasset",
+    "/VisualThreatManager/StormVisuals/LargeClouds/T_StormCloudDetail01_M.uexp",
 ]
 def curl(args: list[str], *, timeout: int=30) -> bytes:
     p=subprocess.run(["curl","--silent","--show-error","--location",

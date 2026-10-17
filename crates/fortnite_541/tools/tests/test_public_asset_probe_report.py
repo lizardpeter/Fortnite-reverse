@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 from report_public_asset_probe import summarize
+from probe_remote_541_paks import TARGETS
 
 
 class SourceProbeMetadataTests(unittest.TestCase):
@@ -43,6 +44,22 @@ class SourceProbeMetadataTests(unittest.TestCase):
             }]), encoding="utf-8"
         )
         self.assertEqual(summarize(self.root, "sky")["verified_files"], 1)
+
+    def test_original_skydome_source_input_targets_are_explicit(self):
+        """Probe actual source packages, not an inferred sky texture set."""
+        paths = [path.lstrip("/") for path in TARGETS]
+        self.assertEqual(len(paths), len(set(paths)))
+        required = [
+            "Packages/Fortress_Sky/SkyDome/Master/M_SkyDome",
+            "Packages/Fortress_Sky/Materials/FinalCloudNormalAndHeightMap",
+            "Packages/Fortress_Sky/SkyDome/Master/T_SkyDome_Stars_Sharp",
+            "Packages/Fortress_Sky/Textures/Galaxy_Background",
+            "Packages/Fortress_Sky/Textures/Galaxy_Background_Tiling",
+            "VisualThreatManager/StormVisuals/LargeClouds/T_StormCloudDetail01_M",
+        ]
+        for base in required:
+            for suffix in (".uasset", ".uexp"):
+                self.assertIn(base + suffix, paths)
 
     def test_disallow_manifest_size_mismatch(self):
         self.save_manifest([{
