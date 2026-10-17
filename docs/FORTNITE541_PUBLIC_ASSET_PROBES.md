@@ -67,3 +67,11 @@ records. It also inventories actual FExpressionInput FName identities and
 selectors from material/function exports, including links whose editor-only
 nodes were stripped. Named graph edges are not executable OpacityMask, WPO,
 wind, or biome math. Engine-owned functions are still separate dependencies.
+
+The authenticated second-hop foliage contract also includes the real biome
+mask and terrain color input textures, the internal wind texture sampling
+function and the wind system's authored VectorOffset_RT2 render target. The
+public probe enumerates original MaterialParameterCollection parameter names
+and tagged render-target constructor fields. Runtime wind simulation and WPO
+are separate GPU/runtime responsibilities; no static texture image is
+substituted for a live render target.

@@ -81,6 +81,10 @@ class SourceProbeMetadataTests(unittest.TestCase):
             "Athena/Environments/Landscape/MaterialFunctions/MF_StormMask",
             "WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled",
             "WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData",
+            "Athena/Environments/Landscape/Textures/T_Athena_Terrain_Biome_M",
+            "Athena/Environments/Landscape/Textures/T_Athena_Terrain_CombinedColors_01",
+            "WaterAndWind/MaterialFunctions/InternalSampleWindTexture",
+            "WaterAndWind/Textures/VectorOffset_RT2",
         ):
             self.assertIn(base + ".uasset", names)
             self.assertIn(base + ".uexp", names)
