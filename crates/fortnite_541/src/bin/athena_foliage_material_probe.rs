@@ -14,6 +14,12 @@ const ROOTS:&[&str]=&[
     "Environments/Foliage/Textures/T_WavyGrass_01",
     "Environments/Foliage/Textures/T_WavyGrass_01_N",
     "Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D",
+    "Athena/Environments/Landscape/MaterialFunctions/MF_AthenaFoliagePlayerInteract",
+    "Athena/Environments/Landscape/MaterialFunctions/MF_Athena_BiomeMask",
+    "Athena/Environments/Landscape/MaterialFunctions/MF_Athena_TerrainColorMatch",
+    "Athena/Environments/Landscape/MaterialFunctions/MF_StormMask",
+    "WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled",
+    "WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData",
 ];
 
 fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
@@ -24,6 +30,23 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
         .map_err(|e|format!("original foliage uexp {relative}: {e}"))?;
     let cat=uobject::inspect(&header)?;
     let graph=material::inspect(&cat,&header,&exports);
+    // Read FExpressionInput *names*, not just UObject references. In the
+    // original UE4 cooked build editor-only shader nodes can be stripped
+    // while their source FName remains in the authentic serialized link.
+    let named_links=material::inspect_named_input_links(&cat,&header,&exports)?;
+    let retained=named_links.iter().filter(|l|l.target_export_index.is_some()).count();
+    let stripped=named_links.len()-retained;
+    println!("AUTHORED_FOLIAGE_EXPRESSION_LINK_CENSUS source={relative} total={} surviving_export_targets={retained} stripped_named_targets={stripped}",
+        named_links.len());
+    for link in named_links.iter().filter(|l|l.consumer==relative.rsplit('/').next().unwrap_or(""))
+        .chain(named_links.iter().filter(|l|l.target_export_index.is_none()))
+        .take(80)
+    {
+        println!("AUTHORED_FOLIAGE_NAMED_EXPRESSION_LINK source={relative} consumer={} port={} target={} source_pointer={} surviving_target={:?} original_selector_words={:?}",
+            link.consumer,link.port,link.target_expression_name,link.source_pointer,
+            link.target_export_index,link.channel_words);
+    }
+
     let mut classes=BTreeMap::<String,usize>::new();
     let mut inherited_materials=BTreeSet::<String>::new();
     let mut authored_surface_roots=BTreeSet::<String>::new();

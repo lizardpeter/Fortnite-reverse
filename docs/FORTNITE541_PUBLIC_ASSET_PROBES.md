@@ -60,3 +60,10 @@ source into public CI.
 
 GitHub-hosted runners are not literally unlimited: jobs, concurrency,
 artifacts, usage policy and retention are bounded.
+
+The grass master and field material source audit now follows six game-owned
+MaterialFunction dependencies recovered from the original cooked expression
+records. It also inventories actual FExpressionInput FName identities and
+selectors from material/function exports, including links whose editor-only
+nodes were stripped. Named graph edges are not executable OpacityMask, WPO,
+wind, or biome math. Engine-owned functions are still separate dependencies.

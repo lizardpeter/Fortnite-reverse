@@ -52,6 +52,84 @@ pub struct MaterialGraph {
     pub unresolved: Vec<String>,
 }
 
+/// Source-only FExpressionInput link. A null UObject pointer does not
+/// mean "no edge": cooked UE4 often retains the expression's original FName
+/// after stripping editor nodes. Such a link is never executable by itself.
+#[derive(Debug,Clone,PartialEq,Eq)]
+pub struct SourceNamedInputLink {
+    pub consumer:String,
+    pub port:String,
+    pub target_expression_name:String,
+    pub source_pointer:i32,
+    pub target_export_index:Option<i32>,
+    pub channel_words:[u32;7],
+}
+fn cooked_link_name(catalog:&PackageCatalog,bytes:&[u8])
+    ->Result<Option<(String,i32,[u32;7])>,String>{
+    if bytes.len()<40{return Err("original FExpressionInput shorter than 40 bytes".into());}
+    let n=u32::from_le_bytes(bytes[32..36].try_into().unwrap()) as usize;
+    let number=u32::from_le_bytes(bytes[36..40].try_into().unwrap());
+    let name=catalog.names.get(n)
+        .ok_or("original FExpressionInput source FName outside NameMap")?;
+    if name=="None"&&number==0{return Ok(None);}
+    if name.is_empty(){return Err("empty original source expression FName".into());}
+    let source_pointer=i32::from_le_bytes(bytes[..4].try_into().unwrap());
+    let channel_words=std::array::from_fn(|i|
+        u32::from_le_bytes(bytes[4+i*4..8+i*4].try_into().unwrap()));
+    let actual=if number==0{name.clone()}else{format!("{name}#{number}")};
+    Ok(Some((actual,source_pointer,channel_words)))
+}
+fn export_name(catalog:&PackageCatalog,export:&crate::uobject::PackageExport)
+    ->Result<String,String>{
+    let base=catalog.names.get(export.object_name.name_index as usize)
+        .ok_or("original graph export missing NameMap object identity")?;
+    let number=export.object_name.instance_number;
+    Ok(if number==0{base.clone()}else{format!("{base}#{number}")})
+}
+/// Inventory original linked inputs from the material root AND material
+/// expression exports. Regular material::inspect only inventories expression
+/// objects, so it loses roots like OpacityMask and WPO. This returns exact
+/// source FNames/selector words, including absent cooked-out target exports;
+/// it does NOT infer the missing arithmetic or compiled vertex shader.
+pub fn inspect_named_input_links(
+    catalog:&PackageCatalog,package:&[u8],companion:&[u8]
+)->Result<Vec<SourceNamedInputLink>,String>{
+    let mut exports=std::collections::BTreeMap::<String,i32>::new();
+    for (i,ex) in catalog.exports.iter().enumerate(){
+        if !catalog.export_class_name(ex).is_some_and(|kind|
+            kind.starts_with("MaterialExpression")){continue;}
+        let name=export_name(catalog,ex)?;
+        if exports.insert(name.clone(),(i+1) as i32).is_some(){
+            return Err(format!("duplicate source material expression export {name}"));
+        }
+    }
+    let mut links=Vec::new();
+    for ex in &catalog.exports{
+        if !catalog.export_class_name(ex).is_some_and(|kind|
+            kind=="Material"||kind=="MaterialFunction"||
+            kind.starts_with("MaterialExpression")){continue;}
+        let raw=catalog.export_data(package,companion,ex)?;
+        let props=properties::scan(catalog,raw)?;
+        let consumer=export_name(catalog,ex)?;
+        for p in &props.fields{
+            if p.kind!="StructProperty" || !p.metadata.first().is_some_and(|kind|
+                matches!(kind.as_str(),
+                    "ExpressionInput"|"ColorMaterialInput"|"ScalarMaterialInput"|
+                    "VectorMaterialInput"|"MaterialAttributesInput")){continue;}
+            let bytes=raw.get(p.payload.clone())
+                .ok_or("source expression input payload outside original export")?;
+            let Some((target,source_pointer,channel_words))=
+                cooked_link_name(catalog,bytes)? else{continue;};
+            links.push(SourceNamedInputLink{
+                consumer:consumer.clone(),port:p.name.clone(),
+                target_export_index:exports.get(&target).copied(),
+                target_expression_name:target,source_pointer,channel_words,
+            });
+        }
+    }
+    Ok(links)
+}
+
 fn ref_name(catalog:&PackageCatalog,reference:i32)->Result<String,String>{
     catalog.source_object_path(reference)
 }
@@ -238,4 +316,40 @@ pub fn inspect(catalog:&PackageCatalog,package:&[u8],companion:&[u8])->MaterialG
         graph.expressions.push(node);
     }
     graph
+}
+
+#[cfg(test)]
+mod named_link_tests {
+    use super::*;
+    use crate::uobject::{PackageCatalog,PackageSummary};
+    fn catalog(names:&[&str])->PackageCatalog{
+        PackageCatalog{
+            summary:PackageSummary{
+                total_header_size:0,folder_name:String::new(),flags:0,
+                unversioned:true,name_count:names.len() as u32,name_offset:0,
+                export_count:0,export_offset:0,import_count:0,import_offset:0,
+                depends_offset:0,
+            },
+            names:names.iter().map(|x|x.to_string()).collect(),
+            imports:Vec::new(),exports:Vec::new(),
+        }
+    }
+    #[test]
+    fn cooked_null_pointer_preserves_source_expression_name_and_channel_words(){
+        let c=catalog(&["None","MaterialExpressionMultiply"]);
+        let mut link=[0u8;40];
+        link[32..36].copy_from_slice(&1u32.to_le_bytes());
+        link[36..40].copy_from_slice(&9u32.to_le_bytes());
+        link[8..12].copy_from_slice(&1u32.to_le_bytes());
+        let (name,pointer,selector)=cooked_link_name(&c,&link).unwrap().unwrap();
+        assert_eq!(name,"MaterialExpressionMultiply#9");
+        assert_eq!(pointer,0);
+        assert_eq!(selector[1],1);
+        link[32..36].copy_from_slice(&0u32.to_le_bytes());
+        link[36..40].fill(0);
+        assert!(cooked_link_name(&c,&link).unwrap().is_none());
+        assert!(cooked_link_name(&c,&link[..39]).is_err());
+        link[32..36].copy_from_slice(&555u32.to_le_bytes());
+        assert!(cooked_link_name(&c,&link).is_err());
+    }
 }

@@ -75,6 +75,12 @@ class SourceProbeMetadataTests(unittest.TestCase):
             "Environments/Foliage/Textures/T_WavyGrass_01",
             "Environments/Foliage/Textures/T_WavyGrass_01_N",
             "Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D",
+            "Athena/Environments/Landscape/MaterialFunctions/MF_AthenaFoliagePlayerInteract",
+            "Athena/Environments/Landscape/MaterialFunctions/MF_Athena_BiomeMask",
+            "Athena/Environments/Landscape/MaterialFunctions/MF_Athena_TerrainColorMatch",
+            "Athena/Environments/Landscape/MaterialFunctions/MF_StormMask",
+            "WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled",
+            "WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData",
         ):
             self.assertIn(base + ".uasset", names)
             self.assertIn(base + ".uexp", names)
