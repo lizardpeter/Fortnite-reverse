@@ -8,6 +8,12 @@ const ROOTS:&[&str]=&[
     "Environments/Foliage/Materials/M_FieldGrassMatching",
     "Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor",
     "Environments/Foliage/Meshes/S_WavyGrass_01",
+    "Athena/Environments/Landscape/Foliage/M_Athena_Grass_Master",
+    "Environments/Foliage/Textures/T_FieldGrass_01_M",
+    "Environments/Foliage/Textures/T_SwirlNoise_N",
+    "Environments/Foliage/Textures/T_WavyGrass_01",
+    "Environments/Foliage/Textures/T_WavyGrass_01_N",
+    "Packages/DS_Fortnite_Terrain_NoLOD/Textures/T_Grasslands_D",
 ];
 
 fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
@@ -22,6 +28,7 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
     let mut inherited_materials=BTreeSet::<String>::new();
     let mut authored_surface_roots=BTreeSet::<String>::new();
     let mut source_textures=BTreeSet::<String>::new();
+    let mut source_functions=BTreeSet::<String>::new();
     let mut roots=0usize;
     for (idx,entry) in cat.exports.iter().enumerate(){
         let class=cat.export_class_name(entry).unwrap_or("<unresolved>");
@@ -62,6 +69,13 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
         }
     }
     for node in &graph.expressions {
+        if node.class_name=="MaterialExpressionMaterialFunctionCall" {
+            for link in &node.references {
+                if link.property=="MaterialFunction"{
+                    source_functions.insert(link.source_path.clone());
+                }
+            }
+        }
         if node.class_name=="MaterialExpressionTextureSample"
             ||node.class_name=="MaterialExpressionTextureSampleParameter2D" {
             for link in &node.references {
@@ -71,7 +85,7 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
             }
         }
     }
-    println!("AUTHORED_FOLIAGE_SOURCE_CENSUS path={relative} exports={} material_roots={roots} expression_nodes={} classes={classes:?} tagged_surface_fields={authored_surface_roots:?} inherited_parents={inherited_materials:?} original_texture_refs={source_textures:?} external_graph_dependencies={} parser_frontiers={}",
+    println!("AUTHORED_FOLIAGE_SOURCE_CENSUS path={relative} exports={} material_roots={roots} expression_nodes={} classes={classes:?} tagged_surface_fields={authored_surface_roots:?} inherited_parents={inherited_materials:?} original_texture_refs={source_textures:?} original_material_functions={source_functions:?} external_graph_dependencies={} parser_frontiers={}",
         cat.exports.len(),graph.expressions.len(),graph.external_dependencies.len(),
         graph.unresolved.len());
     for error in graph.unresolved.iter().take(15){
