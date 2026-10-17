@@ -14,11 +14,13 @@ on:
     paths:
       - ".github/workflows/fortnite541-public-asset-probes.yml"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
+      - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/fortnite541-public-asset-probes.yml"
       - "crates/fortnite_541/tools/report_public_asset_probe.py"
+      - "crates/fortnite_541/tools/tests/test_public_asset_probe_report.py"
 
 permissions:
   contents: read
@@ -42,6 +44,9 @@ jobs:
             crates/fortnite_541/tools/probe_remote_541_paks.py \
             crates/fortnite_541/tools/fetch_remote_541_dependencies.py \
             crates/fortnite_541/tools/report_public_asset_probe.py
+          PYTHONPATH=crates/fortnite_541/tools python3 -m unittest discover \
+            -s crates/fortnite_541/tools/tests \
+            -p test_public_asset_probe_report.py -v
           cargo test --manifest-path crates/fortnite_541/Cargo.toml --all-targets
           cargo check --manifest-path crates/fortnite_541/Cargo.toml --all-targets
 
