@@ -1,0 +1,74 @@
+"""Tests for source-metadata-only Fortnite 5.41 public probe reports."""
+import json
+import pathlib
+import tempfile
+import unittest
+
+from report_public_asset_probe import summarize
+
+
+class SourceProbeMetadataTests(unittest.TestCase):
+    def setUp(self):
+        self.work = tempfile.TemporaryDirectory()
+        self.addCleanup(self.work.cleanup)
+        self.root = pathlib.Path(self.work.name) / "source"
+        (self.root / "FortniteGame" / "Content").mkdir(parents=True)
+        self.asset = self.root / "FortniteGame" / "Content" / "fixture.uasset"
+        self.asset.write_bytes(b"test copyrighted content is NEVER in metadata\n")
+
+    def save_manifest(self, entries):
+        (self.root / "fortnite541-source-manifest.json").write_text(
+            json.dumps({"files": entries}), encoding="utf-8"
+        )
+
+    def test_verified_relative_manifest_emits_hash_metadata_only(self):
+        self.save_manifest([{
+            "path": "FortniteGame/Content/fixture.uasset",
+            "bytes": self.asset.stat().st_size,
+        }])
+        summary = summarize(self.root, "terrain")
+        self.assertEqual(summary["verified_files"], 1)
+        self.assertEqual(summary["verified_bytes"], self.asset.stat().st_size)
+        self.assertEqual(summary["files"][0]["path"], "FortniteGame/Content/fixture.uasset")
+        self.assertEqual(len(summary["files"][0]["sha256"]), 64)
+        self.assertNotIn("test copyrighted content", json.dumps(summary))
+        self.assertTrue(summary["does_not_include_source_asset_bytes"])
+
+    def test_verified_absolute_split_pak_manifest(self):
+        (self.root / "verified-541-source-manifest.json").write_text(
+            json.dumps([{
+                "path": str(self.asset),
+                "size": self.asset.stat().st_size,
+                "sha1": "0123456789abcdef" * 2 + "01234567",
+            }]), encoding="utf-8"
+        )
+        self.assertEqual(summarize(self.root, "sky")["verified_files"], 1)
+
+    def test_disallow_manifest_size_mismatch(self):
+        self.save_manifest([{
+            "path": "FortniteGame/Content/fixture.uasset",
+            "bytes": 1,
+        }])
+        with self.assertRaisesRegex(ValueError, "manifest size mismatch"):
+            summarize(self.root, "terrain")
+
+    def test_disallow_missing_manifest_entries_and_extra_files(self):
+        self.save_manifest([{
+            "path": "FortniteGame/Content/fixture.uasset",
+            "bytes": self.asset.stat().st_size,
+        }])
+        (self.root / "FortniteGame" / "Content" / "rogue.uexp").write_bytes(b"extra")
+        with self.assertRaisesRegex(ValueError, "count mismatch"):
+            summarize(self.root, "terrain")
+
+    def test_disallow_absolute_source_paths_outside_runner_directory(self):
+        self.save_manifest([{
+            "path": "/tmp/another-user-private-asset.uasset",
+            "bytes": self.asset.stat().st_size,
+        }])
+        with self.assertRaises(ValueError):
+            summarize(self.root, "terrain")
+
+
+if __name__ == "__main__":
+    unittest.main()
