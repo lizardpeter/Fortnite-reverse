@@ -75,3 +75,24 @@ public probe enumerates original MaterialParameterCollection parameter names
 and tagged render-target constructor fields. Runtime wind simulation and WPO
 are separate GPU/runtime responsibilities; no static texture image is
 substituted for a live render target.
+
+## Incomplete original Athena POI worlds
+
+The private universal renderer's last measured source report admitted 37/40
+original POI regions. Three original source worlds still retained authentic
+low-polygon HLOD proxies because their structural actor references were not
+fully resolved: REC 13/16, Warehouses 17/20, Pueblo 58/65. These numbers
+are **historical runtime inputs**, not new measured post-change results.
+
+The separate public `poi-detail-original` runner now obtains the exact
+`Athena_POI_REC_001`, `Athena_POI_Warehouses_003`, and
+`Athena_POI_Pueblo_001` UMap/UExp pairs through the same SHA1-verifying
+source PAK index workflow. A read-only parser reports authored actor class
+FNames, source root StaticMesh FPackageIndex references, missing inherited
+static-mesh paths, genuine Blueprint SceneComponent roots, and baked
+`LODActor` proxy identities. The only persistent artifact is a textual
+report. Original UMap/UExp files stay temporary and are deleted; no
+private Rust-test checkout is performed. Reports are evidence for
+source-true Blueprint CDO/SCS and nested world dependency closure, not a
+substitute mesh or a relaxation of high-detail admission criteria.
+
