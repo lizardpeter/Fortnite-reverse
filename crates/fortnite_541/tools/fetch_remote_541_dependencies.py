@@ -8,7 +8,7 @@ import hashlib
 import json
 import pathlib
 import struct
-from probe_remote_541_paks import BASE, TARGETS, head, authenticated_index, ranged
+from probe_remote_541_paks import BASE, TARGETS, FOLIAGE_TARGETS, head, authenticated_index, ranged
 
 # Seven observed and independently verified source SHA1 PAK indexes.
 PAKS=[
@@ -23,13 +23,16 @@ PAKS=[
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--destination",type=pathlib.Path,required=True)
+    p.add_argument("--scope",choices=["sky","foliage","all"],default="sky",
+                   help="fetch only the source-authored assets for a selected bounded probe")
     p.add_argument("--sparse-retail-paks",type=pathlib.Path,
                    help="construct sparse exact source-byte PAKs for native Rust test only")
     args=p.parse_args()
-    wanted={t.lstrip("/"):t for t in TARGETS}
+    selected=TARGETS if args.scope=="sky" else (FOLIAGE_TARGETS if args.scope=="foliage" else TARGETS+FOLIAGE_TARGETS)
+    wanted={t.lstrip("/"):t for t in selected}
     # Source-authored packages: optional original external texture bulk,
     # static-mesh bulk; no guessed color or material substitutions.
-    for target in TARGETS:
+    for target in selected:
         if target.endswith(".uasset"):
             bulk=target.removesuffix(".uasset")+".ubulk"
             wanted[bulk.lstrip("/")]=bulk

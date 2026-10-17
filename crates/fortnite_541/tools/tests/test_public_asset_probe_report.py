@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from report_public_asset_probe import summarize
-from probe_remote_541_paks import TARGETS
+from probe_remote_541_paks import TARGETS, FOLIAGE_TARGETS
 
 
 class SourceProbeMetadataTests(unittest.TestCase):
@@ -60,6 +60,18 @@ class SourceProbeMetadataTests(unittest.TestCase):
         for base in required:
             for suffix in (".uasset", ".uexp"):
                 self.assertIn(base + suffix, paths)
+
+    def test_foliage_research_targets_match_hidden_runtime_sources(self):
+        names = [x.lstrip("/") for x in FOLIAGE_TARGETS]
+        self.assertEqual(len(names), len(set(names)))
+        for base in (
+            "Athena/Environments/Landscape/Foliage/MI_Athena_Grass_TopoColor",
+            "Environments/Foliage/Materials/M_FieldGrassMatching",
+            "Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor",
+            "Environments/Foliage/Meshes/S_WavyGrass_01",
+        ):
+            self.assertIn(base + ".uasset", names)
+            self.assertIn(base + ".uexp", names)
 
     def test_disallow_manifest_size_mismatch(self):
         self.save_manifest([{

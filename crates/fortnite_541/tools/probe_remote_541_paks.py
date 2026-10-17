@@ -51,6 +51,19 @@ TARGETS = [
     "/VisualThreatManager/StormVisuals/LargeClouds/T_StormCloudDetail01_M.uasset",
     "/VisualThreatManager/StormVisuals/LargeClouds/T_StormCloudDetail01_M.uexp",
 ]
+# Exact original runtime source identities from the hidden Athena grass census.
+# Separate from SkyDome, so each public runner only fetches its own targets.
+FOLIAGE_TARGETS = [
+    "/Athena/Environments/Landscape/Foliage/MI_Athena_Grass_TopoColor.uasset",
+    "/Athena/Environments/Landscape/Foliage/MI_Athena_Grass_TopoColor.uexp",
+    "/Environments/Foliage/Materials/M_FieldGrassMatching.uasset",
+    "/Environments/Foliage/Materials/M_FieldGrassMatching.uexp",
+    "/Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor.uasset",
+    "/Athena/Environments/Landscape/Foliage/Athena_SM_WavyGrass_TopologyColor.uexp",
+    "/Environments/Foliage/Meshes/S_WavyGrass_01.uasset",
+    "/Environments/Foliage/Meshes/S_WavyGrass_01.uexp",
+]
+
 def curl(args: list[str], *, timeout: int=30) -> bytes:
     p=subprocess.run(["curl","--silent","--show-error","--location",
                       "--retry","2","--retry-delay","1",
