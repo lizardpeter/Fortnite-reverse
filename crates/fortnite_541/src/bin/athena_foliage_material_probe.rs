@@ -20,6 +20,10 @@ const ROOTS:&[&str]=&[
     "Athena/Environments/Landscape/MaterialFunctions/MF_StormMask",
     "WaterAndWind/EnableOrDisableWind/Fortnite_RenderToTextureEnabled",
     "WaterAndWind/MaterialFunctions/Fortnite_SampleRealTimeWindData",
+    "Athena/Environments/Landscape/Textures/T_Athena_Terrain_Biome_M",
+    "Athena/Environments/Landscape/Textures/T_Athena_Terrain_CombinedColors_01",
+    "WaterAndWind/MaterialFunctions/InternalSampleWindTexture",
+    "WaterAndWind/Textures/VectorOffset_RT2",
 ];
 
 fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
@@ -52,6 +56,8 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
     let mut authored_surface_roots=BTreeSet::<String>::new();
     let mut source_textures=BTreeSet::<String>::new();
     let mut source_functions=BTreeSet::<String>::new();
+    let mut original_dynamic_parameters=BTreeMap::<String,BTreeSet<String>>::new();
+
     let mut roots=0usize;
     for (idx,entry) in cat.exports.iter().enumerate(){
         let class=cat.export_class_name(entry).unwrap_or("<unresolved>");
@@ -92,6 +98,20 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
         }
     }
     for node in &graph.expressions {
+        if matches!(node.class_name.as_str(),
+            "MaterialExpressionCollectionParameter"|
+            "MaterialExpressionScalarParameter"|
+            "MaterialExpressionVectorParameter"|
+            "MaterialExpressionStaticSwitchParameter"|
+            "MaterialExpressionTextureSampleParameter2D") {
+            for (property,value) in &node.parameters {
+                if property=="ParameterName" {
+                    original_dynamic_parameters
+                        .entry(node.class_name.clone()).or_default()
+                        .insert(value.clone());
+                }
+            }
+        }
         if node.class_name=="MaterialExpressionMaterialFunctionCall" {
             for link in &node.references {
                 if link.property=="MaterialFunction"{
@@ -106,6 +126,29 @@ fn inspect(root:&PathBuf,relative:&str)->Result<(),String>{
                     source_textures.insert(link.source_path.clone());
                 }
             }
+        }
+    }
+    for (class,parameters) in &original_dynamic_parameters {
+        println!("AUTHORED_FOLIAGE_DYNAMIC_PARAMETER_CONTRACT source={relative} node_class={class} authored_parameter_names={parameters:?}");
+    }
+    for (i,entry) in cat.exports.iter().enumerate(){
+        if cat.export_class_name(entry)!=Some("TextureRenderTarget2D"){continue;}
+        let raw=cat.export_data(&header,&exports,entry)?;
+        let fields=properties::scan(&cat,raw)?;
+        for field in fields.fields.iter().filter(|p|matches!(p.name.as_str(),
+            "SizeX"|"SizeY"|"RenderTargetFormat"|"ClearColor"|"bAutoGenerateMips"|"SRGB")){
+            let bytes=&raw[field.payload.clone()];
+            let value=if field.kind=="IntProperty"&&bytes.len()==4 {
+                format!("int={}",i32::from_le_bytes(bytes.try_into().unwrap()))
+            }else if field.kind=="StructProperty"&&bytes.len()==16 {
+                format!("f32x4={:?}",(0..4).map(|n|
+                    f32::from_le_bytes(bytes[n*4..n*4+4].try_into().unwrap())
+                ).collect::<Vec<_>>())
+            }else{
+                format!("source_payload_bytes={}",bytes.len())
+            };
+            println!("AUTHORED_FOLIAGE_RUNTIME_RENDER_TARGET source={relative} export={} property={} kind={} metadata={:?} {value}",
+                i+1,field.name,field.kind,field.metadata);
         }
     }
     println!("AUTHORED_FOLIAGE_SOURCE_CENSUS path={relative} exports={} material_roots={roots} expression_nodes={} classes={classes:?} tagged_surface_fields={authored_surface_roots:?} inherited_parents={inherited_materials:?} original_texture_refs={source_textures:?} original_material_functions={source_functions:?} external_graph_dependencies={} parser_frontiers={}",
