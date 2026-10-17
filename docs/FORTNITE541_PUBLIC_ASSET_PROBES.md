@@ -14,8 +14,11 @@ See .github/workflows/fortnite541-public-asset-probes.yml.
   original source index and entry SHA-1, then executes athena_surface_probe,
   athena_material_graph_probe and athena_material_dependencies.
 - The sky/time-of-day job uses fetch_remote_541_dependencies.py to verify
-  split PAK indexes and retrieve selected original source dependencies, then
-  executes athena_remote_source_probe.
+  split PAK indexes and retrieve selected original source dependencies,
+  including the real M_SkyDome master material and all five authenticated
+  TextureSample input packages. athena_remote_source_probe audits cooked
+  expression nodes, retained dependencies and missing authored graph edges.
+  This is an admission frontier report, not an executable cloud shader.
 - The raw original retail packages are downloaded only into runner temporary
   storage and removed after the probes. No original .uasset, .uexp, .ubulk,
   .umap, full PAK or retail EXE is committed or uploaded as a workflow artifact.
